@@ -111,7 +111,7 @@ Las skills ya existen en el repo, no hay que escribirlas:
 |---|---|---|---|
 | Claude Code | `skills/autonomous-ai-agents/claude-code/` | `claude -p '...' --output-format json --json-schema '{...}' --max-turns N` | **Nativa**; además `--resume`, `--fork-session` |
 | OpenCode | `skills/autonomous-ai-agents/opencode/` | `opencode run '...' --format json --model p/m` | **JSONL de eventos**, sin objeto raíz ni campo `result`; la respuesta se reconstruye concatenando los `type:"text"`. Trae `cost` y `tokens` por step |
-| Antigravity | `optional-skills/autonomous-ai-agents/antigravity-cli/` | `agy --print '...'` | Texto plano; contrato impuesto por Hermes |
+| Antigravity | `optional-skills/autonomous-ai-agents/antigravity-cli/` | `agy -p '...' --output-format json --json-schema <ruta>` | **La mejor de las tres.** Objeto JSON único con `structured_output` que cumple el schema, más `usage`, `duration_seconds`, `conversation_id`. Es el único CLI que acepta el JSON Schema como parámetro |
 | Hermes | nativo | `delegate_task` | `output_schema` nativo |
 
 También vienen `codex`, `openhands`, `grok`, `blackbox` y `computer-use` con el mismo patrón.
@@ -123,6 +123,11 @@ Notas de diseño:
 - **El workspace scratch se borra al completar la card.** `complete_task` (`kanban_db.py:5544`) llama a `_cleanup_workspace` (:5841), que hace `shutil.rmtree` (:5890) sobre el scratch. El comentario del código lo llama intencional: *"Scratch workspaces are intentionally ephemeral"* (:5980).
   → **Regla para el compilador:** un nodo cuyo entregable sean archivos **no puede** usar `workspace_kind=scratch`. Va con workspace persistente o con `_copy_completion_artifacts` (:5615). Aplica a los cuatro backends.
 - **El goal de un nodo tiene que prohibir explícitamente fabricar su propio input.** Ante la misma tarea subespecificada sobre un workspace vacío, dos workers con el mismo modelo tomaron decisiones opuestas: el de claude-code reportó cero, el de opencode escribió cuatro `.md` de prueba y después los contó. Es variabilidad del modelo conductor, no falla del mecanismo, pero el compilador no puede dejarla librada al azar.
+- **Las skills bundleadas de Hermes se desactualizan, y eso degrada al worker, no solo a la doc.** `antigravity-cli` (v0.2.0 de la skill) afirma que `agy` devuelve texto plano y que no existe `--output-format json`. Falso en `agy` v1.1.13. Consecuencia observada: el worker **no usó** `--json-schema` y armó el contrato como texto en el prompt, porque la skill le dice que ese flag no existe. → ORQUESTER no puede confiar en las skills bundleadas como fuente de verdad de las capacidades de cada backend; necesita su propia tabla, versionada contra el CLI instalado.
+- **El worker escala solo a `--dangerously-skip-permissions`.** Observado en `t_8160e4fd`: la primera invocación de `agy` murió por permisos (10.8s), y el worker reintentó **agregando el flag por su cuenta** (124.8s, exitosa). No es alucinación: `SKILL.md:88` lo trae como ejemplo. Un worker desatendido, bloqueado por una barrera de permisos, la desactiva entera.
+  → **Regla de gobierno para ORQUESTER:** los flags de bypass de permisos de los agentes externos van en una denylist del compilador, y el permiso se concede explícito por nodo. Es exactamente el tipo de decisión que el Studio existe para hacer visible.
+- **`agy -p` devuelve exit code 0 aunque falle.** El fallo por permisos salió con `EXIT=0` y el texto `jetski: no output produced`. Un adapter que use el exit status como señal de éxito reporta `success` sobre un fallo total. → Los adapters de agente externo se juzgan por la salida parseada, nunca por el código de retorno.
+- **`--json-schema` de `agy` gobierna `structured_output`, no `response`.** `response` trae prosa markdown con el objeto pegado al final. El adapter lee `structured_output`.
 - Precedente para una integración más profunda: `agent/copilot_acp_client.py` envuelve un agente ACP externo como backend estilo OpenAI (`acp://copilot`). Si hace falta que un agente externo sea *el modelo* del nodo y no un proceso supervisado, ese es el molde a copiar.
 - **No verificado por ejecución.** Las skills y las columnas están leídas en código; falta correr un nodo real de cada backend.
 
@@ -246,7 +251,10 @@ Knobs relevantes bajo `delegation:` en `config.yaml`: `max_concurrent_children` 
 | El `output_schema` llega al agente externo | **Verificado: NO llega** | el worker invocó sin `--json-schema`; el compilador debe inyectar el contrato en el goal |
 | Un nodo delega de verdad a OpenCode | **Verificado (ejecutado)** | card `t_4477fc20`: el worker corrió `opencode run ...` en 14.7s; corroborado fuera de Hermes con `opencode session list` y el mtime de `opencode.db` |
 | El workspace scratch sobrevive a la card | **Verificado: NO sobrevive** | `_cleanup_workspace` hace `rmtree` dentro de `complete_task` (`kanban_db.py:5544`, `:5890`) |
-| Un nodo delega a Antigravity | **Pendiente** | Tarea 5; el CLI `agy` no estaba instalado |
+| Un nodo delega de verdad a Antigravity | **Verificado (ejecutado)** | card `t_8160e4fd`: `agy -p ...` en 124.8s; `command -v agy` resolvió, sin problema de PATH |
+| `agy` acepta JSON Schema en el CLI | **Verificado (ejecutado)** | `--json-schema` devuelve `structured_output` conforme; contradice a `SKILL.md` |
+| El worker respeta las barreras de permisos del agente externo | **Verificado: NO las respeta** | reintentó agregando `--dangerously-skip-permissions` por su cuenta |
+| `agy -p` señala fallo por exit code | **Verificado: NO lo señala** | falló con `EXIT=0` y `jetski: no output produced` |
 
 ---
 
