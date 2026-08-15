@@ -110,7 +110,7 @@ Las skills ya existen en el repo, no hay que escribirlas:
 | Backend | Skill | Invocación headless | Salida estructurada |
 |---|---|---|---|
 | Claude Code | `skills/autonomous-ai-agents/claude-code/` | `claude -p '...' --output-format json --json-schema '{...}' --max-turns N` | **Nativa**; además `--resume`, `--fork-session` |
-| OpenCode | `skills/autonomous-ai-agents/opencode/` | `opencode run '...' --format json --model p/m` | Eventos JSON, sin schema; `--attach <url>` a server vivo |
+| OpenCode | `skills/autonomous-ai-agents/opencode/` | `opencode run '...' --format json --model p/m` | **JSONL de eventos**, sin objeto raíz ni campo `result`; la respuesta se reconstruye concatenando los `type:"text"`. Trae `cost` y `tokens` por step |
 | Antigravity | `optional-skills/autonomous-ai-agents/antigravity-cli/` | `agy --print '...'` | Texto plano; contrato impuesto por Hermes |
 | Hermes | nativo | `delegate_task` | `output_schema` nativo |
 
@@ -120,6 +120,9 @@ Notas de diseño:
 - **El `output_schema` de la card NO se propaga al agente externo.** Verificado: el worker invocó `claude -p '...' --allowedTools 'Read,Bash' --max-turns 5` sin `--output-format json --json-schema`, y tradujo la respuesta al contrato por su cuenta. El comando lo improvisa el modelo del worker; la skill no lo fija.
   → **Trabajo para el compilador de ORQUESTER:** para nodos con agente externo, inyectar el contrato en el texto del goal. Hermes no lo hace solo. Claude Code sí acepta `--json-schema` (verificado en invocación cruda), pero hay que pedírselo explícitamente.
 - Sintaxis real de `hermes kanban`, distinta de la documentada: `--board` va **antes** del verbo; los boards se crean con `kanban boards create`; el flag es `--skill` (singular, repetible), no `--skills`; el título es **posicional** en `kanban create`, no `--title`.
+- **El workspace scratch se borra al completar la card.** `complete_task` (`kanban_db.py:5544`) llama a `_cleanup_workspace` (:5841), que hace `shutil.rmtree` (:5890) sobre el scratch. El comentario del código lo llama intencional: *"Scratch workspaces are intentionally ephemeral"* (:5980).
+  → **Regla para el compilador:** un nodo cuyo entregable sean archivos **no puede** usar `workspace_kind=scratch`. Va con workspace persistente o con `_copy_completion_artifacts` (:5615). Aplica a los cuatro backends.
+- **El goal de un nodo tiene que prohibir explícitamente fabricar su propio input.** Ante la misma tarea subespecificada sobre un workspace vacío, dos workers con el mismo modelo tomaron decisiones opuestas: el de claude-code reportó cero, el de opencode escribió cuatro `.md` de prueba y después los contó. Es variabilidad del modelo conductor, no falla del mecanismo, pero el compilador no puede dejarla librada al azar.
 - Precedente para una integración más profunda: `agent/copilot_acp_client.py` envuelve un agente ACP externo como backend estilo OpenAI (`acp://copilot`). Si hace falta que un agente externo sea *el modelo* del nodo y no un proceso supervisado, ese es el molde a copiar.
 - **No verificado por ejecución.** Las skills y las columnas están leídas en código; falta correr un nodo real de cada backend.
 
@@ -241,7 +244,9 @@ Knobs relevantes bajo `delegation:` en `config.yaml`: `max_concurrent_children` 
 | Cumplimiento empírico del `output_schema` | **Pendiente (diferido a propósito)** | 3 rondas sin cerrar por el bug de §11. La conclusión de diseño ya está en §5 y no depende de esta medición |
 | Un nodo delega de verdad a Claude Code | **Verificado (ejecutado)** | card `t_54ddac57`: el worker corrió `claude -p ...` en 13.1s, resultado contrastado contra el filesystem |
 | El `output_schema` llega al agente externo | **Verificado: NO llega** | el worker invocó sin `--json-schema`; el compilador debe inyectar el contrato en el goal |
-| Un nodo delega a OpenCode / Antigravity | **Pendiente** | Tareas 4 y 5 del plan |
+| Un nodo delega de verdad a OpenCode | **Verificado (ejecutado)** | card `t_4477fc20`: el worker corrió `opencode run ...` en 14.7s; corroborado fuera de Hermes con `opencode session list` y el mtime de `opencode.db` |
+| El workspace scratch sobrevive a la card | **Verificado: NO sobrevive** | `_cleanup_workspace` hace `rmtree` dentro de `complete_task` (`kanban_db.py:5544`, `:5890`) |
+| Un nodo delega a Antigravity | **Pendiente** | Tarea 5; el CLI `agy` no estaba instalado |
 
 ---
 
