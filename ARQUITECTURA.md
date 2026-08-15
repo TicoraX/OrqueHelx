@@ -11,10 +11,24 @@ Hermes ya implementa el núcleo que la v1 planeaba construir: aislamiento de con
 
 **ORQUESTER deja de ser un motor de orquestación y pasa a ser la capa de diseño, gobierno y exportación sobre un runtime prestado.**
 
+La frase se sostiene con una precisión que la verificación obligó a agregar:
+**ORQUESTER no hace scheduling, pero sí ejecuta.** No decide *cuándo* corre un
+nodo —eso es del kanban, siempre— y sí corre con sus propias manos los nodos
+cuyo ejecutor es un agente externo. La razón está en §12: `skills` no fuerza el
+ejecutor, así que un nodo que el Studio marcó como "OpenCode" solo llega a
+OpenCode si alguien invoca el binario, y ese alguien tiene que ser ORQUESTER.
+
+No es una grieta en la decisión: es la diferencia entre **motor** y **worker**.
+Un motor resuelve dependencias, persiste estado y sobrevive reinicios; nada de
+eso lo hace ORQUESTER. Un worker recibe una unidad de trabajo ya programada y
+la ejecuta. ORQUESTER es worker de una clase de nodos, y de ninguna otra.
+
 | Capa | Dueño | Justificación |
 |---|---|---|
-| Ejecución de agentes, aislamiento, compresión | Hermes | Ya resuelto, MIT |
-| Scheduling de DAG, durabilidad, reintentos | Hermes (kanban) | `task_links` + dispatcher |
+| Aislamiento de contexto, compresión | Hermes | Ya resuelto, MIT |
+| Scheduling de DAG, durabilidad, reintentos | Hermes (kanban) | `task_links` + dispatcher. **Sin excepciones**: también programa los nodos que ORQUESTER ejecuta |
+| Ejecución de nodos `runtime: hermes` | Hermes | El dispatcher hace spawn del perfil asignado |
+| Ejecución de nodos con agente externo | **ORQUESTER** (§12) | `skills` no fuerza el ejecutor (§4.1). Si el Studio promete un backend, alguien tiene que invocarlo |
 | Diseño visual del flujo | ORQUESTER | No existe en Hermes |
 | Export MCP / componente UI | ORQUESTER | El MCP de Hermes es de mensajería, no de ejecución |
 | Catálogo, versionado, RBAC/SSO | ORQUESTER | Fuera del alcance de Hermes |
@@ -39,17 +53,31 @@ Hermes ya implementa el núcleo que la v1 planeaba construir: aislamiento de con
 |  | DAG -> kanban  |  | eventos (ACP/    |  | MCP           |  |
 |  |                |  | task_events)     |  |               |  |
 |  +----------------+  +------------------+  +---------------+  |
+|  +---------------------------------------------------------+  |
+|  | Dispatcher externo (§12): reclama el carril propio y     |  |
+|  | invoca claude / opencode / agy. NO programa: solo ejecuta|  |
+|  +---------------------------------------------------------+  |
 |  Auth / RBAC · Persistencia de grafos (Postgres + Prisma)     |
 +---------------------------------------------------------------+
-                    | CLI headless · ACP (JSON-RPC) · kanban CLI
-                    v
-+---------------------------------------------------------------+
-|                    HERMES AGENT (runtime, MIT)                |
-|  delegate_task · context_compressor · kanban dispatcher       |
-|  providers (Anthropic/OpenAI/Gemini/Bedrock/Vertex/local)     |
-|  environments: local · Docker · SSH · Modal · Daytona · Vercel|
-+---------------------------------------------------------------+
+        |                                    |                |
+        | CLI headless · ACP                 | claim_task /   | subprocess
+        | kanban CLI                         | complete_task  | + JSON Schema
+        v                                    v                v
++-------------------------------------------------+  +------------------+
+|            HERMES AGENT (runtime, MIT)          |  | AGENTES EXTERNOS |
+|  delegate_task · context_compressor             |  |  claude -p       |
+|  kanban dispatcher  -> spawnea runtime: hermes  |  |  opencode run    |
+|  providers (Anthropic/OpenAI/Gemini/Bedrock/…)  |  |  agy -p          |
+|  environments: local · Docker · SSH · Modal · … |  +------------------+
++-------------------------------------------------+
+                        ^
+                        |  ambos escriben el mismo kanban.db
+                        |  (carriles disjuntos por `assignee`, §12)
 ```
+
+El kanban es el único punto de encuentro: los dos dispatchers leen y escriben la
+misma SQLite, sobre carriles que no se solapan. Ver §12 para por qué eso no es
+una condición de carrera.
 
 ---
 
@@ -73,12 +101,14 @@ SQLite con `tasks`, `task_links(parent_id, child_id)`, `task_runs`, `task_events
 
 ## 4. El compilador: Studio -> kanban
 
-Único componente de motor que ORQUESTER escribe. No es un motor de workflows; es un mapeo.
+Uno de los dos únicos componentes de motor que ORQUESTER escribe — el otro es el dispatcher externo de §12. No es un motor de workflows; es un mapeo.
 
 ```
 Nodo de React Flow      ->  hermes kanban create   (goal, assignee=perfil, workspace)
 Arista del DAG          ->  hermes kanban link parent child
-Ejecución               ->  el dispatcher promueve y hace spawn; ORQUESTER no orquesta
+Ejecución               ->  el kanban promueve siempre; hace spawn solo de los
+                            nodos `runtime: hermes`. Los de agente externo los
+                            ejecuta el dispatcher de ORQUESTER (§12)
 Salida del nodo         ->  output_schema por tarea, validado con jsonschema
 Estado en el Studio     ->  task_events / task_runs proyectados por SSE
 ```
@@ -185,11 +215,13 @@ Hermes inyecta un bloque `OUTPUT CONTRACT (machine-validated)` en el context del
 |---|---|---|
 | BullMQ + Redis | Eliminar | Dispatcher del kanban (durable, sobrevive reinicios) |
 | `modules/context/` | Eliminar | `agent/context_compressor.py`, `trajectory_compressor.py` |
-| `modules/adapters/` | Reducir a uno | Un adapter Hermes (CLI o ACP) |
+| `modules/adapters/` | Reducir a dos | Un adapter Hermes (CLI o ACP) + `run_backend` para los agentes externos (§12) |
 | `modules/telemetry/` | Invertir rol | Consumidor de `task_events` + ACP, no productor |
 | `modules/orchestrator/` | Eliminar | `delegate_task` + dispatcher |
 
-Sobrevive de NestJS: auth/RBAC, persistencia de grafos, compilador, proyector de eventos, exportador MCP.
+Sobrevive de NestJS: auth/RBAC, persistencia de grafos, compilador, proyector de eventos, exportador MCP y el dispatcher externo (§12).
+
+Ojo con `modules/orchestrator/`: se elimina la **orquestación** (resolver dependencias, decidir qué corre y cuándo), no la **ejecución**. El dispatcher externo no lo resucita: no programa nada, solo reclama trabajo que el kanban ya programó.
 
 ---
 
@@ -198,11 +230,14 @@ Sobrevive de NestJS: auth/RBAC, persistencia de grafos, compilador, proyector de
 ```text
 orquester/
 ├── apps/
-│   ├── api/                      # NestJS: fino, sin motor
+│   ├── api/                      # NestJS: fino, sin scheduling propio
 │   │   └── src/modules/
 │   │       ├── graphs/           # CRUD y versionado de grafos del Studio
-│   │       ├── compiler/         # DAG -> kanban (topo-check + create + link)
+│   │       ├── compiler/         # DAG -> kanban (create + link; el kanban
+│   │       │                     #   ya rechaza ciclos, ver §4)
 │   │       ├── runtime/          # Adapter Hermes: CLI headless + cliente ACP
+│   │       ├── dispatcher/       # §12: reclama el carril externo y corre
+│   │       │                     #   run_backend (claude / opencode / agy)
 │   │       ├── events/           # Proyección task_events/ACP -> SSE
 │   │       ├── export/           # Grafo -> servidor MCP parametrizable
 │   │       └── iam/              # RBAC / SSO
