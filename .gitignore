@@ -1,0 +1,5 @@
+hermes-agent/
+.superpowers/
+__pycache__/
+*.pyc
+.env
