@@ -271,6 +271,10 @@ Knobs relevantes bajo `delegation:` en `config.yaml`: `max_concurrent_children` 
 | Handoff de contexto entre nodos | **Verificado (ejecutado)** | el contexto de D trae `## Parent task results` con los dos summaries y `worker_session_id` distintos |
 | `skills=[...]` fuerza el ejecutor del nodo | **Verificado: NO lo fuerza** | 0 invocaciones de `claude`/`opencode`/`agy` en los 4 logs del rombo pese a las skills cargadas |
 | Los artefactos sobreviven al borrado del scratch | **Verificado (ejecutado)** | mecanismo `attachments/<task_id>/` por board (eventos `attached`), copia antes del `rmtree` y publica ruta absoluta en el `metadata` del handoff |
+| El carril externo es invisible para el dispatcher de Hermes | **Verificado (ejecutado)** | `tests/test_dos_dispatchers.py` paso 1: cae en `skipped_nonspawnable`, no se lanza |
+| `assignee = NULL` sirve como carril externo | **Verificado: NO sirve** | paso 2: `default_assignee` lo secuestra y lo lanza igual |
+| `claim_task` es atómico bajo carrera | **Verificado (ejecutado)** | paso 3: 8 claimers con conexiones propias, exactamente 1 ganador |
+| Los dos dispatchers coexisten sin pisarse | **Verificado (ejecutado)** | paso 4: 4 reclamos + 3 ticks, cero solapamiento, cero doble ejecución |
 
 ---
 
@@ -341,15 +345,27 @@ segundo grafo ni duplica la resolución de dependencias: se engancha como un
 
 ### El mecanismo, verificado pieza por pieza
 
-El truco es `assignee`. `dispatch_once` (`kanban_db.py:9667`) selecciona todas
-las cards en `ready`, pero las que no tienen `assignee` van a
-`skipped_unassigned` (:9754) y **nunca se spawnean**. Es el mismo
-comportamiento que en la Tarea 6 dejó cards colgadas en `ready` para siempre —
-un bug para quien no lo sabe, un punto de extensión para quien sí.
+El truco es `assignee`, y Hermes ya soporta este patrón de forma explícita. Si
+el `assignee` de una card **no es un perfil Hermes**, el dispatcher la bucketea
+en `skipped_nonspawnable` (`kanban_db.py:9777`) y no la lanza nunca. El
+comentario del código nombra el caso de uso exacto:
 
-Entonces: **los nodos de runtime externo se compilan con `assignee = NULL`.**
-Hermes los ve, respeta sus dependencias y los promueve a `ready`, pero no los
-toca. ORQUESTER los levanta.
+> *"Those task lanes are pulled by terminals via `claim_task` directly and
+> should NEVER auto-spawn"* — y aclara que es estado estable esperado, **no** un
+> fallo accionable por el operador (la telemetría de salud lo distingue de
+> "atascado de verdad").
+
+Entonces: **los nodos de runtime externo se compilan con
+`assignee = "orquester-external"`** — un nombre de carril que deliberadamente no
+existe como perfil. Hermes los ve, respeta sus dependencias, los promueve a
+`ready`, y no los toca. ORQUESTER los levanta.
+
+> **No usar `assignee = NULL` para esto.** Fue el primer diseño y está mal.
+> `dispatch_once` acepta `default_assignee`: con esa opción activa, las cards
+> sin assignee se **auto-asignan y se lanzan** (`auto_assigned_default`,
+> :9752). Un nodo de runtime externo terminaría ejecutado por un worker
+> nativo, en silencio. Verificado en `tests/test_dos_dispatchers.py` paso 2: la
+> card sin assignee fue secuestrada; la del carril con nombre resistió.
 
 El loop de ORQUESTER, entero, usando funciones que Hermes ya expone:
 
@@ -426,15 +442,34 @@ reemplaza al diseño de arriba, lo respalda.
 | Envolver cada CLI como cliente ACP (molde `agent/copilot_acp_client.py`) | El backend externo pasa a ser *el modelo* del nodo. Elegante y mucho más caro. Además §11 desaconseja `external_process`. Reevaluar si hace falta streaming en vivo por nodo. |
 | Forkear Hermes para que `skills` seleccione el ejecutor | Rompe la regla de "pinear por versión, sin fork" (§1). El punto de extensión ya existe. |
 
-### Lo que este diseño todavía no prueba
+### Coexistencia de los dos dispatchers (verificado)
 
-Que dos dispatchers concurrentes sobre la misma SQLite no se pisan.
-`claim_task` es atómico (`BEGIN IMMEDIATE`, devuelve `None` si ya estaba
-reclamado) y ese es el argumento, pero **no está ejecutado**. Antes de
-construir sobre esto: un test que corra el dispatcher de Hermes y el de
-ORQUESTER en paralelo sobre un board con nodos de las dos clases, y verifique
-que ninguna card se ejecuta dos veces.
+`tests/test_dos_dispatchers.py`, 4/4, sin LLM ni spawns reales (`spawn_fn`
+espía que solo anota a quién se habría lanzado):
 
-Nota operativa: toda conexión al board emite la advertencia de corrupción WAL
-de SQLite 3.50.4 y degrada a `journal_mode=DELETE`. Con dos escritores
-concurrentes eso importa — verificar el modo efectivo en ese test.
+```
+journal_mode efectivo: delete
+1. spawned=['t_80ddfb2b'] nonspawnable=['t_ac647d47']
+2. auto_assigned=['t_891c8338'] (assignee=NULL queda expuesto)
+3. 8 claimers compitieron, ganaron 1: [7]
+4. ORQUESTER reclamo 4/4; Hermes lanzo 4
+```
+
+1. El carril externo cae en `skipped_nonspawnable`; Hermes no lo lanza.
+2. **La trampa:** `assignee = NULL` es secuestrado por `default_assignee`; el
+   carril con nombre resiste. Es la razón del cambio de diseño de arriba.
+3. `claim_task` es atómico bajo carrera real: 8 hilos con conexiones propias
+   sobre la misma card, **exactamente un ganador**.
+4. Ejecución cruzada: ORQUESTER reclama sus 4 cards mientras Hermes tickea 3
+   veces. Cero solapamiento, cero cards lanzadas dos veces.
+
+Nota operativa confirmada: el board corre en `journal_mode=DELETE`, no WAL —
+Hermes lo degrada por el bug de corrupción de SQLite 3.50.4. Los dos escritores
+coexisten igual, pero con lock de base entera en vez de concurrencia WAL. Si el
+throughput del dispatcher externo llega a importar, la salida es actualizar
+SQLite (3.51.3+ / backports 3.50.7 / 3.44.6), no rediseñar.
+
+Además, `dispatch_once` toma un lock por board (:9500): dos dispatchers de
+Hermes no tickean a la vez, el perdedor devuelve `skipped_locked=True`. El loop
+de ORQUESTER **no** toma ese lock, porque usa `claim_task` directo — por eso el
+paso 3 del test es load-bearing y no un adorno.
