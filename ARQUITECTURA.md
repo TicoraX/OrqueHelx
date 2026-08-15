@@ -303,3 +303,138 @@ peor forma de fallar.
 
 Sin confirmar: si otros proveedores `external_process` fallan igual, y si el
 cuelgue desaparece con backend de terminal Docker en vez de `local`.
+
+---
+
+## 12. `IAgentAdapter`: cómo se invoca de verdad un backend externo
+
+Responde al hallazgo de §4.1: `skills` es contexto, no selector. Si el Studio
+deja elegir el ejecutor de un nodo, el sistema tiene que **garantizarlo**, no
+sugerirlo.
+
+### El problema, preciso
+
+El dispatcher de Hermes hace spawn de:
+
+```
+hermes -p <perfil> --cli --accept-hooks [--skills X] [-m modelo] [--provider p] chat -q <contexto>
+```
+
+El ejecutor real lo decide el modelo del worker dentro de esa sesión. Las tres
+palancas de la línea de comandos (`--skills`, `-m`, `--provider`) configuran
+**al worker**, no al binario que el worker vaya a llamar. Por eso las Tareas
+3-5 funcionaron —el título decía "Via antigravity: ..."— y el rombo de la
+Tarea 6 no.
+
+Cualquier diseño que dependa de que el modelo elija bien es una sugerencia.
+
+### La decisión: dos clases de nodo, un solo scheduler
+
+| Clase de nodo | Quién lo ejecuta | Cómo |
+|---|---|---|
+| `runtime: hermes` | Dispatcher de Hermes | Sin cambios. `assignee` = perfil. |
+| `runtime: claude-code \| opencode \| antigravity` | **Dispatcher de ORQUESTER** | Invoca el binario él mismo. |
+
+**El kanban sigue siendo el único scheduler.** ORQUESTER no construye un
+segundo grafo ni duplica la resolución de dependencias: se engancha como un
+*worker alternativo* sobre la misma base SQLite.
+
+### El mecanismo, verificado pieza por pieza
+
+El truco es `assignee`. `dispatch_once` (`kanban_db.py:9667`) selecciona todas
+las cards en `ready`, pero las que no tienen `assignee` van a
+`skipped_unassigned` (:9754) y **nunca se spawnean**. Es el mismo
+comportamiento que en la Tarea 6 dejó cards colgadas en `ready` para siempre —
+un bug para quien no lo sabe, un punto de extensión para quien sí.
+
+Entonces: **los nodos de runtime externo se compilan con `assignee = NULL`.**
+Hermes los ve, respeta sus dependencias y los promueve a `ready`, pero no los
+toca. ORQUESTER los levanta.
+
+El loop de ORQUESTER, entero, usando funciones que Hermes ya expone:
+
+```python
+# 1. Buscar trabajo propio: ready, sin assignee, con runtime externo en metadata
+# 2. Reclamar — atómico, race-safe contra el dispatcher de Hermes
+task = k.claim_task(conn, task_id, claimer="orquester")   # :4580
+if task is None:
+    continue        # otro lo tomó; claim_task ya valida el invariante de padres
+
+# 3. Contexto: los summaries de los padres, armados por Hermes
+ctx = k.build_worker_context(conn, task_id)               # :10582
+
+# 4. Invocar el binario NOSOTROS, con el contrato como parámetro del CLI
+out = run_backend(task.runtime, goal=ctx, schema=AGENT_ADAPTER_OUTPUT)
+
+# 5. Validar del lado nuestro (§5: Hermes valida forma, no intención)
+# 6. Cerrar
+k.complete_task(conn, task_id, summary=out.summary, ...)  # :5544
+```
+
+Con `heartbeat_claim` (:4879) en un hilo mientras corre el paso 4, para que
+`release_stale_claims` no lo reclame en una invocación larga (`agy` tardó
+124.8s en la Tarea 5).
+
+Lo único que ORQUESTER escribe de nuevo es `run_backend`. Todo lo demás es API
+de Hermes.
+
+### `run_backend`: una tabla, no una jerarquía
+
+Por §4.1, los tres CLIs difieren en cómo aceptan el contrato:
+
+| Runtime | Comando | Contrato | Dónde está la respuesta |
+|---|---|---|---|
+| `antigravity` | `agy -p <goal> --output-format json --json-schema <ruta>` | **Nativo** | `structured_output` (nunca `response`) |
+| `claude-code` | `claude -p <goal> --output-format json --json-schema <ruta>` | **Nativo** | salida JSON |
+| `opencode` | `opencode run <goal> --format json` | **En el texto del goal** | concatenar los eventos `type:"text"` del JSONL |
+| `hermes` | no aplica | `output_schema` de la card | lo maneja el dispatcher de Hermes |
+
+Tres entradas de tabla con `(argv, parser)`. No hace falta una clase por
+backend: es el mismo `subprocess` con distinto argv y distinto parser de
+salida.
+
+Reglas que salen de la verificación, no negociables:
+
+- **El schema va en archivo, no inline.** El escapado inline se rompe en
+  PowerShell; los tres CLIs aceptan ruta (§Tareas 3-5).
+- **Nunca juzgar por exit code.** `agy -p` falló con `EXIT=0` (§4.1). El
+  veredicto sale de parsear la salida.
+- **El goal nombra el backend igual.** Cuesta una línea y es la diferencia
+  observada entre las Tareas 3-5 y la 6. Cinturón además de tirantes.
+- **Denylist de flags de bypass** (`--dangerously-skip-permissions` y
+  equivalentes). El compilador los rechaza; el permiso se concede explícito por
+  nodo. Un worker de Hermes escaló solo a ese flag (§4.1); el nuestro no puede.
+
+### Guardrail de defensa en profundidad
+
+Los perfiles de Hermes son HERMES_HOME independientes con su propio
+`config.yaml` y su bloque `hooks:` (`hermes_cli/profiles.py:4`). Un hook
+`pre_tool_call` puede **bloquear** una llamada (`decision: block`, o exit 2 —
+`agent/shell_hooks.py:44-56`).
+
+Sirve para lo que un hook sabe hacer —negar—, no para forzar: un hook en el
+perfil de los workers nativos que bloquee `claude|opencode|agy` con flags de
+bypass. Si un worker de Hermes vuelve a escalar solo, se corta ahí. No
+reemplaza al diseño de arriba, lo respalda.
+
+### Alternativas descartadas
+
+| Alternativa | Por qué no |
+|---|---|
+| Inyectar el backend en el texto del goal, y nada más | Es lo que hacen las Tareas 3-5: funcionó 3 de 3, pero depende del modelo. Sugerencia, no garantía. Se conserva **además** del diseño, no en su lugar. |
+| Un perfil Hermes por backend con `agent.system_prompt` que fuerce el binario | Más fuerte que el goal, sigue siendo persuasión. Y multiplica HERMES_HOME por backend. |
+| Envolver cada CLI como cliente ACP (molde `agent/copilot_acp_client.py`) | El backend externo pasa a ser *el modelo* del nodo. Elegante y mucho más caro. Además §11 desaconseja `external_process`. Reevaluar si hace falta streaming en vivo por nodo. |
+| Forkear Hermes para que `skills` seleccione el ejecutor | Rompe la regla de "pinear por versión, sin fork" (§1). El punto de extensión ya existe. |
+
+### Lo que este diseño todavía no prueba
+
+Que dos dispatchers concurrentes sobre la misma SQLite no se pisan.
+`claim_task` es atómico (`BEGIN IMMEDIATE`, devuelve `None` si ya estaba
+reclamado) y ese es el argumento, pero **no está ejecutado**. Antes de
+construir sobre esto: un test que corra el dispatcher de Hermes y el de
+ORQUESTER en paralelo sobre un board con nodos de las dos clases, y verifique
+que ninguna card se ejecuta dos veces.
+
+Nota operativa: toda conexión al board emite la advertencia de corrupción WAL
+de SQLite 3.50.4 y degrada a `journal_mode=DELETE`. Con dos escritores
+concurrentes eso importa — verificar el modo efectivo en ese test.
