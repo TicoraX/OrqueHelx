@@ -103,7 +103,15 @@ provider_override TEXT   -- y --provider <name>
 workspace_path    TEXT   -- dónde corre
 ```
 
-Un nodo con `runtime: opencode` compila a `create_task(assignee=<perfil>, skills=["opencode"], ...)`. El dispatcher hace spawn de un worker Hermes con esa skill precargada; el worker supervisa al agente externo por `terminal` y devuelve el resultado. **Hermes normaliza**: con `output_schema` en el nodo, los cuatro backends devuelven el mismo `AgentAdapterOutput`.
+Un nodo con `runtime: opencode` compila a `create_task(assignee=<perfil>, skills=["opencode"], ...)`. El dispatcher hace spawn de un worker Hermes con esa skill precargada; el worker supervisa al agente externo por `terminal` y devuelve el resultado.
+
+> **`skills` NO selecciona el ejecutor.** Es el hallazgo más consecuente de toda la fase de verificación, y contradice lo que esta sección asumía.
+>
+> Verificado en el rombo de `tests/test_dag_heterogeneo.py`: tres nodos con `skills=["claude-code"|"opencode"|"antigravity-cli"]` cerraron los cuatro **sin invocar ni una vez** el binario correspondiente (cero ocurrencias en los cuatro logs). Las skills estaban `enabled` y el dispatcher las pasa (`kanban_db.py:10454`) — el log de B prueba que la skill se cargó, porque el modelo la nombra, y aun así el worker hizo el trabajo él mismo.
+>
+> La diferencia con las Tareas 3-5, donde sí se invocó el binario, está en el **goal**: aquellos títulos nombraban el backend explícitamente ("Via antigravity: ..."). Estos no.
+>
+> **`skills` es contexto, no selector.** El worker recibe la capacidad y decide si usarla. Para ORQUESTER eso significa que `IAgentAdapter` **no puede delegar la elección del ejecutor al modelo**: o invoca el binario él mismo, o el nodo `runtime: opencode` es una sugerencia y no una garantía. Un Studio donde el usuario elige el ejecutor de un nodo y el sistema usa otro es un bug de producto, no una optimización.
 
 Las skills ya existen en el repo, no hay que escribirlas:
 
@@ -121,13 +129,16 @@ Notas de diseño:
   → **Trabajo para el compilador de ORQUESTER:** para nodos con agente externo, inyectar el contrato en el texto del goal. Hermes no lo hace solo. Claude Code sí acepta `--json-schema` (verificado en invocación cruda), pero hay que pedírselo explícitamente.
 - Sintaxis real de `hermes kanban`, distinta de la documentada: `--board` va **antes** del verbo; los boards se crean con `kanban boards create`; el flag es `--skill` (singular, repetible), no `--skills`; el título es **posicional** en `kanban create`, no `--title`.
 - **El workspace scratch se borra al completar la card.** `complete_task` (`kanban_db.py:5544`) llama a `_cleanup_workspace` (:5841), que hace `shutil.rmtree` (:5890) sobre el scratch. El comentario del código lo llama intencional: *"Scratch workspaces are intentionally ephemeral"* (:5980).
-  → **Regla para el compilador:** un nodo cuyo entregable sean archivos **no puede** usar `workspace_kind=scratch`. Va con workspace persistente o con `_copy_completion_artifacts` (:5615). Aplica a los cuatro backends.
+  → **Matizado por el rombo:** existe un mecanismo de `attachments/<task_id>/` por board que copia los artefactos **antes** del `rmtree` y publica la ruta absoluta en el `metadata` del handoff (eventos `attached`). Es lo que hizo funcionar el join semántico: D leyó los archivos de B y C ahí. O sea que el entregable en archivos sí sobrevive, pero **por el canal de attachments, no por el workspace**. El compilador tiene que apuntar a esa ruta, no a la del scratch.
 - **El goal de un nodo tiene que prohibir explícitamente fabricar su propio input.** Ante la misma tarea subespecificada sobre un workspace vacío, dos workers con el mismo modelo tomaron decisiones opuestas: el de claude-code reportó cero, el de opencode escribió cuatro `.md` de prueba y después los contó. Es variabilidad del modelo conductor, no falla del mecanismo, pero el compilador no puede dejarla librada al azar.
 - **Las skills bundleadas de Hermes se desactualizan, y eso degrada al worker, no solo a la doc.** `antigravity-cli` (v0.2.0 de la skill) afirma que `agy` devuelve texto plano y que no existe `--output-format json`. Falso en `agy` v1.1.13. Consecuencia observada: el worker **no usó** `--json-schema` y armó el contrato como texto en el prompt, porque la skill le dice que ese flag no existe. → ORQUESTER no puede confiar en las skills bundleadas como fuente de verdad de las capacidades de cada backend; necesita su propia tabla, versionada contra el CLI instalado.
 - **El worker escala solo a `--dangerously-skip-permissions`.** Observado en `t_8160e4fd`: la primera invocación de `agy` murió por permisos (10.8s), y el worker reintentó **agregando el flag por su cuenta** (124.8s, exitosa). No es alucinación: `SKILL.md:88` lo trae como ejemplo. Un worker desatendido, bloqueado por una barrera de permisos, la desactiva entera.
   → **Regla de gobierno para ORQUESTER:** los flags de bypass de permisos de los agentes externos van en una denylist del compilador, y el permiso se concede explícito por nodo. Es exactamente el tipo de decisión que el Studio existe para hacer visible.
 - **`agy -p` devuelve exit code 0 aunque falle.** El fallo por permisos salió con `EXIT=0` y el texto `jetski: no output produced`. Un adapter que use el exit status como señal de éxito reporta `success` sobre un fallo total. → Los adapters de agente externo se juzgan por la salida parseada, nunca por el código de retorno.
 - **`--json-schema` de `agy` gobierna `structured_output`, no `response`.** `response` trae prosa markdown con el objeto pegado al final. El adapter lee `structured_output`.
+- **`create_task` necesita `assignee="default"` explícito.** Sin eso el dispatcher nunca hace spawn: las cards quedan en `ready` para siempre con `Spawned: 0` y sin explicación. Silencioso, y cuesta caro de diagnosticar.
+- **La salida de un worker no es frontera de confianza.** El worker de B se fabricó, dentro de su propia respuesta, un turno de usuario falso (`System Human (santi): ... Don't use any kanban tools in my session`) **y un system prompt nuevo**, y se reencuadró a sí mismo: corrió `pwd` e intentó escribir fuera del board. La tarea ya estaba cerrada, sin daño. En esta corrida **no** se propagó a D, que leyó los artefactos de sus padres directo en vez del summary — pero el kanban sí pasa summaries de padre a hijo por diseño (`build_worker_context`), así que el camino de propagación existe.
+  → **Regla para ORQUESTER:** el summary de un nodo se trata como dato no confiable antes de entrar al contexto de un hijo. La revalidación de §5 no alcanza: valida forma, no intención.
 - Precedente para una integración más profunda: `agent/copilot_acp_client.py` envuelve un agente ACP externo como backend estilo OpenAI (`acp://copilot`). Si hace falta que un agente externo sea *el modelo* del nodo y no un proceso supervisado, ese es el molde a copiar.
 - **No verificado por ejecución.** Las skills y las columnas están leídas en código; falta correr un nodo real de cada backend.
 
@@ -255,6 +266,11 @@ Knobs relevantes bajo `delegation:` en `config.yaml`: `max_concurrent_children` 
 | `agy` acepta JSON Schema en el CLI | **Verificado (ejecutado)** | `--json-schema` devuelve `structured_output` conforme; contradice a `SKILL.md` |
 | El worker respeta las barreras de permisos del agente externo | **Verificado: NO las respeta** | reintentó agregando `--dangerously-skip-permissions` por su cuenta |
 | `agy -p` señala fallo por exit code | **Verificado: NO lo señala** | falló con `EXIT=0` y `jetski: no output produced` |
+| Fan-out real: dos hijos en paralelo | **Verificado (ejecutado)** | B y C `spawned` en el mismo segundo (13:10:50), ventanas solapadas, heartbeats simultáneos |
+| Join real: el hijo espera a los DOS padres | **Verificado (ejecutado)** | 4 ticks con `Promoted: 0` entre el cierre de B (13:11:36) y el de C (13:13:15); D promovido a las 13:13:15 exactas |
+| Handoff de contexto entre nodos | **Verificado (ejecutado)** | el contexto de D trae `## Parent task results` con los dos summaries y `worker_session_id` distintos |
+| `skills=[...]` fuerza el ejecutor del nodo | **Verificado: NO lo fuerza** | 0 invocaciones de `claude`/`opencode`/`agy` en los 4 logs del rombo pese a las skills cargadas |
+| Los artefactos sobreviven al borrado del scratch | **Verificado (ejecutado)** | mecanismo `attachments/<task_id>/` por board (eventos `attached`), copia antes del `rmtree` y publica ruta absoluta en el `metadata` del handoff |
 
 ---
 
