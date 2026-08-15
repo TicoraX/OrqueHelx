@@ -117,7 +117,9 @@ Las skills ya existen en el repo, no hay que escribirlas:
 También vienen `codex`, `openhands`, `grok`, `blackbox` y `computer-use` con el mismo patrón.
 
 Notas de diseño:
-- Claude Code acepta el JSON Schema en la propia invocación: para esos nodos, empujar `AgentAdapterOutput` hacia abajo en vez de validar después.
+- **El `output_schema` de la card NO se propaga al agente externo.** Verificado: el worker invocó `claude -p '...' --allowedTools 'Read,Bash' --max-turns 5` sin `--output-format json --json-schema`, y tradujo la respuesta al contrato por su cuenta. El comando lo improvisa el modelo del worker; la skill no lo fija.
+  → **Trabajo para el compilador de ORQUESTER:** para nodos con agente externo, inyectar el contrato en el texto del goal. Hermes no lo hace solo. Claude Code sí acepta `--json-schema` (verificado en invocación cruda), pero hay que pedírselo explícitamente.
+- Sintaxis real de `hermes kanban`, distinta de la documentada: `--board` va **antes** del verbo; los boards se crean con `kanban boards create`; el flag es `--skill` (singular, repetible), no `--skills`; el título es **posicional** en `kanban create`, no `--title`.
 - Precedente para una integración más profunda: `agent/copilot_acp_client.py` envuelve un agente ACP externo como backend estilo OpenAI (`acp://copilot`). Si hace falta que un agente externo sea *el modelo* del nodo y no un proceso supervisado, ese es el molde a copiar.
 - **No verificado por ejecución.** Las skills y las columnas están leídas en código; falta correr un nodo real de cada backend.
 
@@ -237,7 +239,9 @@ Knobs relevantes bajo `delegation:` en `config.yaml`: `max_concurrent_children` 
 | Un worker real ejecuta una tarea del board | **Verificado (ejecutado)** | card `t_1d37a781`, run 3: claimed → spawned → completed en <1 min |
 | `task_events` sirve como traza de observabilidad | **Verificado (ejecutado)** | 28 eventos: claims, spawns con PID, heartbeats, reclaims con motivo, completion |
 | Cumplimiento empírico del `output_schema` | **Pendiente (diferido a propósito)** | 3 rondas sin cerrar por el bug de §11. La conclusión de diseño ya está en §5 y no depende de esta medición |
-| Un nodo delega a OpenCode / Antigravity / Claude Code | **Pendiente** | Siguiente tarea del plan |
+| Un nodo delega de verdad a Claude Code | **Verificado (ejecutado)** | card `t_54ddac57`: el worker corrió `claude -p ...` en 13.1s, resultado contrastado contra el filesystem |
+| El `output_schema` llega al agente externo | **Verificado: NO llega** | el worker invocó sin `--json-schema`; el compilador debe inyectar el contrato en el goal |
+| Un nodo delega a OpenCode / Antigravity | **Pendiente** | Tareas 4 y 5 del plan |
 
 ---
 
