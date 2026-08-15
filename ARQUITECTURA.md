@@ -113,6 +113,8 @@ Un nodo con `runtime: opencode` compila a `create_task(assignee=<perfil>, skills
 >
 > **`skills` es contexto, no selector.** El worker recibe la capacidad y decide si usarla. Para ORQUESTER eso significa que `IAgentAdapter` **no puede delegar la elección del ejecutor al modelo**: o invoca el binario él mismo, o el nodo `runtime: opencode` es una sugerencia y no una garantía. Un Studio donde el usuario elige el ejecutor de un nodo y el sistema usa otro es un bug de producto, no una optimización.
 
+**Frontera de orquestación** (del propio `SKILL.md` de `antigravity-cli`, y vale para los tres): los agentes externos son **backends de ejecución, no primitivas de orquestación**. `agy`, `claude` y `opencode` nunca son una card del board. La card es siempre un nodo de ORQUESTER con su carril; el agente externo es el método con que ese nodo hace el trabajo. Poner el agente externo como card significaría dos schedulers compitiendo por el mismo grafo, cada uno con su propia idea de las dependencias.
+
 Las skills ya existen en el repo, no hay que escribirlas:
 
 | Backend | Skill | Invocación headless | Salida estructurada |
@@ -240,6 +242,14 @@ Knobs relevantes bajo `delegation:` en `config.yaml`: `max_concurrent_children` 
 
 ## 10. Estado de verificación
 
+**33 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **seis
+filas "Verificado: NO"**: supuestos de diseño que parecían ciertos leyendo el
+código de Hermes y que la ejecución desmintió. Cada una habría sido un bug en
+producción, y ninguna se ve sin correr el sistema.
+
+Convención: **Verificado (ejecutado)** = hay salida cruda pegada en `tests/`.
+**Verificado (código)** = leído y citado con archivo:línea, sin ejecutar.
+
 | Afirmación | Estado | Evidencia |
 |---|---|---|
 | `AgentAdapterOutput` sirve como `output_schema` | **Verificado** | 7/7 checks, `tests/test_contract.py` |
@@ -261,7 +271,7 @@ Knobs relevantes bajo `delegation:` en `config.yaml`: `max_concurrent_children` 
 | Un nodo delega de verdad a Claude Code | **Verificado (ejecutado)** | card `t_54ddac57`: el worker corrió `claude -p ...` en 13.1s, resultado contrastado contra el filesystem |
 | El `output_schema` llega al agente externo | **Verificado: NO llega** | el worker invocó sin `--json-schema`; el compilador debe inyectar el contrato en el goal |
 | Un nodo delega de verdad a OpenCode | **Verificado (ejecutado)** | card `t_4477fc20`: el worker corrió `opencode run ...` en 14.7s; corroborado fuera de Hermes con `opencode session list` y el mtime de `opencode.db` |
-| El workspace scratch sobrevive a la card | **Verificado: NO sobrevive** | `_cleanup_workspace` hace `rmtree` dentro de `complete_task` (`kanban_db.py:5544`, `:5890`) |
+| El **workspace** scratch sobrevive a la card | **Verificado: NO sobrevive** | `_cleanup_workspace` hace `rmtree` dentro de `complete_task` (`kanban_db.py:5544`, `:5890`). Ojo: los **artefactos** sí sobreviven, por otro canal — ver la fila de `attachments/` |
 | Un nodo delega de verdad a Antigravity | **Verificado (ejecutado)** | card `t_8160e4fd`: `agy -p ...` en 124.8s; `command -v agy` resolvió, sin problema de PATH |
 | `agy` acepta JSON Schema en el CLI | **Verificado (ejecutado)** | `--json-schema` devuelve `structured_output` conforme; contradice a `SKILL.md` |
 | El worker respeta las barreras de permisos del agente externo | **Verificado: NO las respeta** | reintentó agregando `--dangerously-skip-permissions` por su cuenta |
