@@ -233,6 +233,40 @@ Knobs relevantes bajo `delegation:` en `config.yaml`: `max_concurrent_children` 
 | El kanban rechaza ciclos | **Verificado (ejecutado)** | `_would_cycle`, paso 6 |
 | Skills de claude-code / opencode / antigravity existen | **Verificado (código)** | `skills/autonomous-ai-agents/`, `optional-skills/` |
 | `tasks` soporta perfil/skills/modelo por nodo | **Verificado (código)** | `kanban_db.py:1333+`, `:2579`, `:2590` |
-| E2E con LLM real (`hermes chat -q`) | **Pendiente** | Requiere API key; no hay ninguna en el entorno |
-| Un worker real ejecuta una tarea del board | **Pendiente** | Depende del e2e anterior |
-| Un nodo delega a OpenCode / Antigravity / Claude Code | **Pendiente** | Requiere los binarios instalados y autenticados |
+| E2E con LLM real (`hermes chat -q`) | **Verificado (ejecutado)** | Smoke test verde con copilot y con nous |
+| Un worker real ejecuta una tarea del board | **Verificado (ejecutado)** | card `t_1d37a781`, run 3: claimed → spawned → completed en <1 min |
+| `task_events` sirve como traza de observabilidad | **Verificado (ejecutado)** | 28 eventos: claims, spawns con PID, heartbeats, reclaims con motivo, completion |
+| Cumplimiento empírico del `output_schema` | **Pendiente (diferido a propósito)** | 3 rondas sin cerrar por el bug de §11. La conclusión de diseño ya está en §5 y no depende de esta medición |
+| Un nodo delega a OpenCode / Antigravity / Claude Code | **Pendiente** | Siguiente tarea del plan |
+
+---
+
+## 11. Restricción operativa: proveedores `external_process`
+
+**Descubierto por experimento controlado**, no por lectura de código.
+
+Con `provider: copilot`, todo agente **hijo** (worker del kanban o
+`delegate_task`) se cuelga en `Initializing agent...` con CPU en ~0 y nunca
+progresa. El agente de primer nivel (`hermes chat -q`) funciona normal.
+
+Evidencia: misma card `t_1d37a781`, misma máquina, tres corridas consecutivas.
+
+```
+run 1 (copilot)  heartbeats 12 min, sin avance   -> reclaim manual
+run 2 (copilot)  mismo patrón, 3.5 min           -> reclaim manual
+run 3 (nous)     claimed, spawned, completed     -> mismo minuto
+```
+
+Causa: `copilot` se declara con `auth_type="external_process"`
+(`hermes_cli/auth.py:301`) y obtiene el token corriendo `gh auth token`. En un
+proceso hijo sin terminal, esa llamada bloquea indefinidamente. `nous` guarda
+el token en archivo y no lanza subprocesos.
+
+**Regla para ORQUESTER:** el supervisor no puede usar proveedores de tipo
+`external_process` (`copilot`, `copilot-acp`). Verificar el `auth_type` del
+proveedor configurado al arranque y rechazarlo si es `external_process`, con
+un error explícito — el síntoma natural es un cuelgue silencioso, que es la
+peor forma de fallar.
+
+Sin confirmar: si otros proveedores `external_process` fallan igual, y si el
+cuelgue desaparece con backend de terminal Docker en vez de `local`.
