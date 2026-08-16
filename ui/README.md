@@ -37,4 +37,19 @@ no tiene autenticación. No exponerlo a la red.
 Los nodos `hermes` los ejecuta el dispatcher de Hermes (hay que tenerlo
 corriendo aparte); el resto los ejecuta el dispatcher de ORQUESTER (§12).
 
+## Traza por nodo
+
+Clic en un nodo abre su traza: los intentos con su `outcome` y duración, el
+error de cada uno si falló, el tipo de bloqueo, y la secuencia de eventos del
+kanban (`created`, `promoted`, `claimed`, `blocked`, `unblocked`,
+`block_loop_detected`, `completed`).
+
+![Traza](traza.png)
+
+_Un nodo que falló dos veces y terminó en `triage`: el reintento se agotó y
+Hermes lo sacó del bucle para que decida un humano._
+
+Es la "observabilidad como grafo" de `IDEAS.md` §1: se lee la traza en el mismo
+dibujo donde se diseñó el flujo, sin traducir un log a un grafo mental.
+
 Los grafos guardados van a `ui/grafos/*.json`.

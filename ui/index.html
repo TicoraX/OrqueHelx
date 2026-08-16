@@ -5,7 +5,7 @@
   :root {
     --bg:#14161a; --panel:#1c1f26; --linea:#2c313b; --texto:#e6e8ec;
     --tenue:#8b93a1; --acento:#5b9dd9;
-    --todo:#4a5160; --ready:#c9a227; --running:#3d8bcd; --done:#3f9d52; --failed:#c0504d;
+    --todo:#4a5160; --ready:#c9a227; --running:#3d8bcd; --done:#3f9d52; --failed:#c0504d; --triage:#d1743a;
   }
   * { box-sizing:border-box; }
   body { margin:0; height:100vh; display:flex; background:var(--bg); color:var(--texto);
@@ -38,6 +38,13 @@
   .nodo.sel rect { stroke:#fff; stroke-width:2.5; }
   .nodo text { pointer-events:none; font-size:12px; }
   .nodo .rt { font-size:10px; fill:#0e1117; opacity:.75; }
+  #traza { font-size:11.5px; max-height:300px; overflow-y:auto; }
+  #traza .ev { display:flex; gap:7px; padding:2px 0; border-bottom:1px solid #232833; }
+  #traza .k { color:var(--acento); flex:0 0 118px; }
+  #traza .d { color:var(--tenue); word-break:break-word; }
+  #traza .intento { padding:6px 8px; margin-bottom:6px; border-radius:5px;
+                    background:#141720; border:1px solid var(--linea); }
+  #traza .mal { border-color:#7a3b39; }
   #resumen { font-size:12px; color:var(--tenue); border-top:1px solid var(--linea);
              padding-top:10px; white-space:pre-wrap; }
 </style>
@@ -99,8 +106,14 @@
       <span><i style="background:var(--running)"></i>corriendo</span>
       <span><i style="background:var(--done)"></i>hecha</span>
       <span><i style="background:var(--failed)"></i>falló</span>
+      <span><i style="background:#d1743a"></i>triage</span>
     </div>
     <div id="resumen"></div>
+  </div>
+
+  <div id="bloqueTraza" style="display:none;">
+    <h2>Traza del nodo</h2>
+    <div id="traza"></div>
   </div>
 
   <div class="ayuda">
@@ -113,13 +126,14 @@
 
 <script>
 const COLOR = { todo:"#4a5160", ready:"#c9a227", running:"#3d8bcd", blocked:"#4a5160",
-                done:"#3f9d52", failed:"#c0504d", review:"#8e6bc0", cancelled:"#3a3f4a" };
+                done:"#3f9d52", failed:"#c0504d", review:"#8e6bc0", cancelled:"#3a3f4a",
+                triage:"#d1743a" };
 const RT_COLOR = { hermes:"#8e9aab", "claude-code":"#d0873f", opencode:"#4f9c8a",
                    antigravity:"#7a6fc4" };
 const A = 196, ALTO = 60;
 // Rellenos claros que piden tinta oscura. Sin esto el texto del nodo se
 // pierde justo cuando mas importa: mientras el flujo corre.
-const CLAROS = new Set(["ready"]);
+const CLAROS = new Set(["ready", "triage"]);
 const tinta = est => !est ? "#e6e8ec" : (CLAROS.has(est) ? "#14161a" : "#f2f5f8");                        // ancho/alto de un nodo
 
 let grafo = { board:"mi-flujo", nodos:[], aristas:[] };
@@ -206,7 +220,7 @@ function pintar() {
 
     g.onmousedown = e => {
       e.stopPropagation();
-      sel = n.id; refrescarEditor();
+      sel = n.id; refrescarEditor(); cargarTraza();
       if (e.shiftKey) enlazando = n.id;
       else arrastre = { id:n.id, dx:e.offsetX - n.x, dy:e.offsetY - n.y };
       pintar();
@@ -234,6 +248,33 @@ function resumir() {
   return `${n} nodo${n===1?"":"s"}, ${a} dependencia${a===1?"":"s"}` +
          (detalle ? `\n${detalle}` : "\nsin compilar");
 }
+
+async function cargarTraza() {
+  const tid = ids[sel];
+  const caja = $("#bloqueTraza");
+  if (!tid) { caja.style.display = "none"; return; }
+  const { datos } = await api(`/api/traza?board=${encodeURIComponent(grafo.board)}&task=${tid}`);
+  caja.style.display = "block";
+  const hora = t => new Date(t * 1000).toLocaleTimeString();
+  const intentos = (datos.intentos || []).map(i => `
+    <div class="intento ${i.outcome && i.outcome !== "completed" ? "mal" : ""}">
+      <b>intento ${i.n}</b> · ${i.outcome || "en curso"}
+      ${i.fin ? ` · ${i.fin - i.inicio}s` : ""}
+      ${i.resumen ? `<div class="d">${esc(i.resumen)}</div>` : ""}
+      ${i.error ? `<div class="d">${esc(i.error)}</div>` : ""}
+    </div>`).join("");
+  const eventos = (datos.eventos || []).map(e =>
+    `<div class="ev"><span class="k">${esc(e.kind)}</span>
+       <span class="d">${hora(e.cuando)} ${esc(e.detalle)}</span></div>`).join("");
+  $("#traza").innerHTML =
+    (datos.block_kind ? `<div class="intento mal">bloqueo: <b>${esc(datos.block_kind)}</b></div>` : "") +
+    (intentos || "") + (eventos || '<div class="d">sin eventos todavía</div>');
+}
+
+// Todo lo que entra al panel viene de la base: titulos, summaries y payloads
+// los escribe un agente, asi que no se inyectan como HTML.
+const esc = t => String(t).replace(/[&<>"]/g, c =>
+  ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 
 function refrescarEditor() {
   const n = buscar(sel);
@@ -298,7 +339,7 @@ $("#correr").onclick = async () => {
 async function refrescarEstado() {
   if (!Object.keys(ids).length) return;
   const { datos } = await api(`/api/estado?board=${encodeURIComponent(grafo.board)}`);
-  estado = datos.tareas || {}; pintar();
+  estado = datos.tareas || {}; pintar(); if (sel) cargarTraza();
 }
 setInterval(refrescarEstado, 2500);
 

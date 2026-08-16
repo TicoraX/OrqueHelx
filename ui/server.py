@@ -48,6 +48,37 @@ def _estado(board: str) -> dict:
     return {"tareas": tareas, "corriendo": board in _corriendo}
 
 
+def _traza(board: str, task_id: str) -> dict:
+    """Traza de un nodo: sus intentos y sus eventos.
+
+    Es la "observabilidad como grafo" de IDEAS §1: en vez de traducir un log a
+    un grafo mental, se lee la traza del nodo en el mismo dibujo donde se
+    diseñó el flujo.
+    """
+    conn = k.connect(board=board)
+    t = k.get_task(conn, task_id)
+    if t is None:
+        return {"error": f"no existe la card {task_id}"}
+    eventos = [
+        {"kind": e.kind, "cuando": e.created_at, "run": e.run_id,
+         # El payload trae PID, motivo del reclaim, error... util y a veces
+         # enorme: se recorta acá y no en el navegador.
+         "detalle": json.dumps(e.payload, ensure_ascii=False)[:220] if e.payload else ""}
+        for e in k.list_events(conn, task_id)
+    ]
+    intentos = [
+        {"n": i + 1, "outcome": r.outcome, "resumen": (r.summary or "")[:300],
+         "error": (getattr(r, "error", None) or "")[:300],
+         "inicio": r.started_at, "fin": r.ended_at}
+        for i, r in enumerate(k.list_runs(conn, task_id))
+    ]
+    return {
+        "titulo": t.title, "estado": t.status, "assignee": t.assignee,
+        "block_kind": t.block_kind, "resultado": (t.result or "")[:600],
+        "intentos": intentos, "eventos": eventos,
+    }
+
+
 def _arrancar(board: str) -> dict:
     if board in _corriendo and _corriendo[board].is_alive():
         return {"ok": False, "motivo": "ya hay un dispatcher corriendo en este board"}
@@ -82,6 +113,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._responder(200, HTML.read_bytes(), "text/html; charset=utf-8")
         if ruta == "/api/estado":
             return self._responder(200, _estado(params.get("board", "orquester")))
+        if ruta == "/api/traza":
+            return self._responder(200, _traza(params.get("board", "orquester"),
+                                               params.get("task", "")))
         if ruta == "/api/grafos":
             return self._responder(200, {"grafos": sorted(p.stem for p in GRAFOS.glob("*.json"))})
         if ruta == "/api/grafo":
