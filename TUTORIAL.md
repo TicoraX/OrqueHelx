@@ -248,6 +248,19 @@ uv run --python 3.11 --with jsonschema python ../tests/test_mcp_export.py
 Los que aceptan `--e2e` además ejecutan agentes de verdad y tardan minutos:
 `test_rebanada_vertical.py` y `test_mcp_export.py`.
 
+### En Linux
+
+```bash
+sh tests/linux.sh          # en Windows: MSYS_NO_PATHCONV=1 sh tests/linux.sh
+```
+
+Corre la suite dentro de un contenedor `python:3.11-slim`, más la resolución de
+binarios con un ejecutable plano — el único camino que la lógica de shims de
+Windows (`.cmd`, `.ps1`) no ejercita.
+
+Los e2e con agentes reales solo corren donde `claude`, `opencode` y `agy` estén
+instalados y autenticados.
+
 ---
 
 ## 9.1 ¿Corre en otra máquina?

@@ -277,7 +277,7 @@ Knobs relevantes bajo `delegation:` en `config.yaml`: `max_concurrent_children` 
 
 ## 10. Estado de verificación
 
-**49 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **nueve
+**50 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **nueve
 filas "Verificado: NO"**: supuestos de diseño que parecían ciertos leyendo el
 código de Hermes y que la ejecución desmintió. Cada una habría sido un bug en
 producción, y ninguna se ve sin correr el sistema.
@@ -328,6 +328,7 @@ Convención: **Verificado (ejecutado)** = hay salida cruda pegada en `tests/`.
 | Los nodos del carril corren en paralelo | **Verificado (ejecutado)** | 3 nodos de ~2s en 2.9s; con `MAX_PARALELO=2`, 4 nodos en 4.3s |
 | El consumo por nodo se puede contabilizar | **Verificado (ejecutado)** | `tests/test_consumo.py` con las formas reales de los 3 CLIs; un flujo de 3 nodos dio 99.134 tokens y US$ 0,2841 equivalente API |
 | Todos los backends informan costo | **Verificado: NO** | `agy` no informa medidor: corre por suscripción. `None` se cuenta aparte, nunca como cero |
+| La suite corre en Linux | **Verificado (ejecutado)** | `tests/linux.sh` en `python:3.11-slim`: 7/7 más la resolución de binario con un ejecutable plano |
 | Los reintentos terminan solos | **Verificado (ejecutado)** | al agotarse, Hermes enruta a `triage` (`BLOCK_RECURRENCE_LIMIT`) |
 | Un fallo permanente se reintenta | **Verificado: NO** | se bloquea como `capability` y `reintentar()` lo ignora |
 | Un flujo se publica como servidor MCP | **Verificado (ejecutado)** | `tests/test_mcp_export.py`: `initialize`/`tools/list`/`tools/call` por stdio; el `tools/call` ejecutó el flujo y devolvió el resultado de las hojas |
