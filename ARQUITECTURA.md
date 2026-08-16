@@ -277,7 +277,7 @@ Knobs relevantes bajo `delegation:` en `config.yaml`: `max_concurrent_children` 
 
 ## 10. Estado de verificación
 
-**33 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **seis
+**35 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **seis
 filas "Verificado: NO"**: supuestos de diseño que parecían ciertos leyendo el
 código de Hermes y que la ejecución desmintió. Cada una habría sido un bug en
 producción, y ninguna se ve sin correr el sistema.
@@ -320,6 +320,8 @@ Convención: **Verificado (ejecutado)** = hay salida cruda pegada en `tests/`.
 | `assignee = NULL` sirve como carril externo | **Verificado: NO sirve** | paso 2: `default_assignee` lo secuestra y lo lanza igual |
 | `claim_task` es atómico bajo carrera | **Verificado (ejecutado)** | paso 3: 8 claimers con conexiones propias, exactamente 1 ganador |
 | Los dos dispatchers coexisten sin pisarse | **Verificado (ejecutado)** | paso 4: 4 reclamos + 3 ticks, cero solapamiento, cero doble ejecución |
+| `run_backend` cumple el contrato con los 3 CLIs | **Verificado (ejecutado)** | `tests/test_rebanada_vertical.py` parte A: parsers contra las formas reales, denylist, contrato |
+| Un nodo externo alimenta a otro nodo externo | **Verificado (ejecutado)** | parte B: cadena `opencode -> opencode`, el hijo devolvió el valor del padre |
 
 ---
 
@@ -438,6 +440,10 @@ Con `heartbeat_claim` (:4879) en un hilo mientras corre el paso 4, para que
 
 Lo único que ORQUESTER escribe de nuevo es `run_backend`. Todo lo demás es API
 de Hermes.
+
+**Implementado y verificado punta a punta** en `dispatcher/` (`3616f51`), con `tests/test_rebanada_vertical.py`: cadena de dos nodos `opencode` sobre un board real, donde el hijo devolvió el valor que le pasó el padre. Es lo que la Tarea 6 no había podido probar — ahí los nodos declaraban backend externo pero los ejecutó Hermes.
+
+**El dispatcher se escribe en Python, no en TypeScript.** El loop es todo llamadas a `kanban_db`; reescribirlo en TS obliga a reimplementar el protocolo de claim contra la misma SQLite (`BEGIN IMMEDIATE`, TTL, invariante de padres). Seis supuestos razonables sobre Hermes ya resultaron falsos en §10; un claim protocol reescrito a mano sería el séptimo, y ese corrompe estado. NestJS lo supervisa como proceso.
 
 ### `run_backend`: una tabla, no una jerarquía
 
