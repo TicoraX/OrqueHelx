@@ -2,6 +2,12 @@
 # Hermes es upstream ajeno (NousResearch, MIT) y avanza por su cuenta: sin este
 # pin, las afirmaciones verificadas pasan a hablar de una version que ya no existe.
 # `tests/test_pin_hermes.py` avisa cuando algo se corrio.
-commit=eb20188d2e5c40419c49f8f463061b2342945721
-fecha=2026-08-14
+#
+# Historial de pines:
+#   eb20188 (2026-08-14) -> b7f6280 (2026-08-15): 586 commits upstream, cero
+#     roturas. Suite completa + los dos e2e + un grafo mixto con el CLI instalado.
+#     Lo unico que cambio en lo nuestro fue `kanban_db.py`, y fue aditivo
+#     (`_schema_is_present`, #83445).
+commit=b7f6280259057f04ab3da91b7b112b3ef75e6748
+fecha=2026-08-15
 cli=v0.20.1

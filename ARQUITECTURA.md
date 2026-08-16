@@ -344,6 +344,16 @@ verificado en §10 lo está **contra un commit concreto**, registrado en
 `HERMES_PIN` y comprobado por `tests/test_pin_hermes.py`. Sin ese registro, la
 tabla pasaría a hablar de una versión que ya no existe sin que nada avise.
 
+**Primera actualización, como dato:** de `eb20188` a `b7f6280` fueron **586
+commits de upstream en dos días** y **no se rompió nada** — suite completa, los
+dos e2e y un grafo mixto con el CLI instalado. Lo único que cambió en lo que
+usamos fue `kanban_db.py`, y fue aditivo (`_schema_is_present`, #83445).
+
+Eso valida la apuesta de §1 más que cualquier argumento: apoyarse en una
+superficie chica y estable —11 funciones— hace que el ritmo de upstream sea
+irrelevante. Si dependiéramos de sus internals, 586 commits nos habrían pasado
+por encima.
+
 **Hay dos copias de Hermes en juego, y escriben la misma base:**
 
 | Copia | Quién la usa |
