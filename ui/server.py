@@ -9,7 +9,7 @@ pidio.
     uv run --python 3.11 --with jsonschema python ui/server.py
     -> http://127.0.0.1:8765
 """
-import json, sys, threading, traceback
+import json, subprocess, sys, threading, time, traceback
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -80,13 +80,82 @@ def _traza(board: str, task_id: str) -> dict:
     }
 
 
+def _consumo(board: str) -> dict:
+    """Consumo del board: por nodo y agregado.
+
+    Se suma sobre los **runs**, no sobre las tasks: un nodo reintentado gasto en
+    cada intento, y el total del flujo tiene que reflejarlo.
+    """
+    try:
+        conn = k.connect(board=board)
+    except Exception as e:
+        return {"error": str(e)}
+    total = {"entrada": 0, "salida": 0, "total": 0, "cache_lectura": 0,
+             "costo_usd": 0.0, "intentos": 0, "con_costo": 0, "sin_costo": 0}
+    por_nodo = {}
+    for t in k.list_tasks(conn):
+        acum = None
+        for r in k.list_runs(conn, t.id):
+            u = (r.metadata or {}).get("uso")
+            if not u:
+                continue
+            acum = acum or {"entrada": 0, "salida": 0, "total": 0,
+                            "cache_lectura": 0, "costo_usd": None,
+                            "runtime": u.get("runtime"), "intentos": 0}
+            for campo in ("entrada", "salida", "total", "cache_lectura"):
+                acum[campo] += u.get(campo) or 0
+                total[campo] += u.get(campo) or 0
+            acum["intentos"] += 1
+            total["intentos"] += 1
+            if u.get("costo_usd") is not None:
+                acum["costo_usd"] = (acum["costo_usd"] or 0) + u["costo_usd"]
+                total["costo_usd"] += u["costo_usd"]
+                total["con_costo"] += 1
+            else:
+                # Sin costo NO es cero: es un backend que corre por suscripcion
+                # y no informa medidor. Contarlo como 0 mentiria el promedio.
+                total["sin_costo"] += 1
+        if acum:
+            por_nodo[t.id] = acum
+    return {"total": total, "por_nodo": por_nodo}
+
+
+def _quedan_de_hermes(conn) -> bool:
+    """Cards que espera el dispatcher de Hermes, no el nuestro."""
+    propios = {dispatcher.carril(rt) for rt in dispatcher.BACKENDS}
+    return any(t.status in ("todo", "ready", "running")
+               for t in k.list_tasks(conn) if t.assignee not in propios)
+
+
 def _arrancar(board: str) -> dict:
     if board in _corriendo and _corriendo[board].is_alive():
         return {"ok": False, "motivo": "ya hay un dispatcher corriendo en este board"}
 
+    # Los nodos `runtime: hermes` los lanza el dispatcher de Hermes, no el
+    # nuestro (§12). El exportador MCP ya lo tickeaba solo; el boton Ejecutar
+    # no, y obligaba a abrir otra terminal para un flujo mixto. Misma pieza,
+    # mismo comportamiento.
+    hermes = mcp._hermes_bin()
+
+    def _tick_hermes():
+        if not hermes:
+            return
+        try:
+            subprocess.run([hermes, "kanban", "--board", board, "dispatch"],
+                           capture_output=True, timeout=180,
+                           stdin=subprocess.DEVNULL)
+        except Exception:
+            traceback.print_exc()          # que no tumbe el loop del carril propio
+
     def _correr():
         try:
-            dispatcher.correr(board, intervalo=3, hasta_vacio=True)
+            conn = k.connect(board=board)
+            while True:
+                _tick_hermes()
+                hechas = dispatcher.tick(conn, board=board)
+                if not hechas and not dispatcher._queda_trabajo(conn)                         and not _quedan_de_hermes(conn):
+                    return
+                time.sleep(3)
         except Exception:
             traceback.print_exc()
         finally:
@@ -114,6 +183,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._responder(200, HTML.read_bytes(), "text/html; charset=utf-8")
         if ruta == "/api/estado":
             return self._responder(200, _estado(params.get("board", "orquester")))
+        if ruta == "/api/consumo":
+            return self._responder(200, _consumo(params.get("board", "orquester")))
         if ruta == "/api/traza":
             return self._responder(200, _traza(params.get("board", "orquester"),
                                                params.get("task", "")))

@@ -38,6 +38,12 @@
   .nodo.sel rect { stroke:#fff; stroke-width:2.5; }
   .nodo text { pointer-events:none; font-size:12px; }
   .nodo .rt { font-size:10px; fill:#0e1117; opacity:.75; }
+  #consumo { font-size:12px; }
+  #consumo .linea { display:flex; justify-content:space-between; padding:2px 0; }
+  #consumo .val { color:var(--texto); font-variant-numeric:tabular-nums; }
+  #consumo .et { color:var(--tenue); }
+  #consumo .nota { color:var(--tenue); font-size:11px; margin-top:6px;
+                   border-top:1px solid var(--linea); padding-top:6px; }
   #traza { font-size:11.5px; max-height:300px; overflow-y:auto; }
   #traza .ev { display:flex; gap:7px; padding:2px 0; border-bottom:1px solid #232833; }
   #traza .k { color:var(--acento); flex:0 0 118px; }
@@ -110,6 +116,11 @@
       <span><i style="background:#d1743a"></i>triage</span>
     </div>
     <div id="resumen"></div>
+  </div>
+
+  <div id="bloqueConsumo" style="display:none;">
+    <h2>Consumo</h2>
+    <div id="consumo"></div>
   </div>
 
   <div id="bloqueTraza" style="display:none;">
@@ -349,10 +360,36 @@ $("#exportar").onclick = async () => {
 ${cfg}`, "ok");
 };
 
+const miles = n => (n || 0).toLocaleString("es-AR");
+
+async function cargarConsumo() {
+  const caja = $("#bloqueConsumo");
+  const { datos } = await api(`/api/consumo?board=${encodeURIComponent(grafo.board)}`);
+  const t = datos.total;
+  if (!t || !t.intentos) { caja.style.display = "none"; return; }
+  caja.style.display = "block";
+  const fila = (et, val) =>
+    `<div class="linea"><span class="et">${et}</span><span class="val">${val}</span></div>`;
+  // El costo que informa un CLI es lo que ESE trabajo habria costado por API.
+  // Los backends por suscripcion no informan medidor, y no se cuentan como 0.
+  const costo = t.con_costo
+    ? `US$ ${t.costo_usd.toFixed(4)}` : "—";
+  $("#consumo").innerHTML =
+    fila("tokens", miles(t.total)) +
+    fila("entrada / salida", `${miles(t.entrada)} / ${miles(t.salida)}`) +
+    (t.cache_lectura ? fila("desde cache", miles(t.cache_lectura)) : "") +
+    fila("equivalente API", costo) +
+    fila("intentos", t.intentos) +
+    (t.sin_costo
+      ? `<div class="nota">${t.sin_costo} nodo(s) corrieron por suscripción y no
+         informan medidor: no entran en el equivalente API.</div>` : "");
+}
+
 async function refrescarEstado() {
   if (!Object.keys(ids).length) return;
   const { datos } = await api(`/api/estado?board=${encodeURIComponent(grafo.board)}`);
   estado = datos.tareas || {}; pintar(); if (sel) cargarTraza();
+  cargarConsumo();
 }
 setInterval(refrescarEstado, 2500);
 

@@ -97,10 +97,22 @@ kanban de Hermes resuelve las dependencias.
 | Naranja | `triage` — se agotaron los reintentos, decidí vos |
 
 > **Nodos `runtime: hermes`:** los ejecuta el dispatcher de Hermes, no el de
-> ORQUESTER. Necesitás correr aparte, en otra terminal:
-> ```bash
-> while true; do hermes kanban --board mi-flujo dispatch; sleep 10; done
-> ```
+> ORQUESTER (`ARQUITECTURA.md` §12). El botón Ejecutar tickea **los dos**, así
+> que un flujo mixto no necesita otra terminal. Si el binario de Hermes no está
+> en el `PATH`, configurá `ORQUESTER_HERMES_BIN`.
+
+### Consumo
+
+Debajo del estado aparece cuánto gastó el flujo: tokens totales, entrada,
+salida, cuánto vino de cache, y el **equivalente API** en dólares.
+
+Ese número es lo que ese trabajo *habría costado* pagando por token. Si lo
+corriste con tus suscripciones, tu costo marginal fue cero — la diferencia es
+justamente el argumento de `IDEAS.md` §1.
+
+Los backends que corren por suscripción y no informan medidor (`agy`) se
+cuentan aparte y **no** entran como costo cero: un promedio que los incluyera
+como gratis mentiría.
 
 ---
 

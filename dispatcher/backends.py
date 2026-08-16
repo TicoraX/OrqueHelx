@@ -159,6 +159,87 @@ BACKENDS = {
 }
 
 
+# --- Consumo -----------------------------------------------------------------
+# Formas capturadas de cada CLI, no supuestas:
+#   opencode  step_finish.part -> {"tokens": {total,input,output,cache:{read,write}},
+#                                  "cost": 0.0093}   (varios eventos: se suman)
+#   claude    envelope         -> {"total_cost_usd": .., "usage": {input_tokens,
+#                                  output_tokens, cache_read_input_tokens, ..}}
+#   agy       envelope         -> {"usage": {input_tokens, output_tokens,
+#                                  thinking_tokens, cache_read_tokens, total_tokens}}
+#
+# `agy` NO informa costo, y no es un olvido: corre contra una suscripcion, no
+# contra un medidor. `claude` si informa `total_cost_usd`, que es lo que ese
+# trabajo **habria costado por API** — la comparacion que le da sentido a
+# "corre sobre tus suscripciones" (IDEAS §1).
+
+def _uso_vacio(runtime: str) -> dict:
+    return {"runtime": runtime, "entrada": 0, "salida": 0, "total": 0,
+            "cache_lectura": 0, "costo_usd": None, "turnos": None, "duracion_s": None}
+
+
+def _uso_opencode(stdout: str) -> dict:
+    u = _uso_vacio("opencode")
+    for linea in stdout.splitlines():
+        if not linea.strip().startswith("{"):
+            continue
+        try:
+            parte = (json.loads(linea).get("part") or {})
+        except json.JSONDecodeError:
+            continue
+        tok = parte.get("tokens") or {}
+        if not tok and parte.get("cost") is None:
+            continue
+        u["entrada"] += tok.get("input", 0) or 0
+        u["salida"] += tok.get("output", 0) or 0
+        u["total"] += tok.get("total", 0) or 0
+        u["cache_lectura"] += (tok.get("cache") or {}).get("read", 0) or 0
+        if parte.get("cost") is not None:
+            u["costo_usd"] = (u["costo_usd"] or 0) + parte["cost"]
+    return u
+
+
+def _uso_claude(stdout: str) -> dict:
+    u = _uso_vacio("claude-code")
+    try:
+        o = _primer_objeto(stdout)
+    except BackendError:
+        return u
+    us = o.get("usage") or {}
+    u["entrada"] = us.get("input_tokens", 0) or 0
+    u["salida"] = us.get("output_tokens", 0) or 0
+    u["cache_lectura"] = us.get("cache_read_input_tokens", 0) or 0
+    # claude no da un total: se arma con lo que si informa, cache incluida,
+    # porque los tokens cacheados igual se leyeron aunque cuesten menos.
+    u["total"] = (u["entrada"] + u["salida"] + u["cache_lectura"]
+                  + (us.get("cache_creation_input_tokens", 0) or 0))
+    u["costo_usd"] = o.get("total_cost_usd")
+    u["turnos"] = o.get("num_turns")
+    u["duracion_s"] = round(o["duration_ms"] / 1000, 1) if o.get("duration_ms") else None
+    return u
+
+
+def _uso_agy(stdout: str) -> dict:
+    u = _uso_vacio("antigravity")
+    try:
+        o = _primer_objeto(stdout)
+    except BackendError:
+        return u
+    us = o.get("usage") or {}
+    u["entrada"] = us.get("input_tokens", 0) or 0
+    u["salida"] = us.get("output_tokens", 0) or 0
+    u["total"] = us.get("total_tokens", 0) or 0
+    u["cache_lectura"] = us.get("cache_read_tokens", 0) or 0
+    u["turnos"] = o.get("num_turns")
+    u["duracion_s"] = round(o["duration_seconds"], 1) if o.get("duration_seconds") else None
+    return u
+
+
+# Aparte de BACKENDS a proposito: los tests desempacan `(argv, parser)` y un
+# tercer elemento los romperia sin necesidad.
+USO = {"opencode": _uso_opencode, "claude-code": _uso_claude, "antigravity": _uso_agy}
+
+
 def _resolver_argv(argv: list[str]) -> list[str]:
     """Resolver argv[0] a algo que CreateProcess sepa lanzar.
 
@@ -273,7 +354,12 @@ def run_backend(runtime: str, goal: str, *, timeout: int = 600,
     # Deliberadamente NO se mira proc.returncode: `agy -p` sale 0 aunque falle
     # (SS4.1, verificado). El veredicto sale de parsear la salida.
     try:
-        return _validar(parser(proc.stdout))
+        contrato = _validar(parser(proc.stdout))
+        # El consumo se adjunta DESPUES de validar, asi el contrato se valida
+        # tal cual lo devolvio el agente y no con campos nuestros encima.
+        extraer = USO.get(runtime)
+        contrato["uso"] = extraer(proc.stdout) if extraer else _uso_vacio(runtime)
+        return contrato
     except Exception as e:
         # Envolver TODO, no solo BackendError: un parser puede tirar KeyError o
         # ValueError, y el loop solo sabe manejar BackendError. Una excepcion

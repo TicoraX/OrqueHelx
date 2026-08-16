@@ -116,7 +116,10 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600) -> dict:
         conn, task_id,
         summary=salida["summary"],
         result=salida["summary"],
-        metadata={"orquester_status": salida["status"], "claimer": CLAIMER},
+        # El consumo va en la metadata del run, no de la task: si un nodo se
+        # reintenta, cada intento gasto lo suyo y el total del flujo los suma.
+        metadata={"orquester_status": salida["status"], "claimer": CLAIMER,
+                  "uso": salida.get("uso")},
     )
     return salida
 
