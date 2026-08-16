@@ -277,7 +277,7 @@ Knobs relevantes bajo `delegation:` en `config.yaml`: `max_concurrent_children` 
 
 ## 10. Estado de verificación
 
-**35 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **seis
+**38 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **ocho
 filas "Verificado: NO"**: supuestos de diseño que parecían ciertos leyendo el
 código de Hermes y que la ejecución desmintió. Cada una habría sido un bug en
 producción, y ninguna se ve sin correr el sistema.
@@ -322,6 +322,9 @@ Convención: **Verificado (ejecutado)** = hay salida cruda pegada en `tests/`.
 | Los dos dispatchers coexisten sin pisarse | **Verificado (ejecutado)** | paso 4: 4 reclamos + 3 ticks, cero solapamiento, cero doble ejecución |
 | `run_backend` cumple el contrato con los 3 CLIs | **Verificado (ejecutado)** | `tests/test_rebanada_vertical.py` parte A: parsers contra las formas reales, denylist, contrato |
 | Un nodo externo alimenta a otro nodo externo | **Verificado (ejecutado)** | parte B: cadena `opencode -> opencode`, el hijo devolvió el valor del padre |
+| Rombo mixto con los CUATRO ejecutores | **Verificado (ejecutado)** | board `mixto-5`: A hermes -> B opencode + C claude-code -> D antigravity; D respondió *"ambos padres enviaron 7"* |
+| `claude --json-schema` acepta una ruta de archivo | **Verificado: NO** | exige JSON inline (`is not valid JSON: Unexpected identifier`); al revés que `agy` |
+| Un nodo que falla retiene a sus hijos | **Verificado: NO lo hacía** | cerraba con `complete_task` y el kanban promovía al hijo sobre el mensaje de error. Corregido con `block_task` |
 
 ---
 

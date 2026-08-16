@@ -134,4 +134,23 @@ print(f"B4. B -> {res_b['status']}: {res_b['summary'][:80]}")
 assert res_b["status"] == "success", res_b
 assert k.get_task(conn, B).status == "done"
 
+# --- Un nodo que falla NO debe liberar a sus hijos ---
+# Es el bug que destapo el board `mixto-4`: cerrar con `complete_task` marca la
+# card 'done' y el kanban promueve al hijo, que arranca sobre el mensaje de
+# error creyendo que es el resultado del padre.
+P = k.create_task(conn, title="Nodo que va a fallar", assignee=loop.carril("claude-code"))
+H = k.create_task(conn, title="Hijo que no debe arrancar",
+                  assignee=loop.carril("opencode"), parents=[P])
+orig = b.BACKENDS["claude-code"]
+b.BACKENDS["claude-code"] = (lambda g, e: ["python", "-c", "print('sin contrato')"],
+                             b._primer_objeto)
+try:
+    res = loop.ejecutar_una(conn, P, timeout=60)
+finally:
+    b.BACKENDS["claude-code"] = orig
+print(f"B5. fallo -> padre={k.get_task(conn, P).status}, hijo={k.get_task(conn, H).status}")
+assert res["status"] == "failure", res
+assert k.get_task(conn, P).status == "blocked", "un fallo debe bloquear, no cerrar"
+assert k.get_task(conn, H).status == "todo", "el hijo NO puede liberarse tras un fallo"
+
 print("\nOK: la rebanada vertical corre punta a punta.")

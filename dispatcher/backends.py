@@ -126,9 +126,14 @@ BACKENDS = {
         lambda out: _parse_envelope(out, "structured_output"),
     ),
     "claude-code": (
+        # Ojo: claude exige el schema **inline**, no una ruta — al reves que agy.
+        # Verificado: con una ruta responde `--json-schema is not valid JSON`.
+        # Pasarlo inline es seguro porque el argv va directo a CreateProcess, sin
+        # shell de por medio; la regla de "schema en archivo" era contra el
+        # escapado de PowerShell, que aca no participa.
         lambda goal, esquema: [
             "claude", "-p", goal,
-            "--output-format", "json", "--json-schema", esquema,
+            "--output-format", "json", "--json-schema", json.dumps(CONTRATO),
             "--max-turns", "5",
         ],
         lambda out: _parse_envelope(out, "structured_output"),

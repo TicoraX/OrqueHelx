@@ -61,11 +61,14 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600) -> dict:
         ctx = k.build_worker_context(conn, task_id)   # summaries de los padres
         salida = run_backend(_runtime_de(task), ctx, timeout=timeout)
     except BackendError as e:
-        # ponytail: un fallo duro cierra la card con status=failure en vez de
-        # marcarla 'failed'. El estado real vive en `_record_task_failure`, que
-        # es privado; acoplarnos a el es peor que perder el matiz. Upgrade:
-        # pedir API publica upstream, o el circuit breaker no cuenta estos.
-        salida = {"status": "failure", "summary": str(e)[:2000]}
+        # Un nodo que falla NO se cierra: se bloquea. Si se cerrara con
+        # `complete_task`, el kanban lo veria 'done' y **promoveria a sus
+        # hijos**, que arrancarian sobre el mensaje de error como si fuera el
+        # resultado del padre. Observado en el board `mixto-4`: dos nodos
+        # fallaron, cerraron igual, y el hijo corrio sobre la basura.
+        latido.set()
+        k.block_task(conn, task_id, reason=str(e)[:2000])
+        return {"status": "failure", "summary": str(e)[:2000]}
     finally:
         latido.set()
 
