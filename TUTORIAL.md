@@ -31,10 +31,25 @@ cd <ruta-al-repo>
 uv run --python 3.11 --with jsonschema python ui/server.py
 ```
 
-Abre en http://127.0.0.1:8765
+El servidor imprime la URL con un token:
 
-Escucha solo en localhost a propósito: ejecuta agentes con acceso a tu terminal
-y no tiene autenticación. **No lo expongas a la red.**
+```
+Studio en http://127.0.0.1:8765/?token=xK3v…
+```
+
+Abrila tal cual. El token se guarda en la sesión del navegador y desaparece de
+la barra de direcciones, así no queda en el historial ni en una captura.
+
+**Todo `/api/*` exige ese token.** Sin él no se puede consultar estado, compilar
+ni ejecutar. Es la única barrera entre alguien y una shell en tu máquina, porque
+esto lanza agentes con `Bash`.
+
+| Variable | Para qué |
+|---|---|
+| `ORQUESTER_TOKEN` | Fija el token en vez de generar uno nuevo en cada arranque |
+| `ORQUESTER_HOST` | `0.0.0.0` lo abre a la red. Por defecto solo localhost |
+
+Si lo exponés a la red, el token deja de ser una formalidad. Pensalo dos veces.
 
 ---
 

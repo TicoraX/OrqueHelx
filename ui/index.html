@@ -320,10 +320,31 @@ $("#borrar").onclick = () => {
 };
 $("#board").oninput = e => { grafo.board = e.target.value; };
 
+// El token llega por la URL una sola vez y se guarda en la sesion; despues se
+// limpia de la barra para que no quede en el historial ni en un screenshot.
+const TOKEN = (() => {
+  const u = new URL(location.href);
+  const t = u.searchParams.get("token");
+  if (t) {
+    sessionStorage.setItem("orquester_token", t);
+    u.searchParams.delete("token");
+    history.replaceState(null, "", u.toString());
+    return t;
+  }
+  return sessionStorage.getItem("orquester_token") || "";
+})();
+
 async function api(ruta, cuerpo) {
+  if (!TOKEN) {
+    avisar("Falta el token. Abrí el Studio con la URL que imprime el servidor: " +
+           "http://127.0.0.1:8765/?token=…", "error");
+    return { ok:false, datos:{ error:"sin token" } };
+  }
+  const cab = { "X-Orquester-Token": TOKEN };
   const r = await fetch(ruta, cuerpo ? {
-    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(cuerpo)
-  } : undefined);
+    method:"POST", headers:{ ...cab, "Content-Type":"application/json" },
+    body:JSON.stringify(cuerpo)
+  } : { headers: cab });
   return { ok:r.ok, datos: await r.json() };
 }
 
@@ -386,10 +407,13 @@ async function cargarConsumo() {
 }
 
 async function refrescarEstado() {
+  // El consumo depende del BOARD, no de que este navegador haya compilado el
+  // grafo. Antes colgaba del early-return de abajo y desaparecia al recargar
+  // la pagina, que es justo cuando uno quiere ver cuanto gasto la corrida.
+  cargarConsumo();
   if (!Object.keys(ids).length) return;
   const { datos } = await api(`/api/estado?board=${encodeURIComponent(grafo.board)}`);
   estado = datos.tareas || {}; pintar(); if (sel) cargarTraza();
-  cargarConsumo();
 }
 setInterval(refrescarEstado, 2500);
 

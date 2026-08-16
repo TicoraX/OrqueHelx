@@ -9,7 +9,7 @@ pidio.
     uv run --python 3.11 --with jsonschema python ui/server.py
     -> http://127.0.0.1:8765
 """
-import json, subprocess, sys, threading, time, traceback
+import hmac, json, os, secrets, subprocess, sys, threading, time, traceback
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -30,6 +30,23 @@ GRAFOS.mkdir(exist_ok=True)
 # reclamarian las mismas cards y, aunque `claim_task` lo resuelve sin corromper
 # nada, es trabajo duplicado sin motivo.
 _corriendo: dict[str, threading.Thread] = {}
+
+# Token de acceso. Esto ejecuta agentes con shell: sin autenticacion, exponer el
+# puerto es entregar una terminal. Se genera uno por arranque salvo que se fije
+# `ORQUESTER_TOKEN` (util para dejarlo estable entre reinicios).
+TOKEN = os.environ.get("ORQUESTER_TOKEN") or secrets.token_urlsafe(24)
+
+
+def _token_ok(handler) -> bool:
+    """Comparacion en tiempo constante: un `==` filtra el token por timing."""
+    dado = handler.headers.get("X-Orquester-Token") or ""
+    if not dado:
+        _, _, query = handler.path.partition("?")
+        for par in query.split("&"):
+            if par.startswith("token="):
+                dado = par[6:]
+                break
+    return hmac.compare_digest(dado, TOKEN)
 
 
 def _estado(board: str) -> dict:
@@ -176,8 +193,22 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(datos)
 
+    def _autorizado(self) -> bool:
+        if _token_ok(self):
+            return True
+        # 404 y no 401: un 401 confirma que aca hay algo. Ademas sin
+        # `WWW-Authenticate` el navegador no muestra un popup inutil.
+        self._responder(404, {"error": "no encontrado"})
+        return False
+
     def do_GET(self):
         ruta, _, query = self.path.partition("?")
+        # El HTML es una cascara estatica sin datos: se sirve sin token para que
+        # recargar la pagina funcione (una navegacion no puede mandar cabeceras,
+        # y el token se limpia de la URL a proposito). Todo `/api/*` si exige
+        # token: ahi estan los datos y la ejecucion.
+        if ruta != "/" and not self._autorizado():
+            return
         params = dict(p.split("=", 1) for p in query.split("&") if "=" in p)
         if ruta == "/":
             return self._responder(200, HTML.read_bytes(), "text/html; charset=utf-8")
@@ -198,6 +229,8 @@ class Handler(BaseHTTPRequestHandler):
         return self._responder(404, {"error": "ruta desconocida"})
 
     def do_POST(self):
+        if not self._autorizado():
+            return
         largo = int(self.headers.get("Content-Length") or 0)
         cuerpo = json.loads(self.rfile.read(largo) or b"{}")
         try:
@@ -240,7 +273,14 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     puerto = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
-    # 127.0.0.1 y no 0.0.0.0: esto ejecuta agentes con acceso a la terminal.
-    # No se expone a la red mientras no tenga auth (SS7: RBAC va en NestJS).
-    print(f"Studio en http://127.0.0.1:{puerto}")
-    HTTPServer(("127.0.0.1", puerto), Handler).serve_forever()
+    # 127.0.0.1 por defecto. `ORQUESTER_HOST=0.0.0.0` lo abre a la red, y el
+    # token deja de ser una formalidad: pasa a ser lo unico que separa a
+    # cualquiera de una shell en esta maquina.
+    host = os.environ.get("ORQUESTER_HOST", "127.0.0.1")
+    print(f"Studio en http://{host}:{puerto}/?token={TOKEN}")
+    if host != "127.0.0.1":
+        print("  AVISO: expuesto a la red. El token es la unica barrera y esto")
+        print("  ejecuta agentes con shell. No lo dejes escuchando sin necesidad.")
+    if not os.environ.get("ORQUESTER_TOKEN"):
+        print("  (token nuevo en cada arranque; fijalo con ORQUESTER_TOKEN)")
+    HTTPServer((host, puerto), Handler).serve_forever()
