@@ -2,6 +2,10 @@
 
 UI local para diseñar el grafo, compilarlo al kanban y verlo ejecutarse.
 
+![Studio](studio.png)
+
+_Rombo a mitad de corrida: el padre cerró (verde) y liberó a sus dos hijos (ámbar)._
+
 ```bash
 uv run --python 3.11 --with jsonschema python ui/server.py
 # -> http://127.0.0.1:8765
