@@ -277,7 +277,7 @@ Knobs relevantes bajo `delegation:` en `config.yaml`: `max_concurrent_children` 
 
 ## 10. Estado de verificación
 
-**51 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **nueve
+**54 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **nueve
 filas "Verificado: NO"**: supuestos de diseño que parecían ciertos leyendo el
 código de Hermes y que la ejecución desmintió. Cada una habría sido un bug en
 producción, y ninguna se ve sin correr el sistema.
@@ -330,6 +330,9 @@ Convención: **Verificado (ejecutado)** = hay salida cruda pegada en `tests/`.
 | Todos los backends informan costo | **Verificado: NO** | `agy` no informa medidor: corre por suscripción. `None` se cuenta aparte, nunca como cero |
 | La suite corre en Linux | **Verificado (ejecutado)** | `tests/linux.sh` en `python:3.11-slim`: 7/7 más la resolución de binario con un ejecutable plano |
 | El Studio exige token en toda su API | **Verificado (ejecutado)** | `tests/test_auth_studio.py`: 10 rutas rechazan sin token; tokens parciales, largos y con otra capitalización también |
+| Una org queda aislada de otra | **Verificado (ejecutado)** | `tests/test_api_rbac.py` 10/10: un extraño recibe 404, no 403 |
+| Los roles limitan de verdad | **Verificado (ejecutado)** | VIEWER lista pero no crea (403); EDITOR no administra miembros (403) |
+| Editar un grafo pisa la versión anterior | **Verificado: NO** | crea la versión N+1; e2e con v1 y v2, la ejecución tomó la última |
 | Los reintentos terminan solos | **Verificado (ejecutado)** | al agotarse, Hermes enruta a `triage` (`BLOCK_RECURRENCE_LIMIT`) |
 | Un fallo permanente se reintenta | **Verificado: NO** | se bloquea como `capability` y `reintentar()` lo ignora |
 | Un flujo se publica como servidor MCP | **Verificado (ejecutado)** | `tests/test_mcp_export.py`: `initialize`/`tools/list`/`tools/call` por stdio; el `tools/call` ejecutó el flujo y devolvió el resultado de las hojas |
@@ -374,6 +377,59 @@ avisa; impedirlo no se puede con código que no es nuestro.
 upstream: se actualiza con `git pull` y nunca entra a nuestros commits. El check
 también falla si el clon tiene cambios locales — es la forma de que "pinear por
 versión, sin fork" (§1) sea verificable y no una intención.
+
+---
+
+## 10.2 Plano de control: dos bases, dos dueños
+
+Multiusuario obliga a una decisión que conviene dejar explícita: **hay dos
+bases de datos y ninguna manda sobre la otra.**
+
+| Base | Dueño | Guarda |
+|---|---|---|
+| Postgres | ORQUESTER | Usuarios, organizaciones, roles, grafos, versiones, auditoría |
+| SQLite (kanban) | Hermes | Lo que está corriendo: cards, dependencias, runs, eventos |
+
+No es duplicación. El kanban es de Hermes, no controlamos su esquema, y §12
+exige que el dispatcher le hable directo. Meter usuarios ahí sería forkear
+por la puerta de atrás. Postgres guarda **diseño y gobierno**; el kanban guarda
+**ejecución**. Un `Run` en Postgres es un puntero a un board más quién lo lanzó
+— lo único que el kanban no sabe ni tiene por qué saber.
+
+### El reparto
+
+```
+Navegador ─► NestJS (control)  ─► Python (motor) ─► Hermes / agentes
+             usuarios, RBAC        compila,           kanban, CLIs
+             grafos, versiones      despacha,
+             auditoría              exporta MCP
+                  │                     │
+              Postgres              kanban.db
+```
+
+NestJS **no reimplementa nada del motor**: lo llama por HTTP con el token del
+Studio. La razón es la misma de §12 — rehacer el protocolo de claim en TS
+contra la misma SQLite es exactamente el tipo de cosa que la tabla de §10
+muestra que sale mal.
+
+### Decisiones de seguridad, y por qué
+
+- **Guardia global, no por ruta.** Una ruta nueva nace protegida y hay que
+  marcarla `@Publico()` a propósito. Al revés, la que alguien se olvida queda
+  abierta — y esto ejecuta agentes con shell.
+- **404 y no 403 para un extraño.** Un 403 confirma que esa organización
+  existe. Verificado en `tests/test_api_rbac.py`.
+- **Login de tiempo constante.** Se verifica contra un hash señuelo cuando el
+  email no existe, para que "usuario inexistente" y "clave mala" tarden igual.
+  Sin eso, el tiempo de respuesta enumera usuarios.
+- **Los tokens de sesión se guardan hasheados.** Si se filtra la base, no salen
+  sesiones usables. Mismo criterio que la contraseña (Argon2id).
+- **Ejecutar exige EDITOR.** Un VIEWER mira; no gasta cuota ni corre shell.
+- **Las versiones son inmutables.** Editar crea una versión nueva; nunca pisa.
+  Una corrida vieja tiene que poder explicarse con el grafo que de verdad se
+  ejecutó — el mismo criterio de "el pasado no se reescribe".
+- **La auditoría es append-only por diseño:** el servicio no expone update ni
+  delete, y un fallo al auditar no tumba la operación que auditaba.
 
 ---
 
