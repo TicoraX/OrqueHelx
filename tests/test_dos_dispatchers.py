@@ -12,7 +12,7 @@ habrian lanzado.
 import sys, tempfile, threading
 from pathlib import Path
 
-sys.path.insert(0, r"A:/Proyectos/orquester/hermes-agent")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hermes-agent"))
 import hermes_cli.kanban_db as k
 
 LANE = "orquester-external"   # deliberadamente NO es un perfil Hermes

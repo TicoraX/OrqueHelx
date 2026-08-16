@@ -13,7 +13,7 @@ scheduler y SQLite.
 import sys, tempfile
 from pathlib import Path
 
-sys.path.insert(0, r"A:/Proyectos/orquester/hermes-agent")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hermes-agent"))
 import hermes_cli.kanban_db as k
 
 db = Path(tempfile.mkdtemp()) / "rombo.db"

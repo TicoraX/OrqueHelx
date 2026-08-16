@@ -18,8 +18,9 @@ Correr desde hermes-agent/:
     uv run --python 3.11 python ..\\tests\\test_dag_heterogeneo.py
 """
 import sys
+from pathlib import Path
 
-sys.path.insert(0, r"A:/Proyectos/orquester/hermes-agent")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hermes-agent"))
 import hermes_cli.kanban_db as k
 
 BOARD = "orquester-mixto"

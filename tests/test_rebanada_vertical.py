@@ -12,8 +12,9 @@ Dos partes:
 import sys, json
 from pathlib import Path
 
-sys.path.insert(0, r"A:/Proyectos/orquester/dispatcher")
-sys.path.insert(0, r"A:/Proyectos/orquester/hermes-agent")
+RAIZ = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(RAIZ / "dispatcher"))
+sys.path.insert(0, str(RAIZ / "hermes-agent"))
 import backends as b
 
 # ---------------------------------------------------------------- Parte A ---

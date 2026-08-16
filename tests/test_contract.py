@@ -1,6 +1,7 @@
 """Prueba del contrato output_schema de Hermes con el schema AgentAdapterOutput de ORQUESTER."""
 import sys, json
-sys.path.insert(0, r"A:/Proyectos/orquester/hermes-agent")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hermes-agent"))
 
 from tools.delegation_output_schema import (
     coerce_output_schema, append_output_contract, validate_output,

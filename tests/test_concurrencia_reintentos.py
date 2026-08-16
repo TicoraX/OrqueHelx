@@ -8,7 +8,7 @@ asi el test mide el mecanismo y no la latencia de un modelo.
 import sys, tempfile, time
 from pathlib import Path
 
-RAIZ = Path(r"A:/Proyectos/orquester")
+RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ / "dispatcher"))
 sys.path.insert(0, str(RAIZ / "hermes-agent"))
 

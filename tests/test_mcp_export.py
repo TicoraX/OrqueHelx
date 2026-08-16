@@ -10,7 +10,7 @@ Parte B: el servidor real por stdio, hablando JSON-RPC como lo haria Claude
 import json, subprocess, sys, tempfile
 from pathlib import Path
 
-RAIZ = Path(r"A:/Proyectos/orquester")
+RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ / "mcp_exporter"))
 sys.path.insert(0, str(RAIZ / "hermes-agent"))
 sys.path.insert(0, str(RAIZ / "dispatcher"))

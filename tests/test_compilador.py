@@ -5,7 +5,7 @@
 import sys, tempfile
 from pathlib import Path
 
-RAIZ = Path(r"A:/Proyectos/orquester")
+RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ / "compiler"))
 sys.path.insert(0, str(RAIZ / "hermes-agent"))
 sys.path.insert(0, str(RAIZ / "dispatcher"))

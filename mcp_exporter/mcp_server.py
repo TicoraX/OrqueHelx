@@ -9,8 +9,8 @@ Para Claude Desktop / Cursor, en su config de MCP:
 
     {"mcpServers": {"mi-flujo": {
         "command": "python",
-        "args": ["A:/Proyectos/orquester/mcp_exporter/mcp_server.py",
-                 "A:/Proyectos/orquester/ui/grafos/mi-flujo.json"]}}}
+        "args": ["<ruta-al-repo>/mcp_exporter/mcp_server.py",
+                 "<ruta-al-repo>/ui/grafos/mi-flujo.json"]}}}
 """
 import json, sys, traceback
 from pathlib import Path

@@ -9,8 +9,12 @@ en vez de reimplementar el protocolo de claim contra la misma SQLite.
 """
 import sys, threading, time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
-sys.path.insert(0, r"A:/Proyectos/orquester/hermes-agent")
+# La raiz sale del propio archivo, no de una constante: el repo tiene que
+# correr desde cualquier ruta y en cualquier maquina.
+RAIZ = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(RAIZ / "hermes-agent"))
 import hermes_cli.kanban_db as k
 
 from backends import run_backend, BackendError, BACKENDS

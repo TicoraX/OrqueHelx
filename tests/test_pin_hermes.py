@@ -14,7 +14,7 @@ avisa, que es lo que se puede hacer con codigo que no es nuestro.
 import os, re, subprocess, sys
 from pathlib import Path
 
-RAIZ = Path(r"A:/Proyectos/orquester")
+RAIZ = Path(__file__).resolve().parent.parent
 pin = dict(l.split("=", 1) for l in
            (RAIZ / "HERMES_PIN").read_text(encoding="utf-8").splitlines()
            if "=" in l and not l.startswith("#"))
@@ -57,5 +57,19 @@ sucio = subprocess.run(["git", "-C", str(RAIZ / "hermes-agent"), "status", "--sh
                        capture_output=True, text=True).stdout.strip()
 assert not sucio, f"hermes-agent tiene cambios locales — se rompio el 'sin fork':\n{sucio}"
 print("fork    : ninguno, el clon esta intacto")
+
+# --- Portabilidad: ninguna ruta absoluta en el codigo ---
+# El repo tiene que correr desde cualquier ruta. Verificado copiandolo a otro
+# directorio y corriendo la suite ahi; este check evita que vuelva a colarse.
+absoluta = re.compile(r"""["'][A-Za-z]:[/\\]""")
+sucios = []
+for py in sorted(RAIZ.rglob("*.py")):
+    if "hermes-agent" in py.parts:
+        continue                                  # upstream ajeno, no es nuestro
+    for n, linea in enumerate(py.read_text(encoding="utf-8").splitlines(), 1):
+        if absoluta.search(linea) and "no/existe" not in linea:
+            sucios.append(f"{py.relative_to(RAIZ)}:{n}: {linea.strip()[:70]}")
+assert not sucios, "rutas absolutas en el codigo:\n  " + "\n  ".join(sucios)
+print("rutas   : ninguna absoluta en el codigo del repo")
 
 print("\nOK: pin verificado.")

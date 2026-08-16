@@ -32,8 +32,8 @@ Genera una tool `revision-de-pr` con `inputSchema` de dos strings requeridos,
 ```json
 {"mcpServers": {"revision-de-pr": {
     "command": "python",
-    "args": ["A:/Proyectos/orquester/mcp_exporter/mcp_server.py",
-             "A:/Proyectos/orquester/ui/grafos/revision-de-pr.json"]}}}
+    "args": ["<ruta-al-repo>/mcp_exporter/mcp_server.py",
+             "<ruta-al-repo>/ui/grafos/revision-de-pr.json"]}}}
 ```
 
 ## Qué devuelve

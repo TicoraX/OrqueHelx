@@ -27,7 +27,7 @@ No hace falta tener los tres. Un flujo que solo usa `opencode` solo necesita
 ## 1. Levantar el Studio
 
 ```bash
-cd A:/Proyectos/orquester
+cd <ruta-al-repo>
 uv run --python 3.11 --with jsonschema python ui/server.py
 ```
 
@@ -136,8 +136,8 @@ Botón **Exportar como MCP**. Te da el snippet para tu cliente:
 ```json
 {"mcpServers": {"revision-repo": {
     "command": "python",
-    "args": ["A:/Proyectos/orquester/mcp_exporter/mcp_server.py",
-             "A:/Proyectos/orquester/ui/grafos/revision-repo.json"]}}}
+    "args": ["<ruta-al-repo>/mcp_exporter/mcp_server.py",
+             "<ruta-al-repo>/ui/grafos/revision-repo.json"]}}}
 ```
 
 Desde Claude Desktop o Cursor, la tool aparece con sus parámetros. Al llamarla,
@@ -174,10 +174,10 @@ Desde el Studio: abrilo, poné los parámetros y dale Ejecutar. O sin UI:
 ```bash
 cd hermes-agent
 uv run --python 3.11 --with jsonschema python -c "
-import sys, json; sys.path.insert(0, r'A:/Proyectos/orquester/mcp_exporter')
+import sys, json; sys.path.insert(0, r'<ruta-al-repo>/mcp_exporter')
 import exportar as ex
-g = json.load(open(r'A:/Proyectos/orquester/ui/grafos/revision-repo.json', encoding='utf-8'))
-print(ex.ejecutar(g, {'ruta': 'A:/Proyectos/orquester', 'commits': '3'}))"
+g = json.load(open(r'<ruta-al-repo>/ui/grafos/revision-repo.json', encoding='utf-8'))
+print(ex.ejecutar(g, {'ruta': '<ruta-al-repo>', 'commits': '3'}))"
 ```
 
 ### El campo `workspace`
@@ -235,6 +235,20 @@ uv run --python 3.11 --with jsonschema python ../tests/test_mcp_export.py
 
 Los que aceptan `--e2e` además ejecutan agentes de verdad y tardan minutos:
 `test_rebanada_vertical.py` y `test_mcp_export.py`.
+
+---
+
+## 9.1 ¿Corre en otra máquina?
+
+Sí. Ninguna ruta está escrita a mano: todo se deriva de `Path(__file__)`.
+Verificado copiando el repo a otro directorio y corriendo la suite ahí.
+
+`tests/test_pin_hermes.py` incluye un check que falla si vuelve a colarse una
+ruta absoluta en el código.
+
+Lo único que sí es específico de tu máquina son los **agentes**: `claude`,
+`opencode` y `agy` tienen que estar instalados y autenticados con tu sesión.
+Eso es a propósito — es el punto del producto (`IDEAS.md` §1).
 
 ---
 
