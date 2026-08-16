@@ -248,6 +248,45 @@ traza del nodo.
 
 ---
 
+## 8.1 Multiusuario (opcional)
+
+El Studio con token alcanza para vos solo. Si querés equipo —usuarios, roles,
+versionado y auditoría— hay una API aparte.
+
+```bash
+docker compose up -d db                    # Postgres en el 5433
+cd apps/api && npm install
+npx prisma db push && npm run build
+PORT=3000 ORQUESTER_ENGINE_URL=http://127.0.0.1:8765   ORQUESTER_TOKEN=<el-token-del-studio> npm start
+```
+
+El motor (Python) tiene que estar corriendo: NestJS no ejecuta nada, lo llama.
+
+### Roles
+
+| Rol | Puede |
+|---|---|
+| `VIEWER` | Ver grafos, versiones, corridas y auditoría |
+| `EDITOR` | Todo lo anterior + crear, versionar y **ejecutar** |
+| `OWNER` | Todo lo anterior + administrar miembros |
+
+Ejecutar exige `EDITOR` a propósito: un `VIEWER` mira, no gasta cuota ni corre
+shell en el servidor.
+
+### Versiones
+
+Editar un grafo **no lo pisa**: crea la versión siguiente. Ejecutar toma la
+última salvo que pidas otra por `versionId`. Así una corrida vieja se puede
+explicar con el grafo que de verdad se ejecutó.
+
+### Qué guarda cada base
+
+Postgres guarda **quién y qué diseñó**; el kanban de Hermes guarda **qué está
+corriendo**. Un `Run` en Postgres es el puntero al board más quién lo lanzó.
+No hay duplicación: el kanban no es nuestro (`ARQUITECTURA.md` §10.2).
+
+---
+
 ## 9. Los tests
 
 ```bash
