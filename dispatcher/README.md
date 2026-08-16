@@ -42,3 +42,11 @@ uv run --python 3.11 --with jsonschema python ../tests/test_rebanada_vertical.py
   dispatcher.
 - Cuando los reintentos se agotan, Hermes enruta la card a `triage` por su
   propio cortacircuitos. Queda esperando decisión humana, no girando.
+
+## `stdin` cerrado, siempre
+
+Los CLIs de agente se lanzan con `stdin=DEVNULL`. Sin eso el hijo hereda el
+stdin del padre y puede quedarse leyéndolo. Cuando el padre es el servidor MCP,
+ese stdin **es el canal JSON-RPC**: el agente se come los mensajes del protocolo
+y las dos partes se cuelgan. Verificado — opencode responde en 9s suelto y
+colgaba más de 600s lanzado desde el exportador.

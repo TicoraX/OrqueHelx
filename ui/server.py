@@ -14,12 +14,13 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
-for sub in ("hermes-agent", "dispatcher", "compiler"):
+for sub in ("hermes-agent", "dispatcher", "compiler", "mcp_exporter"):
     sys.path.insert(0, str(RAIZ / sub))
 
 import hermes_cli.kanban_db as k
 import compile as compilador
 import loop as dispatcher
+import exportar as mcp
 
 HTML = Path(__file__).parent / "index.html"
 GRAFOS = RAIZ / "ui" / "grafos"
@@ -135,6 +136,17 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/compilar":
                 ids = compilador.compilar(cuerpo, board=cuerpo.get("board"))
                 return self._responder(200, {"ok": True, "ids": ids})
+            if self.path == "/api/mcp":
+                nombre = cuerpo.get("board") or "sin-nombre"
+                return self._responder(200, {
+                    "tool": nombre,
+                    "parametros": mcp.parametros(cuerpo),
+                    "config": {"mcpServers": {nombre: {
+                        "command": "python",
+                        "args": [str(RAIZ / "mcp_exporter" / "mcp_server.py"),
+                                 str(GRAFOS / f"{nombre}.json")],
+                    }}},
+                })
             if self.path == "/api/correr":
                 return self._responder(200, _arrancar(cuerpo.get("board", "orquester")))
             if self.path == "/api/grafo":

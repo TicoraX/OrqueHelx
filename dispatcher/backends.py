@@ -226,6 +226,13 @@ def run_backend(runtime: str, goal: str, *, timeout: int = 600) -> dict:
             proc = subprocess.run(
                 _resolver_argv(argv), capture_output=True, text=True, timeout=timeout,
                 encoding="utf-8", errors="replace",
+                # stdin cerrado, SIEMPRE. Sin esto el CLI hereda el stdin del
+                # padre y puede quedarse leyendolo — y cuando el padre es el
+                # servidor MCP, ese stdin **es el canal JSON-RPC**: el agente se
+                # come los mensajes del protocolo y las dos partes se cuelgan.
+                # Verificado: opencode responde en 9s suelto y colgaba >600s
+                # lanzado desde el servidor MCP.
+                stdin=subprocess.DEVNULL,
             )
         except FileNotFoundError as e:
             raise BackendError(f"binario no encontrado para {runtime}: {e}") from e

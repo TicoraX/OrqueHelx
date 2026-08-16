@@ -92,10 +92,11 @@
     <div class="fila" style="margin-bottom:8px;">
       <button id="guardar">Guardar</button><button id="validar">Validar</button>
     </div>
-    <div class="fila">
+    <div class="fila" style="margin-bottom:8px;">
       <button id="compilar">Compilar</button>
       <button id="correr" class="primario">Ejecutar</button>
     </div>
+    <button id="exportar">Exportar como MCP</button>
   </div>
 
   <div>
@@ -334,6 +335,18 @@ $("#correr").onclick = async () => {
   const { datos } = await api("/api/correr", { board: grafo.board });
   avisar(datos.ok ? "Dispatcher arrancado. Los nodos externos corren ahora."
                   : datos.motivo, datos.ok ? "ok" : "error");
+};
+
+$("#exportar").onclick = async () => {
+  await api("/api/grafo", grafo);               // el server MCP lee del disco
+  const { datos } = await api("/api/mcp", grafo);
+  const cfg = JSON.stringify(datos.config, null, 2);
+  avisar(`Tool '${datos.tool}' con ${datos.parametros.length} parametro(s): ` +
+         `${datos.parametros.join(", ") || "ninguno"}
+
+` +
+         `Pegá esto en la config MCP de tu cliente:
+${cfg}`, "ok");
 };
 
 async function refrescarEstado() {

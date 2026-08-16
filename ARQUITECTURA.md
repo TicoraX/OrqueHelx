@@ -277,7 +277,7 @@ Knobs relevantes bajo `delegation:` en `config.yaml`: `max_concurrent_children` 
 
 ## 10. Estado de verificación
 
-**41 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **nueve
+**44 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **nueve
 filas "Verificado: NO"**: supuestos de diseño que parecían ciertos leyendo el
 código de Hermes y que la ejecución desmintió. Cada una habría sido un bug en
 producción, y ninguna se ve sin correr el sistema.
@@ -328,6 +328,9 @@ Convención: **Verificado (ejecutado)** = hay salida cruda pegada en `tests/`.
 | Los nodos del carril corren en paralelo | **Verificado (ejecutado)** | 3 nodos de ~2s en 2.9s; con `MAX_PARALELO=2`, 4 nodos en 4.3s |
 | Los reintentos terminan solos | **Verificado (ejecutado)** | al agotarse, Hermes enruta a `triage` (`BLOCK_RECURRENCE_LIMIT`) |
 | Un fallo permanente se reintenta | **Verificado: NO** | se bloquea como `capability` y `reintentar()` lo ignora |
+| Un flujo se publica como servidor MCP | **Verificado (ejecutado)** | `tests/test_mcp_export.py`: `initialize`/`tools/list`/`tools/call` por stdio; el `tools/call` ejecutó el flujo y devolvió el resultado de las hojas |
+| Los parámetros de la tool salen del goal | **Verificado (ejecutado)** | los `{{marcadores}}` del título generan el `inputSchema` |
+| El CLI hijo puede heredar el stdin del padre | **Verificado: SÍ, y es grave** | con el servidor MCP ese stdin es el canal JSON-RPC: opencode colgaba >600s (9s suelto). Corregido con `stdin=DEVNULL` |
 
 ---
 
