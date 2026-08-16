@@ -84,13 +84,24 @@ finally:
     del b.BACKENDS["_vacio"]
 print("A5. exit 0 con salida invalida se trata como fallo: OK")
 
+# El sufijo de runtime no debe volver spawneable al carril: si `orquester-
+# external:opencode` fuera un perfil valido, el dispatcher de Hermes intentaria
+# `hermes -p orquester-external:opencode` y nos robaria la card.
+import loop
+from hermes_cli.profiles import normalize_profile_name, profile_exists
+for rt in b.BACKENDS:
+    lane = loop.carril(rt)
+    assert normalize_profile_name(lane) == lane, "el assignee debe sobrevivir intacto"
+    assert not profile_exists(lane), f"{lane} NO puede ser un perfil Hermes"
+assert loop._runtime_de(type("T", (), {"id": "t1", "assignee": "orquester-external:opencode"})) == "opencode"
+print("A6. el sub-carril sobrevive la normalizacion y sigue sin ser perfil: OK")
+
 if "--e2e" not in sys.argv:
     print("\nOK parte A. Corre con --e2e para la cadena real sobre el board.")
     raise SystemExit(0)
 
 # ---------------------------------------------------------------- Parte B ---
 import hermes_cli.kanban_db as k
-import loop
 
 BOARD = "orquester-slice"
 try:
@@ -100,9 +111,9 @@ except Exception:
 conn = k.connect(board=BOARD)
 
 A = k.create_task(conn, title="Responde con el numero 7 y nada mas",
-                  assignee=loop.CARRIL, skills=["opencode"])
+                  assignee=loop.carril("opencode"))
 B = k.create_task(conn, title="Repeti el numero que te paso tu padre",
-                  assignee=loop.CARRIL, skills=["opencode"], parents=[A])
+                  assignee=loop.carril("opencode"), parents=[A])
 print(f"\nB1. cadena creada: A={A} B={B}")
 assert k.get_task(conn, A).status == "ready"
 assert k.get_task(conn, B).status == "todo", "B debe esperar a A"

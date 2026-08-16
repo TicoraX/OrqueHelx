@@ -403,8 +403,8 @@ comentario del código nombra el caso de uso exacto:
 > "atascado de verdad").
 
 Entonces: **los nodos de runtime externo se compilan con
-`assignee = "orquester-external"`** — un nombre de carril que deliberadamente no
-existe como perfil. Hermes los ve, respeta sus dependencias, los promueve a
+`assignee = "orquester-external:<runtime>"`** — un carril que deliberadamente
+no existe como perfil, con el runtime del nodo como sufijo. Hermes los ve, respeta sus dependencias, los promueve a
 `ready`, y no los toca. ORQUESTER los levanta.
 
 > **No usar `assignee = NULL` para esto.** Fue el primer diseño y está mal.
@@ -413,6 +413,16 @@ existe como perfil. Hermes los ve, respeta sus dependencias, los promueve a
 > :9752). Un nodo de runtime externo terminaría ejecutado por un worker
 > nativo, en silencio. Verificado en `tests/test_dos_dispatchers.py` paso 2: la
 > card sin assignee fue secuestrada; la del carril con nombre resistió.
+
+El runtime del nodo va en el `assignee` y no en `skills`: información de ruteo
+en el campo de ruteo. `skills` ya significa otra cosa en Hermes —carga de
+contexto para un worker nativo, y nos confundió una vez (§4.1)—, y una card
+que por error cayera en manos del dispatcher de Hermes cargaría una skill que
+nadie pidió. `create_task` no acepta `metadata` (esa columna vive en
+`task_runs`, no en `tasks`), así que el `assignee` es además el único campo
+estructurado disponible al crear. Hermes solo hace `lower()` sobre él
+(`profiles.normalize_profile_name`), de modo que el sufijo sobrevive intacto y
+el carril sigue sin ser un perfil válido.
 
 El loop de ORQUESTER, entero, usando funciones que Hermes ya expone:
 

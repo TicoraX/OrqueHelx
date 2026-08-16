@@ -12,19 +12,32 @@ import sys, threading, time
 sys.path.insert(0, r"A:/Proyectos/orquester/hermes-agent")
 import hermes_cli.kanban_db as k
 
-from backends import run_backend, BackendError
+from backends import run_backend, BackendError, BACKENDS
 
-CARRIL = "orquester-external"   # deliberadamente NO es un perfil Hermes
+# El carril va en `assignee`, y el runtime como sufijo: `orquester-external:opencode`.
+# Informacion de ruteo en el campo de ruteo. Dos razones para no usar `skills`:
+# ya significa otra cosa en Hermes (carga de contexto para un worker nativo, y
+# nos confundio una vez, SS4.1), y una card que por error cayera en manos del
+# dispatcher de Hermes cargaria una skill que nadie pidio. Hermes solo hace
+# lower() sobre el assignee (`profiles.normalize_profile_name`), asi que el
+# sufijo sobrevive intacto y sigue sin ser un perfil valido -> nonspawnable.
+CARRIL = "orquester-external"
 CLAIMER = "orquester"
 _HEARTBEAT_S = 120              # el TTL del claim es 15 min; con margen
 
 
+def carril(runtime: str) -> str:
+    """El `assignee` que le toca a un nodo de este runtime."""
+    if runtime not in BACKENDS:
+        raise BackendError(f"runtime desconocido: {runtime}")
+    return f"{CARRIL}:{runtime}"
+
+
 def _runtime_de(task) -> str:
-    """El runtime del nodo viaja en `skills`. Es metadato, no selector (SS4.1)."""
-    for s in (task.skills or []):
-        if s in ("claude-code", "opencode", "antigravity"):
-            return s
-    raise BackendError(f"la card {task.id} no declara runtime externo")
+    prefijo, _, runtime = (task.assignee or "").partition(":")
+    if prefijo != CARRIL or runtime not in BACKENDS:
+        raise BackendError(f"la card {task.id} no declara runtime externo: {task.assignee!r}")
+    return runtime
 
 
 def ejecutar_una(conn, task_id: str, *, timeout: int = 600) -> dict:
@@ -67,7 +80,10 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600) -> dict:
 
 def tick(conn, *, timeout: int = 600) -> list[tuple[str, dict]]:
     """Una pasada: ejecutar todas las cards listas del carril propio."""
-    listas = k.list_tasks(conn, status="ready", assignee=CARRIL)
+    # Una consulta por carril en vez de listar todo y filtrar por prefijo:
+    # `list_tasks` filtra por assignee en SQL y son 3 backends, no 300.
+    listas = [t for rt in BACKENDS
+              for t in k.list_tasks(conn, status="ready", assignee=carril(rt))]
     return [(t.id, ejecutar_una(conn, t.id, timeout=timeout)) for t in listas]
 
 
@@ -80,7 +96,8 @@ def correr(board: str, *, intervalo: int = 5, hasta_vacio: bool = True) -> None:
             print(f"  {tid} -> {out['status']}: {out['summary'][:90]}")
         if hasta_vacio and not hechas:
             pendientes = [
-                t for t in k.list_tasks(conn, assignee=CARRIL)
+                t for rt in BACKENDS
+                for t in k.list_tasks(conn, assignee=carril(rt))
                 if t.status in ("todo", "blocked", "running")
             ]
             if not pendientes:
