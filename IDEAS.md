@@ -19,7 +19,21 @@ Lo que nadie construyó sobre ese runtime, y es lo que ORQUESTER aporta:
 
 **Control de granularidad** sigue en pie como función de ORQUESTER, pero se implementa configurando lo que Hermes ya expone (`delegation.max_spawn_depth`, `max_concurrent_children`, `output_schema` por nodo), no escribiendo un compresor propio.
 
-**Los sub-agentes especializados siguen siendo el corazón del producto.** Cada nodo del flujo elige su ejecutor: Claude Code, OpenCode, Antigravity, Codex, un modelo local o el propio Hermes. Hermes trae las skills para todos ellos y homogeneiza sus salidas contra el mismo contrato, así que un flujo mixto se diseña igual que uno homogéneo. Ver `ARQUITECTURA.md` §4.1.
+**Los sub-agentes especializados siguen siendo el corazón del producto.** Cada nodo del flujo elige su ejecutor: Claude Code, OpenCode, Antigravity, Codex, un modelo local o el propio Hermes. Un flujo mixto se diseña igual que uno homogéneo.
+
+### Corre sobre tus suscripciones, no solo sobre APIs
+
+Es el diferenciador más concreto y el más fácil de subestimar. Casi toda herramienta de orquestación asume **una API key y cobro por token**. ORQUESTER ejecuta los CLIs de agente que ya tenés instalados y logueados: `claude`, `opencode`, `agy`. Cada uno corre bajo **su propia autenticación y su propia suscripción**, no bajo una key que ORQUESTER administre.
+
+Consecuencias, en orden de importancia:
+
+* **El costo marginal de un nodo puede ser cero.** Si ya pagás Claude Code y Antigravity, un flujo que los usa no agrega factura de API.
+* **Los límites se reparten entre proveedores.** Un flujo mixto no se choca contra el rate limit de un solo vendor.
+* **No hay que confiarle secretos a ORQUESTER.** Las credenciales viven donde ya viven: en cada CLI. ORQUESTER lanza procesos, no custodia keys.
+
+Verificado, no aspiracional: los tres CLIs se ejecutaron desde el kanban con su propia auth (`ARQUITECTURA.md` §10). Esto es también la razón de §12 — si el ejecutor de un nodo no está garantizado, la promesa de "corre sobre tu suscripción de X" se cae.
+
+La vía de API sigue disponible por nodo, vía los proveedores de Hermes, para quien la prefiera. No es lo uno **o** lo otro.
 
 ---
 
