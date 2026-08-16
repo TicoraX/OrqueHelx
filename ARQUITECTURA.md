@@ -337,6 +337,32 @@ Convención: **Verificado (ejecutado)** = hay salida cruda pegada en `tests/`.
 
 ---
 
+## 10.1 El pin de Hermes, y sus dos copias
+
+Hermes es upstream ajeno (NousResearch, MIT) y avanza por su cuenta. Todo lo
+verificado en §10 lo está **contra un commit concreto**, registrado en
+`HERMES_PIN` y comprobado por `tests/test_pin_hermes.py`. Sin ese registro, la
+tabla pasaría a hablar de una versión que ya no existe sin que nada avise.
+
+**Hay dos copias de Hermes en juego, y escriben la misma base:**
+
+| Copia | Quién la usa |
+|---|---|
+| `hermes-agent/` (clon, ignorado por git) | Nuestro código Python, vía `sys.path` |
+| `%LOCALAPPDATA%/hermes/` (instalada) | El CLI `hermes` y su dispatcher |
+
+Nuestro dispatcher lee y escribe el kanban con el `kanban_db.py` **del clon**;
+el dispatcher de Hermes usa el **instalado**. Si divergen en el esquema, dos
+escritores con distinta idea de la tabla tocan el mismo `kanban.db`. El check
+avisa; impedirlo no se puede con código que no es nuestro.
+
+`hermes-agent/` está en `.gitignore` y conserva su propio `.git` apuntando a
+upstream: se actualiza con `git pull` y nunca entra a nuestros commits. El check
+también falla si el clon tiene cambios locales — es la forma de que "pinear por
+versión, sin fork" (§1) sea verificable y no una intención.
+
+---
+
 ## 11. Restricción operativa: proveedores `external_process`
 
 **Descubierto por experimento controlado**, no por lectura de código.

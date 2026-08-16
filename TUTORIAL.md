@@ -238,6 +238,32 @@ Los que aceptan `--e2e` además ejecutan agentes de verdad y tardan minutos:
 
 ---
 
+## 10. Actualizar Hermes
+
+Hermes no es nuestro: vive en `hermes-agent/`, ignorado por git, con su propio
+remoto a `NousResearch/hermes-agent`. Se actualiza normal:
+
+```bash
+git -C hermes-agent pull
+```
+
+Antes y después, corré el check del pin:
+
+```bash
+cd hermes-agent
+uv run --python 3.11 python ../tests/test_pin_hermes.py
+```
+
+Te dice si el clon se movió del commit contra el que está verificada la tabla
+de `ARQUITECTURA.md` §10, y si el CLI instalado quedó en otra versión. **Las
+dos copias escriben el mismo `kanban.db`**, así que conviene moverlas juntas.
+
+Si actualizás a propósito: corré la suite entera, y si pasa, actualizá
+`HERMES_PIN` con el commit nuevo. Si algo falla, ahí tenés el diff de upstream
+para saber qué cambió.
+
+---
+
 ## Dónde está cada cosa
 
 | Ruta | Qué es |
