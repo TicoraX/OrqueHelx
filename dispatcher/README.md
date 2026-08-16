@@ -30,3 +30,15 @@ cd hermes-agent
 uv run --python 3.11 --with jsonschema python ../tests/test_rebanada_vertical.py        # offline
 uv run --python 3.11 --with jsonschema python ../tests/test_rebanada_vertical.py --e2e  # con opencode real
 ```
+
+## Concurrencia y reintentos
+
+- `MAX_PARALELO` (3): cuántos nodos del carril corren a la vez. El techo lo pone
+  el rate limit del proveedor de cada CLI, no la máquina.
+- `MAX_INTENTOS` (2): reintentos de un fallo **transitorio**. Los fallos
+  permanentes (binario ausente, runtime desconocido, flag de bypass) se bloquean
+  como `capability` y no se reintentan nunca.
+- El conteo de intentos sale de `list_runs`, así que sobrevive a un reinicio del
+  dispatcher.
+- Cuando los reintentos se agotan, Hermes enruta la card a `triage` por su
+  propio cortacircuitos. Queda esperando decisión humana, no girando.

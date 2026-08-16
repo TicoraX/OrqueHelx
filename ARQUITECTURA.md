@@ -277,7 +277,7 @@ Knobs relevantes bajo `delegation:` en `config.yaml`: `max_concurrent_children` 
 
 ## 10. Estado de verificación
 
-**38 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **ocho
+**41 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **nueve
 filas "Verificado: NO"**: supuestos de diseño que parecían ciertos leyendo el
 código de Hermes y que la ejecución desmintió. Cada una habría sido un bug en
 producción, y ninguna se ve sin correr el sistema.
@@ -325,6 +325,9 @@ Convención: **Verificado (ejecutado)** = hay salida cruda pegada en `tests/`.
 | Rombo mixto con los CUATRO ejecutores | **Verificado (ejecutado)** | board `mixto-5`: A hermes -> B opencode + C claude-code -> D antigravity; D respondió *"ambos padres enviaron 7"* |
 | `claude --json-schema` acepta una ruta de archivo | **Verificado: NO** | exige JSON inline (`is not valid JSON: Unexpected identifier`); al revés que `agy` |
 | Un nodo que falla retiene a sus hijos | **Verificado: NO lo hacía** | cerraba con `complete_task` y el kanban promovía al hijo sobre el mensaje de error. Corregido con `block_task` |
+| Los nodos del carril corren en paralelo | **Verificado (ejecutado)** | 3 nodos de ~2s en 2.9s; con `MAX_PARALELO=2`, 4 nodos en 4.3s |
+| Los reintentos terminan solos | **Verificado (ejecutado)** | al agotarse, Hermes enruta a `triage` (`BLOCK_RECURRENCE_LIMIT`) |
+| Un fallo permanente se reintenta | **Verificado: NO** | se bloquea como `capability` y `reintentar()` lo ignora |
 
 ---
 
@@ -446,6 +449,13 @@ out = run_backend(task.runtime, goal=ctx, schema=AGENT_ADAPTER_OUTPUT)
 # 6. Cerrar
 k.complete_task(conn, task_id, summary=out.summary, ...)  # :5544
 ```
+
+**Concurrencia y reintentos** (`tests/test_concurrencia_reintentos.py`, 6/6):
+
+- Los nodos listos del carril corren en paralelo, con tope `MAX_PARALELO` (3 por defecto). Una conexión SQLite por hilo — los objetos de `sqlite3` no se comparten entre hilos, y `claim_task` ya es atómico entre conexiones, así que no hace falta lock propio. El techo real lo pone el rate limit del proveedor de cada CLI, no la máquina.
+- Un fallo se clasifica antes de bloquear: `capability` para lo que no se arregla solo (binario ausente, runtime desconocido, flag de bypass rechazado) y `transient` para el resto. Solo los `transient` se reintentan, hasta `MAX_INTENTOS`.
+- **El conteo de intentos sale de `list_runs`, no de memoria del proceso**: el dispatcher puede reiniciarse y el conteo sobrevive.
+- Emergente y útil: al agotarse los reintentos, Hermes enruta la card a **`triage`** por su `BLOCK_RECURRENCE_LIMIT`, que corta los bucles de desbloqueo. Nuestro reintento no puede girar para siempre aunque el código lo intentara.
 
 Con `heartbeat_claim` (:4879) en un hilo mientras corre el paso 4, para que
 `release_stale_claims` no lo reclame en una invocación larga (`agy` tardó

@@ -8,6 +8,7 @@ Corre en Python, no en TypeScript, a proposito: usa `kanban_db` como libreria
 en vez de reimplementar el protocolo de claim contra la misma SQLite.
 """
 import sys, threading, time
+from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, r"A:/Proyectos/orquester/hermes-agent")
 import hermes_cli.kanban_db as k
@@ -24,6 +25,22 @@ from backends import run_backend, BackendError, BACKENDS
 CARRIL = "orquester-external"
 CLAIMER = "orquester"
 _HEARTBEAT_S = 120              # el TTL del claim es 15 min; con margen
+
+# Cuantos nodos del carril corren a la vez. Un fan-out ancho se serializaba
+# entero antes de esto. El techo lo pone el rate limit del proveedor de cada
+# CLI, no la maquina: por eso es bajo y configurable.
+MAX_PARALELO = 3
+
+# Reintentos por nodo ante un fallo transitorio. Hermes ademas corta los bucles
+# de desbloqueo por su cuenta (`BLOCK_RECURRENCE_LIMIT`), asi que un reintento
+# que se obstine termina en `triage` y no girando para siempre.
+MAX_INTENTOS = 2
+
+# Fallos que NO se reintentan: no se arreglan solos y reintentarlos solo gasta
+# tiempo y cuota. Van como `capability`, que es el tipo que Hermes reserva para
+# "a este worker le falta algo", en vez de `transient`.
+_PERMANENTES = ("no esta en el PATH", "binario no encontrado",
+                "flags de bypass prohibidos", "runtime desconocido")
 
 
 def carril(runtime: str) -> str:
@@ -67,8 +84,11 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600) -> dict:
         # resultado del padre. Observado en el board `mixto-4`: dos nodos
         # fallaron, cerraron igual, y el hijo corrio sobre la basura.
         latido.set()
-        k.block_task(conn, task_id, reason=str(e)[:2000])
-        return {"status": "failure", "summary": str(e)[:2000]}
+        msg = str(e)[:2000]
+        permanente = any(p in msg for p in _PERMANENTES)
+        k.block_task(conn, task_id, reason=msg,
+                     kind="capability" if permanente else "transient")
+        return {"status": "failure", "summary": msg}
     finally:
         latido.set()
 
@@ -81,31 +101,75 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600) -> dict:
     return salida
 
 
-def tick(conn, *, timeout: int = 600) -> list[tuple[str, dict]]:
-    """Una pasada: ejecutar todas las cards listas del carril propio."""
-    # Una consulta por carril en vez de listar todo y filtrar por prefijo:
-    # `list_tasks` filtra por assignee en SQL y son 3 backends, no 300.
-    listas = [t for rt in BACKENDS
-              for t in k.list_tasks(conn, status="ready", assignee=carril(rt))]
-    return [(t.id, ejecutar_una(conn, t.id, timeout=timeout)) for t in listas]
+def _mis_cards(conn, estado: str) -> list:
+    """Cards del carril propio en `estado`.
+
+    Una consulta por carril en vez de listar todo y filtrar por prefijo:
+    `list_tasks` filtra por assignee en SQL y son 3 backends, no 300.
+    """
+    return [t for rt in BACKENDS
+            for t in k.list_tasks(conn, status=estado, assignee=carril(rt))]
+
+
+def reintentar(conn) -> list[str]:
+    """Desbloquear los fallos transitorios que todavia tienen intentos."""
+    reabiertas = []
+    for t in _mis_cards(conn, "blocked"):
+        if t.block_kind != "transient":
+            continue                      # dependencia o fallo permanente
+        # Intentos previos contados desde `task_runs`, no desde memoria: el
+        # dispatcher puede reiniciarse y el conteo tiene que sobrevivir.
+        intentos = len(k.list_runs(conn, t.id, include_active=False))
+        if intentos < MAX_INTENTOS:
+            k.unblock_task(conn, t.id)
+            reabiertas.append(t.id)
+    return reabiertas
+
+
+def tick(conn, *, timeout: int = 600, board: str = None) -> list[tuple[str, dict]]:
+    """Una pasada: reabrir lo reintentable y ejecutar lo listo, en paralelo."""
+    reintentar(conn)
+    listas = _mis_cards(conn, "ready")
+    if not listas:
+        return []
+
+    # Una conexion por hilo: los objetos de sqlite3 no se comparten entre
+    # hilos, y `claim_task` ya es atomico entre conexiones (verificado en
+    # `tests/test_dos_dispatchers.py`), asi que no hace falta lock propio.
+    def _uno(t):
+        c = k.connect(board=board) if board else k.connect()
+        return (t.id, ejecutar_una(c, t.id, timeout=timeout))
+
+    with ThreadPoolExecutor(max_workers=MAX_PARALELO) as pool:
+        return list(pool.map(_uno, listas))
 
 
 def correr(board: str, *, intervalo: int = 5, hasta_vacio: bool = True) -> None:
     """Loop principal. Con `hasta_vacio`, termina cuando no queda trabajo."""
     conn = k.connect(board=board)
     while True:
-        hechas = tick(conn)
+        hechas = tick(conn, board=board)
         for tid, out in hechas:
             print(f"  {tid} -> {out['status']}: {out['summary'][:90]}")
-        if hasta_vacio and not hechas:
-            pendientes = [
-                t for rt in BACKENDS
-                for t in k.list_tasks(conn, assignee=carril(rt))
-                if t.status in ("todo", "blocked", "running")
-            ]
-            if not pendientes:
-                return
+        if hasta_vacio and not hechas and not _queda_trabajo(conn):
+            return
         time.sleep(intervalo)
+
+
+def _queda_trabajo(conn) -> bool:
+    """¿Hay algo que este loop pueda llegar a ejecutar?
+
+    Un `blocked` de tipo `capability` no se resuelve solo y un `transient` sin
+    intentos tampoco: contarlos como pendientes deja el loop girando para
+    siempre. Solo cuenta lo que de verdad puede avanzar.
+    """
+    for t in (t for rt in BACKENDS for t in k.list_tasks(conn, assignee=carril(rt))):
+        if t.status in ("todo", "running"):
+            return True
+        if t.status == "blocked" and t.block_kind == "transient" \
+                and len(k.list_runs(conn, t.id, include_active=False)) < MAX_INTENTOS:
+            return True
+    return False
 
 
 if __name__ == "__main__":
