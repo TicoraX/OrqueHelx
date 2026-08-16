@@ -1,0 +1,4 @@
+# Los scripts de shell van SIEMPRE con LF: con CRLF, Linux falla con
+# `bad interpreter: /bin/sh^M`. Es justo el archivo que existe para probar
+# que el repo corre en Linux.
+*.sh text eol=lf
