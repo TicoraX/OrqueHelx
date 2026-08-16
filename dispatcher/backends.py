@@ -26,6 +26,12 @@ CONTRATO = {
 
 # SS4.1: un worker de Hermes escalo solo a --dangerously-skip-permissions.
 # El nuestro no puede. Se compara sobre el argv ya construido.
+# Turnos de agente que se le conceden a `claude -p`. Arranco en 5 y una
+# revision de codigo real murio con `error_max_turns` leyendo el diff: 5 alcanza
+# para contar archivos, no para trabajar. El techo existe igual, porque un
+# agente sin limite de turnos es una factura sin limite.
+MAX_TURNS = 30
+
 FLAGS_PROHIBIDOS = {
     "--dangerously-skip-permissions",
     "--yolo",
@@ -97,6 +103,13 @@ def _primer_objeto(texto: str) -> dict:
 def _parse_envelope(stdout: str, clave: str) -> dict:
     """agy y claude devuelven un objeto con el contrato en una clave conocida."""
     obj = _primer_objeto(stdout)
+    # El envelope de claude reporta por que TERMINO. Sin mirarlo, un corte por
+    # limite de turnos se reportaba como "la salida no trae structured_output",
+    # que manda a buscar el bug en el parser en vez de en el limite.
+    if obj.get("subtype", "").startswith("error_") or obj.get("is_error"):
+        motivo = obj.get("subtype") or "error"
+        detalle = "; ".join(obj.get("errors") or []) or obj.get("terminal_reason", "")
+        raise BackendError(f"el agente termino con {motivo}: {detalle[:300]}")
     anidado = obj.get(clave)
     if isinstance(anidado, dict):
         return anidado
@@ -134,7 +147,7 @@ BACKENDS = {
         lambda goal, esquema: [
             "claude", "-p", goal,
             "--output-format", "json", "--json-schema", json.dumps(CONTRATO),
-            "--max-turns", "5",
+            "--max-turns", str(MAX_TURNS),
         ],
         lambda out: _parse_envelope(out, "structured_output"),
     ),
@@ -199,8 +212,20 @@ def _validar(obj: dict) -> dict:
     return obj
 
 
-def run_backend(runtime: str, goal: str, *, timeout: int = 600) -> dict:
-    """Invocar `runtime` con `goal` y devolver un AgentAdapterOutput validado."""
+def run_backend(runtime: str, goal: str, *, timeout: int = 600,
+                cwd: str = None, herramientas: list[str] = None) -> dict:
+    """Invocar `runtime` con `goal` y devolver un AgentAdapterOutput validado.
+
+    `cwd` es el directorio donde corre el agente: sin esto heredaria el del
+    dispatcher, que es una coincidencia y no una decision. Un nodo que revisa
+    un repo tiene que correr *en* ese repo.
+
+    `herramientas` son los permisos que el nodo necesita (ej. `["Read","Bash"]`).
+    Solo `claude` los toma por linea de comandos (`--allowedTools`); opencode y
+    agy gobiernan permisos por su propia config. Se documenta en vez de
+    simularlo, porque un permiso que se cree concedido y no lo esta es peor que
+    uno ausente.
+    """
     if runtime not in BACKENDS:
         raise BackendError(f"runtime desconocido: {runtime}")
     construir_argv, parser = BACKENDS[runtime]
@@ -217,6 +242,8 @@ def run_backend(runtime: str, goal: str, *, timeout: int = 600) -> dict:
         ruta_esquema = Path(tmp) / "contrato.json"
         ruta_esquema.write_text(json.dumps(CONTRATO), encoding="utf-8")
         argv = construir_argv(goal_final, str(ruta_esquema))
+        if herramientas and runtime == "claude-code":
+            argv += ["--allowedTools", ",".join(herramientas)]
 
         prohibidos = FLAGS_PROHIBIDOS.intersection(argv)
         if prohibidos:
@@ -233,9 +260,13 @@ def run_backend(runtime: str, goal: str, *, timeout: int = 600) -> dict:
                 # Verificado: opencode responde en 9s suelto y colgaba >600s
                 # lanzado desde el servidor MCP.
                 stdin=subprocess.DEVNULL,
+                cwd=cwd,
             )
-        except FileNotFoundError as e:
-            raise BackendError(f"binario no encontrado para {runtime}: {e}") from e
+        except OSError as e:
+            # OSError y no solo FileNotFoundError: un `cwd` inexistente tira
+            # NotADirectoryError, y sin atraparlo se escapaba del pool de hilos
+            # y mataba el tick entero por un nodo mal configurado.
+            raise BackendError(f"no se pudo lanzar {runtime}: {e}") from e
         except subprocess.TimeoutExpired as e:
             raise BackendError(f"{runtime} excedio {timeout}s") from e
 

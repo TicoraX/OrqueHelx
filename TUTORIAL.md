@@ -1,0 +1,251 @@
+# ORQUESTER — cómo se usa
+
+Diseñás un flujo, cada nodo elige quién lo ejecuta, y el resultado sale por
+MCP para invocarlo desde tu editor. Este tutorial va de cero a un flujo real.
+
+---
+
+## 0. Qué necesitás
+
+| Pieza | Para qué | Cómo verificar |
+|---|---|---|
+| Python 3.11 + `uv` | Todo corre acá | `uv --version` |
+| Hermes Agent | El scheduler del DAG | `hermes --version` |
+| `claude` | Nodos `runtime: claude-code` | `claude --version` |
+| `opencode` | Nodos `runtime: opencode` | `opencode --version` |
+| `agy` | Nodos `runtime: antigravity` | `agy --version` |
+
+**Los CLIs corren con tu propia sesión y tu propia suscripción.** ORQUESTER no
+administra API keys ni las ve: lanza procesos que ya están autenticados. Si un
+nodo funciona cuando lo corrés a mano, funciona dentro de un flujo.
+
+No hace falta tener los tres. Un flujo que solo usa `opencode` solo necesita
+`opencode`.
+
+---
+
+## 1. Levantar el Studio
+
+```bash
+cd A:/Proyectos/orquester
+uv run --python 3.11 --with jsonschema python ui/server.py
+```
+
+Abre en http://127.0.0.1:8765
+
+Escucha solo en localhost a propósito: ejecuta agentes con acceso a tu terminal
+y no tiene autenticación. **No lo expongas a la red.**
+
+---
+
+## 2. Diseñar el flujo
+
+En el canvas:
+
+| Gesto | Qué hace |
+|---|---|
+| Doble clic en vacío | Nodo nuevo |
+| Arrastrar un nodo | Moverlo |
+| **Shift + arrastrar** de un nodo a otro | Dependencia (el segundo espera al primero) |
+| Clic en una flecha | Borrarla |
+| Clic en un nodo | Lo selecciona y abre su traza |
+
+Con el nodo seleccionado, el panel derecho tiene dos campos que importan:
+
+**Título** — es el *goal* del nodo, el prompt que recibe el agente. No es una
+etiqueta: es el trabajo.
+
+**Ejecutor** — quién lo corre. `Hermes (nativo)`, `Claude Code`, `OpenCode` o
+`Antigravity`.
+
+### Escribir un buen goal
+
+Es lo que más define si el flujo sirve. Lo aprendido a los golpes:
+
+- **Sé específico o el agente improvisa.** "Revisá el PR 7" hizo que OpenCode
+  se pusiera a explorar el repo durante diez minutos. "Contá los archivos .md
+  del directorio actual y devolvé el número" tarda nueve segundos.
+- **Decí explícitamente qué NO hacer.** Un nodo con el workspace vacío se
+  inventó cuatro archivos de prueba para tener algo que contar. Si no querés
+  que fabrique su input, escribilo.
+- **Acotá el formato de salida.** "Máximo 5 hallazgos, cada uno con
+  archivo:línea" da algo usable; "revisá el código" da tres párrafos.
+- **Los hijos reciben el resumen de sus padres automáticamente.** No repitas el
+  contexto: escribí "tu padre te pasó X" y ya lo tiene.
+
+---
+
+## 3. Validar, compilar, ejecutar
+
+Los tres botones, en orden:
+
+**Validar** — rechaza ciclos, aristas colgadas y runtimes desconocidos **sin
+tocar nada**. El error nombra el nodo culpable.
+
+**Compilar** — crea las cards en el board. A partir de acá el DAG existe: el
+kanban de Hermes resuelve las dependencias.
+
+**Ejecutar** — arranca el dispatcher. Los nodos se pintan solos cada 2.5s:
+
+| Color | Estado |
+|---|---|
+| Gris | espera a sus padres |
+| Ámbar | listo, sin arrancar |
+| Azul | corriendo |
+| Verde | terminado |
+| Rojo | falló |
+| Naranja | `triage` — se agotaron los reintentos, decidí vos |
+
+> **Nodos `runtime: hermes`:** los ejecuta el dispatcher de Hermes, no el de
+> ORQUESTER. Necesitás correr aparte, en otra terminal:
+> ```bash
+> while true; do hermes kanban --board mi-flujo dispatch; sleep 10; done
+> ```
+
+---
+
+## 4. Cuando algo falla
+
+Clic en el nodo. La traza muestra cada intento con su error, y la secuencia de
+eventos del kanban.
+
+Un fallo **no** cierra el nodo: lo bloquea, y sus hijos se quedan esperando. Un
+hijo nunca arranca sobre el mensaje de error de su padre.
+
+Hay dos clases de fallo:
+
+- **`transient`** — se reintenta solo, hasta 2 veces.
+- **`capability`** — no se reintenta nunca. Es "falta algo": binario ausente,
+  runtime desconocido. Reintentarlo solo gasta cuota.
+
+Si los reintentos se agotan, el nodo va a `triage`. Ahí decide un humano.
+
+---
+
+## 5. Publicarlo como MCP
+
+Poné `{{marcadores}}` en los goals y se vuelven los parámetros de la tool. **No
+se declaran aparte:** escribir el goal ya es declarar la interfaz.
+
+```
+Revisá el código de {{ruta}} en los últimos {{commits}} commits
+```
+
+Botón **Exportar como MCP**. Te da el snippet para tu cliente:
+
+```json
+{"mcpServers": {"revision-repo": {
+    "command": "python",
+    "args": ["A:/Proyectos/orquester/mcp_exporter/mcp_server.py",
+             "A:/Proyectos/orquester/ui/grafos/revision-repo.json"]}}}
+```
+
+Desde Claude Desktop o Cursor, la tool aparece con sus parámetros. Al llamarla,
+el flujo corre en un board propio y devuelve el resultado de sus **hojas** (los
+nodos de los que nadie depende).
+
+Dos llamadas concurrentes no se pisan: cada una usa su board.
+
+---
+
+## 6. El flujo de ejemplo: revisión de repo
+
+`ui/grafos/revision-repo.json`. Tres nodos, dos en paralelo:
+
+```
+  codigo (claude-code)      tests (opencode)
+   revisa el diff            corre la suite
+          \                      /
+           \                    /
+            veredicto (antigravity)
+             ¿se puede mergear?
+```
+
+Los dos revisores no dependen entre sí, así que **arrancan juntos**. El
+veredicto espera a los dos.
+
+Es el caso donde el producto se justifica: tres ejecutores distintos, con
+paralelismo y join real. Un flujo lineal de dos nodos lo hace mejor un script.
+
+### Correrlo
+
+Desde el Studio: abrilo, poné los parámetros y dale Ejecutar. O sin UI:
+
+```bash
+cd hermes-agent
+uv run --python 3.11 --with jsonschema python -c "
+import sys, json; sys.path.insert(0, r'A:/Proyectos/orquester/mcp_exporter')
+import exportar as ex
+g = json.load(open(r'A:/Proyectos/orquester/ui/grafos/revision-repo.json', encoding='utf-8'))
+print(ex.ejecutar(g, {'ruta': 'A:/Proyectos/orquester', 'commits': '3'}))"
+```
+
+### El campo `workspace`
+
+Cada nodo lo lleva apuntando a `{{ruta}}`. Es **dónde corre el agente**. Sin
+eso, Hermes le da un directorio scratch vacío y el agente no ve tu repo.
+
+Ojo: el scratch se **borra** al completar la card. Un nodo cuyo entregable sean
+archivos necesita `workspace` explícito.
+
+---
+
+## 7. Permisos
+
+Los nodos externos corren con `Read`, `Grep`, `Glob` y `Bash`: alcanza para
+inspeccionar un repo y correr tests.
+
+Los flags de bypass de permisos (`--dangerously-skip-permissions` y
+equivalentes) están en una **denylist** y el dispatcher rechaza cualquier
+invocación que los lleve. Esto no es paranoia de manual: un worker de Hermes,
+al chocar contra una barrera de permisos, se la desactivó solo agregando el
+flag por su cuenta.
+
+---
+
+## 8. Problemas conocidos
+
+**Un nodo tarda muchísimo.** Casi siempre el goal es vago y el agente se puso a
+explorar. Acotalo. Comparalo corriendo el mismo prompt a mano.
+
+**El nodo `hermes` nunca arranca.** El dispatcher de Hermes no está corriendo
+(sección 3). Y no uses proveedores de tipo `external_process` como `copilot`:
+todo agente hijo se cuelga en `Initializing agent...` para siempre.
+
+**Un nodo cierra sin invocar el CLI.** No pasa con el dispatcher de ORQUESTER,
+que invoca el binario él mismo. Sí pasa si intentás usar el campo `skills` de
+Hermes para elegir ejecutor: `skills` es contexto, no selector.
+
+**Fallos que no se reintentan.** Es a propósito si son `capability`. Mirá la
+traza del nodo.
+
+---
+
+## 9. Los tests
+
+```bash
+cd hermes-agent
+uv run --python 3.11 --with jsonschema python ../tests/test_contract.py
+uv run --python 3.11 --with jsonschema python ../tests/test_dag_rombo.py
+uv run --python 3.11 --with jsonschema python ../tests/test_dos_dispatchers.py
+uv run --python 3.11 --with jsonschema python ../tests/test_compilador.py
+uv run --python 3.11 --with jsonschema python ../tests/test_concurrencia_reintentos.py
+uv run --python 3.11 --with jsonschema python ../tests/test_mcp_export.py
+```
+
+Los que aceptan `--e2e` además ejecutan agentes de verdad y tardan minutos:
+`test_rebanada_vertical.py` y `test_mcp_export.py`.
+
+---
+
+## Dónde está cada cosa
+
+| Ruta | Qué es |
+|---|---|
+| `ui/` | Studio: servidor y canvas |
+| `compiler/` | Grafo → cards del kanban |
+| `dispatcher/` | Ejecuta los nodos con agente externo |
+| `mcp_exporter/` | Publica un flujo como servidor MCP |
+| `hermes-agent/` | Runtime prestado (MIT, sin fork) |
+| `ARQUITECTURA.md` | Las decisiones y su evidencia |
+| `IDEAS.md` | Qué es el producto y por qué |

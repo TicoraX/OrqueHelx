@@ -132,6 +132,10 @@ def compilar(grafo: dict, *, board: str = None) -> dict[str, str]:
                 assignee=_assignee(nodo),
                 parents=parents,
                 board=board,
+                # `workspace` fija donde corre el nodo. Sin el, el scratch de
+                # Hermes arranca vacio y el agente no ve el repo.
+                **({"workspace_kind": "dir", "workspace_path": nodo["workspace"]}
+                   if nodo.get("workspace") else {}),
             )
         except ValueError as e:
             # SS4: traducir el error del kanban a algo que el canvas pueda pintar.

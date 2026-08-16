@@ -84,4 +84,23 @@ print(f"6. fallo permanente: estado={tp.status} kind={tp.block_kind}")
 assert tp.status == "blocked" and tp.block_kind == "capability", tp
 assert p not in loop.reintentar(conn), "un `capability` NO se reintenta"
 
+# --- 6. El clasificador coincide con los mensajes que backends produce ---
+# Se desincronizaron una vez: el mensaje cambio de "binario no encontrado" a
+# "no se pudo lanzar" y `_PERMANENTES` quedo buscando una cadena que ya nadie
+# emitia, asi que un fallo permanente se reintentaba dos veces al pedo.
+import inspect
+fuente = inspect.getsource(b.run_backend) + inspect.getsource(b._resolver_argv)
+for frase in loop._PERMANENTES:
+    assert frase in fuente, f"'{frase}' no lo emite nadie en backends.py"
+print("7. cada frase de _PERMANENTES existe de verdad en backends: OK")
+
+# Y un cwd inexistente (OSError, no FileNotFoundError) debe ser permanente.
+b.BACKENDS["opencode"] = (lambda g, e: ["python", "-c", "print(1)"], b._primer_objeto)
+w = k.create_task(conn, title="workspace fantasma", assignee=loop.carril("opencode"),
+                  workspace_kind="dir", workspace_path="Z:/no/existe/jamas")
+loop.ejecutar_una(conn, w, timeout=60)
+tw = k.get_task(conn, w)
+print(f"8. cwd inexistente: estado={tw.status} kind={tw.block_kind}")
+assert tw.block_kind == "capability", f"un cwd invalido no se arregla reintentando: {tw.block_kind}"
+
 print("\nOK: paralelismo acotado y reintentos que terminan.")

@@ -39,8 +39,19 @@ MAX_INTENTOS = 2
 # Fallos que NO se reintentan: no se arreglan solos y reintentarlos solo gasta
 # tiempo y cuota. Van como `capability`, que es el tipo que Hermes reserva para
 # "a este worker le falta algo", en vez de `transient`.
-_PERMANENTES = ("no esta en el PATH", "binario no encontrado",
+# Estas cadenas tienen que coincidir con lo que `backends` produce de verdad.
+# Ya se desincronizaron una vez: el catch paso de FileNotFoundError a OSError y
+# el mensaje cambio a "no se pudo lanzar", pero aca seguia "binario no
+# encontrado". Efecto: un workspace inexistente se reintentaba como transitorio
+# dos veces antes de rendirse, en vez de fallar de una.
+_PERMANENTES = ("no esta en el PATH", "no se pudo lanzar",
                 "flags de bypass prohibidos", "runtime desconocido")
+
+# Permisos que se le conceden al agente externo. Lectura y shell: alcanza para
+# inspeccionar un repo y correr tests, y NO incluye ningun flag de bypass (esos
+# siguen en la denylist de `backends.FLAGS_PROHIBIDOS`). Cuando el Studio deje
+# elegir permisos por nodo, esto pasa a ser el default y no la unica opcion.
+_HERRAMIENTAS = ["Read", "Grep", "Glob", "Bash"]
 
 
 def carril(runtime: str) -> str:
@@ -69,14 +80,19 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600) -> dict:
         # Sin esto, release_stale_claims nos saca la card en una invocacion
         # larga: `agy` tardo 124.8s en la verificacion, y hay peores.
         c = k.connect()
-        while not latido.wait(_HEARTBEAT_S):
-            k.heartbeat_claim(c, task_id, claimer=CLAIMER)
+        try:
+            while not latido.wait(_HEARTBEAT_S):
+                k.heartbeat_claim(c, task_id, claimer=CLAIMER)
+        finally:
+            c.close()
 
     hilo = threading.Thread(target=_latir, daemon=True)
     hilo.start()
     try:
         ctx = k.build_worker_context(conn, task_id)   # summaries de los padres
-        salida = run_backend(_runtime_de(task), ctx, timeout=timeout)
+        salida = run_backend(_runtime_de(task), ctx, timeout=timeout,
+                             cwd=task.workspace_path or None,
+                             herramientas=_HERRAMIENTAS)
     except BackendError as e:
         # Un nodo que falla NO se cierra: se bloquea. Si se cerrara con
         # `complete_task`, el kanban lo veria 'done' y **promoveria a sus
@@ -137,8 +153,14 @@ def tick(conn, *, timeout: int = 600, board: str = None) -> list[tuple[str, dict
     # hilos, y `claim_task` ya es atomico entre conexiones (verificado en
     # `tests/test_dos_dispatchers.py`), asi que no hace falta lock propio.
     def _uno(t):
+        # Cerrar siempre: se abre una conexion por card por tick, y el bucle de
+        # `correr` tickea cada pocos segundos. Sin cerrar, un flujo largo se
+        # come los descriptores.
         c = k.connect(board=board) if board else k.connect()
-        return (t.id, ejecutar_una(c, t.id, timeout=timeout))
+        try:
+            return (t.id, ejecutar_una(c, t.id, timeout=timeout))
+        finally:
+            c.close()
 
     with ThreadPoolExecutor(max_workers=MAX_PARALELO) as pool:
         return list(pool.map(_uno, listas))

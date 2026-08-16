@@ -277,7 +277,7 @@ Knobs relevantes bajo `delegation:` en `config.yaml`: `max_concurrent_children` 
 
 ## 10. Estado de verificación
 
-**44 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **nueve
+**47 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **nueve
 filas "Verificado: NO"**: supuestos de diseño que parecían ciertos leyendo el
 código de Hermes y que la ejecución desmintió. Cada una habría sido un bug en
 producción, y ninguna se ve sin correr el sistema.
@@ -331,6 +331,9 @@ Convención: **Verificado (ejecutado)** = hay salida cruda pegada en `tests/`.
 | Un flujo se publica como servidor MCP | **Verificado (ejecutado)** | `tests/test_mcp_export.py`: `initialize`/`tools/list`/`tools/call` por stdio; el `tools/call` ejecutó el flujo y devolvió el resultado de las hojas |
 | Los parámetros de la tool salen del goal | **Verificado (ejecutado)** | los `{{marcadores}}` del título generan el `inputSchema` |
 | El CLI hijo puede heredar el stdin del padre | **Verificado: SÍ, y es grave** | con el servidor MCP ese stdin es el canal JSON-RPC: opencode colgaba >600s (9s suelto). Corregido con `stdin=DEVNULL` |
+| Un flujo real encuentra bugs reales | **Verificado (ejecutado)** | `ui/grafos/revision-repo.json` sobre este repo: 3 hallazgos ciertos en código propio, confirmados a mano y corregidos |
+| `--max-turns 5` alcanza para trabajo real | **Verificado: NO** | una revisión de diff murió con `error_max_turns`. Subido a 30 |
+| El clasificador de fallos sigue al mensaje real | **Verificado: NO lo seguía** | `_PERMANENTES` buscaba una cadena que ya nadie emitía; ahora hay un check que lo ata |
 
 ---
 

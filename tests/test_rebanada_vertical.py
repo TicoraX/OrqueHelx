@@ -96,6 +96,16 @@ for rt in b.BACKENDS:
 assert loop._runtime_de(type("T", (), {"id": "t1", "assignee": "orquester-external:opencode"})) == "opencode"
 print("A6. el sub-carril sobrevive la normalizacion y sigue sin ser perfil: OK")
 
+# Un corte por limite de turnos debe decir QUE paso, no "falta structured_output".
+try:
+    b._parse_envelope(json.dumps({
+        "subtype": "error_max_turns", "terminal_reason": "max_turns",
+        "errors": ["Reached max turns"]}), "structured_output")
+    raise SystemExit("FALLA: no detecto el corte por turnos")
+except b.BackendError as e:
+    assert "error_max_turns" in str(e), e
+print("A7. un corte por limite de turnos se reporta con su causa real: OK")
+
 if "--e2e" not in sys.argv:
     print("\nOK parte A. Corre con --e2e para la cadena real sobre el board.")
     raise SystemExit(0)

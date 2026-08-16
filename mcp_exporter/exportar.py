@@ -23,13 +23,20 @@ _MARCADOR = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
 
 
 def parametros(grafo: dict) -> list[str]:
-    """Nombres de los marcadores del grafo, en orden de aparición."""
+    """Nombres de los marcadores del grafo, en orden de aparición.
+
+    Se recorre **todo** valor de texto del nodo, no una lista de campos. Cuando
+    solo se miraban `titulo` y `cuerpo`, un `{{marcador}}` en `workspace` pasaba
+    de largo y llegaba literal al disco: el agente arrancaba con un cwd llamado
+    `{{ruta}}` y el proceso ni siquiera lanzaba.
+    """
     vistos = []
     for n in grafo.get("nodos") or []:
-        for campo in (n.get("titulo") or "", n.get("cuerpo") or ""):
-            for nombre in _MARCADOR.findall(campo):
-                if nombre not in vistos:
-                    vistos.append(nombre)
+        for valor in n.values():
+            if isinstance(valor, str):
+                for nombre in _MARCADOR.findall(valor):
+                    if nombre not in vistos:
+                        vistos.append(nombre)
     return vistos
 
 
@@ -53,8 +60,8 @@ def sustituir(grafo: dict, valores: dict) -> dict:
         return _MARCADOR.sub(lambda m: str(valores.get(m.group(1), m.group(0))), txt or "")
 
     return {**grafo,
-            "nodos": [{**n, "titulo": _sub(n.get("titulo")),
-                       **({"cuerpo": _sub(n["cuerpo"])} if n.get("cuerpo") else {})}
+            "nodos": [{clave: _sub(valor) if isinstance(valor, str) else valor
+                       for clave, valor in n.items()}
                       for n in grafo.get("nodos") or []]}
 
 
@@ -91,8 +98,13 @@ def ejecutar(grafo: dict, valores: dict, *, timeout: int = 900) -> dict:
     limite = time.monotonic() + timeout
     while time.monotonic() < limite:
         if hermes:
+            # `stdin=DEVNULL` por el mismo motivo que en `backends.run_backend`:
+            # cuando el padre es el servidor MCP, el stdin heredado es el canal
+            # JSON-RPC. Y aca es peor: esta dentro del bucle de polling, asi que
+            # se repetiria en cada vuelta.
             subprocess.run([hermes, "kanban", "--board", board, "dispatch"],
-                           capture_output=True, timeout=180)
+                           capture_output=True, timeout=180,
+                           stdin=subprocess.DEVNULL)
         dispatcher.tick(conn, board=board)
         tareas = [k.get_task(conn, t) for t in ids.values()]
         if all(t.status in ("done", "blocked", "triage", "failed", "cancelled")
