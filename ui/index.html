@@ -1,0 +1,313 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ORQUESTER Studio</title>
+<style>
+  :root {
+    --bg:#14161a; --panel:#1c1f26; --linea:#2c313b; --texto:#e6e8ec;
+    --tenue:#8b93a1; --acento:#5b9dd9;
+    --todo:#4a5160; --ready:#c9a227; --running:#3d8bcd; --done:#3f9d52; --failed:#c0504d;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; height:100vh; display:flex; background:var(--bg); color:var(--texto);
+         font:14px/1.5 ui-sans-serif,system-ui,sans-serif; }
+  #lienzo { flex:1; cursor:crosshair; }
+  aside { width:320px; border-left:1px solid var(--linea); background:var(--panel);
+          padding:16px; overflow-y:auto; display:flex; flex-direction:column; gap:14px; }
+  h1 { font-size:15px; margin:0; letter-spacing:.02em; }
+  h2 { font-size:11px; text-transform:uppercase; letter-spacing:.08em;
+       color:var(--tenue); margin:0 0 6px; font-weight:600; }
+  label { display:block; font-size:12px; color:var(--tenue); margin-bottom:4px; }
+  input, select, textarea, button {
+    width:100%; padding:7px 9px; background:#141720; color:var(--texto);
+    border:1px solid var(--linea); border-radius:6px; font:inherit; }
+  textarea { resize:vertical; min-height:56px; }
+  button { cursor:pointer; background:#232833; }
+  button:hover:not(:disabled) { border-color:var(--acento); }
+  button:disabled { opacity:.45; cursor:default; }
+  button.primario { background:var(--acento); border-color:var(--acento); color:#0d1117; font-weight:600; }
+  .fila { display:flex; gap:8px; }
+  #aviso { padding:9px 11px; border-radius:6px; font-size:12.5px; white-space:pre-wrap;
+           display:none; border:1px solid; }
+  #aviso.error { background:#3a1d1d; border-color:#7a3b39; }
+  #aviso.ok    { background:#1b3324; border-color:#2f6b41; }
+  .leyenda { display:flex; flex-wrap:wrap; gap:9px; font-size:11.5px; color:var(--tenue); }
+  .leyenda i { width:9px; height:9px; border-radius:2px; display:inline-block; margin-right:4px; }
+  .ayuda { font-size:12px; color:var(--tenue); }
+  .ayuda b { color:var(--texto); font-weight:600; }
+  .nodo rect { stroke-width:1.5; }
+  .nodo.sel rect { stroke:#fff; stroke-width:2.5; }
+  .nodo text { pointer-events:none; font-size:12px; }
+  .nodo .rt { font-size:10px; fill:#0e1117; opacity:.75; }
+  #resumen { font-size:12px; color:var(--tenue); border-top:1px solid var(--linea);
+             padding-top:10px; white-space:pre-wrap; }
+</style>
+
+<svg id="lienzo">
+  <defs>
+    <marker id="punta" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#59616f"/>
+    </marker>
+  </defs>
+  <g id="aristas"></g><g id="nodos"></g><path id="fantasma" stroke="#5b9dd9"
+     stroke-dasharray="4 3" fill="none"></path>
+</svg>
+
+<aside>
+  <h1>ORQUESTER Studio</h1>
+
+  <div>
+    <label>Board</label>
+    <input id="board" value="mi-flujo">
+  </div>
+
+  <div id="aviso"></div>
+
+  <div>
+    <h2>Nodo seleccionado</h2>
+    <div id="sinNodo" class="ayuda">Doble clic en el lienzo para crear uno.</div>
+    <div id="editor" style="display:none; display:flex; flex-direction:column; gap:8px;">
+      <div><label>Título (el goal del nodo)</label><textarea id="titulo"></textarea></div>
+      <div><label>Ejecutor</label>
+        <select id="runtime">
+          <option value="hermes">Hermes (nativo)</option>
+          <option value="claude-code">Claude Code</option>
+          <option value="opencode">OpenCode</option>
+          <option value="antigravity">Antigravity</option>
+        </select>
+      </div>
+      <button id="borrar">Borrar nodo</button>
+    </div>
+  </div>
+
+  <div>
+    <h2>Acciones</h2>
+    <div class="fila" style="margin-bottom:8px;">
+      <button id="guardar">Guardar</button><button id="validar">Validar</button>
+    </div>
+    <div class="fila">
+      <button id="compilar">Compilar</button>
+      <button id="correr" class="primario">Ejecutar</button>
+    </div>
+  </div>
+
+  <div>
+    <h2>Estado</h2>
+    <div class="leyenda">
+      <span><i style="background:var(--todo)"></i>espera</span>
+      <span><i style="background:var(--ready)"></i>lista</span>
+      <span><i style="background:var(--running)"></i>corriendo</span>
+      <span><i style="background:var(--done)"></i>hecha</span>
+      <span><i style="background:var(--failed)"></i>falló</span>
+    </div>
+    <div id="resumen"></div>
+  </div>
+
+  <div class="ayuda">
+    <b>Doble clic</b> en vacío: nodo nuevo.<br>
+    <b>Arrastrar</b> un nodo: moverlo.<br>
+    <b>Shift + arrastrar</b> desde un nodo a otro: dependencia.<br>
+    <b>Clic</b> en una flecha: borrarla.
+  </div>
+</aside>
+
+<script>
+const COLOR = { todo:"#4a5160", ready:"#c9a227", running:"#3d8bcd", blocked:"#4a5160",
+                done:"#3f9d52", failed:"#c0504d", review:"#8e6bc0", cancelled:"#3a3f4a" };
+const RT_COLOR = { hermes:"#8e9aab", "claude-code":"#d0873f", opencode:"#4f9c8a",
+                   antigravity:"#7a6fc4" };
+const A = 196, ALTO = 60;
+// Rellenos claros que piden tinta oscura. Sin esto el texto del nodo se
+// pierde justo cuando mas importa: mientras el flujo corre.
+const CLAROS = new Set(["ready"]);
+const tinta = est => !est ? "#e6e8ec" : (CLAROS.has(est) ? "#14161a" : "#f2f5f8");                        // ancho/alto de un nodo
+
+let grafo = { board:"mi-flujo", nodos:[], aristas:[] };
+let ids = {};                                    // id de nodo -> task_id
+let estado = {};                                 // task_id -> {estado, ...}
+let sel = null, arrastre = null, enlazando = null;
+
+const $ = s => document.querySelector(s);
+const svg = $("#lienzo");
+const nuevoId = () => "n" + Math.random().toString(36).slice(2, 7);
+const buscar = id => grafo.nodos.find(n => n.id === id);
+
+function avisar(msg, tipo="error") {
+  const a = $("#aviso");
+  a.textContent = msg; a.className = tipo; a.style.display = msg ? "block" : "none";
+}
+
+function envolver(texto, ancho, maxLineas) {
+  const palabras = texto.trim().split(/\s+/);
+  const lineas = [];
+  let actual = "";
+  for (const p of palabras) {
+    if (!actual) { actual = p; }
+    else if ((actual + " " + p).length <= ancho) { actual += " " + p; }
+    else { lineas.push(actual); actual = p; if (lineas.length === maxLineas) break; }
+  }
+  if (actual && lineas.length < maxLineas) lineas.push(actual);
+  if (lineas.length === maxLineas) {
+    const usadas = lineas.join(" ").length;
+    if (usadas < texto.trim().length) {
+      lineas[maxLineas - 1] = lineas[maxLineas - 1].slice(0, ancho - 1).trimEnd() + "…";
+    }
+  }
+  return lineas;
+}
+
+function pintar() {
+  const gn = $("#nodos"), ga = $("#aristas");
+  gn.innerHTML = ""; ga.innerHTML = "";
+
+  for (const [p, h] of grafo.aristas) {
+    const a = buscar(p), b = buscar(h);
+    if (!a || !b) continue;
+    const l = document.createElementNS(svg.namespaceURI, "path");
+    l.setAttribute("d", `M${a.x + A/2},${a.y + ALTO} C${a.x + A/2},${a.y + ALTO + 44}
+                         ${b.x + A/2},${b.y - 44} ${b.x + A/2},${b.y}`);
+    l.setAttribute("stroke", "#59616f");
+    l.setAttribute("fill", "none"); l.setAttribute("stroke-width", "2");
+    l.setAttribute("marker-end", "url(#punta)");
+    l.style.cursor = "pointer";
+    l.onclick = () => { grafo.aristas = grafo.aristas.filter(x => !(x[0]===p && x[1]===h)); pintar(); };
+    ga.appendChild(l);
+  }
+
+  for (const n of grafo.nodos) {
+    const est = estado[ids[n.id]]?.estado;
+    const g = document.createElementNS(svg.namespaceURI, "g");
+    g.setAttribute("class", "nodo" + (sel === n.id ? " sel" : ""));
+    g.setAttribute("transform", `translate(${n.x},${n.y})`);
+
+    const r = document.createElementNS(svg.namespaceURI, "rect");
+    r.setAttribute("width", A); r.setAttribute("height", ALTO); r.setAttribute("rx", "8");
+    r.setAttribute("fill", est ? COLOR[est] || "#4a5160" : "#252a34");
+    r.setAttribute("stroke", RT_COLOR[n.runtime] || "#8e9aab");
+    g.appendChild(r);
+
+    // Dos lineas con elipsis: el titulo ES el goal del nodo, cortarlo a mitad
+    // de palabra hace ilegible lo unico que importa del nodo.
+    for (const [i, linea] of envolver(n.titulo || "(sin título)", 26, 2).entries()) {
+      const t = document.createElementNS(svg.namespaceURI, "text");
+      t.setAttribute("x", 11); t.setAttribute("y", 19 + i * 14);
+      t.setAttribute("fill", tinta(est)); t.setAttribute("font-size", "12");
+      t.textContent = linea;
+      g.appendChild(t);
+    }
+
+    const rt = document.createElementNS(svg.namespaceURI, "text");
+    rt.setAttribute("x", 11); rt.setAttribute("y", 50);
+    rt.setAttribute("fill", est ? tinta(est) : (RT_COLOR[n.runtime] || "#8e9aab"));
+    rt.setAttribute("font-size", "10.5");
+    rt.setAttribute("opacity", est ? "0.8" : "1");
+    rt.textContent = n.runtime + (est ? " · " + est : "");
+    g.appendChild(rt);
+
+    g.onmousedown = e => {
+      e.stopPropagation();
+      sel = n.id; refrescarEditor();
+      if (e.shiftKey) enlazando = n.id;
+      else arrastre = { id:n.id, dx:e.offsetX - n.x, dy:e.offsetY - n.y };
+      pintar();
+    };
+    g.onmouseup = e => {
+      if (enlazando && enlazando !== n.id) {
+        const par = [enlazando, n.id];
+        if (!grafo.aristas.some(x => x[0]===par[0] && x[1]===par[1])) grafo.aristas.push(par);
+      }
+      enlazando = null; $("#fantasma").setAttribute("d", ""); pintar();
+    };
+    gn.appendChild(g);
+  }
+  $("#resumen").textContent = resumir();
+}
+
+function resumir() {
+  const n = grafo.nodos.length, a = grafo.aristas.length;
+  const cuenta = {};
+  for (const nodo of grafo.nodos) {
+    const e = estado[ids[nodo.id]]?.estado;
+    if (e) cuenta[e] = (cuenta[e] || 0) + 1;
+  }
+  const detalle = Object.entries(cuenta).map(([k, v]) => `${k}: ${v}`).join("  ");
+  return `${n} nodo${n===1?"":"s"}, ${a} dependencia${a===1?"":"s"}` +
+         (detalle ? `\n${detalle}` : "\nsin compilar");
+}
+
+function refrescarEditor() {
+  const n = buscar(sel);
+  $("#editor").style.display = n ? "flex" : "none";
+  $("#sinNodo").style.display = n ? "none" : "block";
+  if (n) { $("#titulo").value = n.titulo || ""; $("#runtime").value = n.runtime; }
+}
+
+svg.ondblclick = e => {
+  if (e.target !== svg) return;
+  const n = { id:nuevoId(), titulo:"", runtime:"hermes", x:e.offsetX - A/2, y:e.offsetY - ALTO/2 };
+  grafo.nodos.push(n); sel = n.id; refrescarEditor(); pintar(); $("#titulo").focus();
+};
+svg.onmousemove = e => {
+  if (arrastre) {
+    const n = buscar(arrastre.id);
+    n.x = e.offsetX - arrastre.dx; n.y = e.offsetY - arrastre.dy; pintar();
+  } else if (enlazando) {
+    const n = buscar(enlazando);
+    $("#fantasma").setAttribute("d", `M${n.x + A/2},${n.y + ALTO} L${e.offsetX},${e.offsetY}`);
+  }
+};
+svg.onmouseup = () => { arrastre = null; enlazando = null; $("#fantasma").setAttribute("d",""); };
+
+$("#titulo").oninput = e => { const n = buscar(sel); if (n) { n.titulo = e.target.value; pintar(); } };
+$("#runtime").onchange = e => { const n = buscar(sel); if (n) { n.runtime = e.target.value; pintar(); } };
+$("#borrar").onclick = () => {
+  grafo.nodos = grafo.nodos.filter(n => n.id !== sel);
+  grafo.aristas = grafo.aristas.filter(([p, h]) => p !== sel && h !== sel);
+  sel = null; refrescarEditor(); pintar();
+};
+$("#board").oninput = e => { grafo.board = e.target.value; };
+
+async function api(ruta, cuerpo) {
+  const r = await fetch(ruta, cuerpo ? {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(cuerpo)
+  } : undefined);
+  return { ok:r.ok, datos: await r.json() };
+}
+
+$("#validar").onclick = async () => {
+  const { ok, datos } = await api("/api/validar", grafo);
+  avisar(ok ? "El grafo es válido." : datos.error, ok ? "ok" : "error");
+};
+$("#guardar").onclick = async () => {
+  await api("/api/grafo", grafo); avisar("Guardado en ui/grafos/.", "ok");
+};
+$("#compilar").onclick = async () => {
+  const { ok, datos } = await api("/api/compilar", grafo);
+  if (!ok) return avisar(datos.error, "error");
+  ids = datos.ids;
+  avisar(`Compilado: ${Object.keys(ids).length} cards en '${grafo.board}'.`, "ok");
+  refrescarEstado();
+};
+$("#correr").onclick = async () => {
+  if (!Object.keys(ids).length) return avisar("Compilá el grafo antes de ejecutarlo.", "error");
+  const { datos } = await api("/api/correr", { board: grafo.board });
+  avisar(datos.ok ? "Dispatcher arrancado. Los nodos externos corren ahora."
+                  : datos.motivo, datos.ok ? "ok" : "error");
+};
+
+async function refrescarEstado() {
+  if (!Object.keys(ids).length) return;
+  const { datos } = await api(`/api/estado?board=${encodeURIComponent(grafo.board)}`);
+  estado = datos.tareas || {}; pintar();
+}
+setInterval(refrescarEstado, 2500);
+
+// Un grafo de arranque que muestra la idea: un nodo nativo y dos externos.
+grafo.nodos = [
+  { id:"a", titulo:"Diseñá un plan de tres pasos", runtime:"hermes",      x:150, y:70  },
+  { id:"b", titulo:"Implementá el módulo",         runtime:"opencode",    x:60,  y:230 },
+  { id:"c", titulo:"Escribí la documentación",     runtime:"claude-code", x:280, y:230 },
+];
+grafo.aristas = [["a","b"],["a","c"]];
+refrescarEditor(); pintar();
+</script>
