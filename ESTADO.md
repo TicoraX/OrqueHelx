@@ -7,7 +7,7 @@
 
 ## Dónde está el código
 
-- Commit `a3e8531` — fix: el traspaso no se cuenta a si mismo como cambio pendiente
+- Commit `d60d351` — fix: un thread por corrida; el traspaso volvia estado cacheado
 - Remoto: https://github.com/TicoraX/orquester.git
 - Árbol limpio: **no** · sin pushear: 0
 
