@@ -78,7 +78,10 @@ def sondear(_: Contexto) -> Contexto:
         "commit": _git("rev-parse", "--short", "HEAD"),
         "mensaje": _git("log", "-1", "--format=%s"),
         "remoto": _git("remote", "get-url", "origin") or "(sin remoto)",
-        "arbol_limpio": not _git("status", "--porcelain"),
+        # `ESTADO.md` se excluye: lo acaba de escribir este mismo grafo, asi que
+        # sin esto el traspaso siempre se reporta sucio por su propia causa.
+        "arbol_limpio": not [l for l in _git("status", "--porcelain").splitlines()
+                             if l and "ESTADO.md" not in l],
         "sin_pushear": len([x for x in _git("log", "--oneline",
                                             "origin/master..HEAD").splitlines() if x]),
         "afirmaciones": int(m.group(1)) if m else 0,

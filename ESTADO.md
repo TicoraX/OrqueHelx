@@ -7,7 +7,7 @@
 
 ## Dónde está el código
 
-- Commit `116ea08` — fix: validacion estructural separada del preflight; umbrales autocalibrados
+- Commit `f6e5451` — docs: anotar los tres huecos de la ui en el contexto
 - Remoto: https://github.com/TicoraX/orquester.git
 - Árbol limpio: **no** · sin pushear: 0
 
