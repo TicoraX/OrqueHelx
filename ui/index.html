@@ -34,6 +34,7 @@
   .leyenda i { width:9px; height:9px; border-radius:2px; display:inline-block; margin-right:4px; }
   .ayuda { font-size:12px; color:var(--tenue); }
   .ayuda b { color:var(--texto); font-weight:600; }
+  .tenue { color:var(--tenue); font-weight:400; font-size:11px; }
   .nodo rect { stroke-width:1.5; }
   .nodo.sel rect { stroke:#fff; stroke-width:2.5; }
   .nodo text { pointer-events:none; font-size:12px; }
@@ -89,6 +90,8 @@
           <option value="antigravity">Antigravity</option>
         </select>
       </div>
+      <div><label>Modelo <span class="tenue" id="pistaModelo"></span></label>
+        <input id="modelo" placeholder="(el que use el CLI por defecto)"></div>
       <button id="borrar">Borrar nodo</button>
     </div>
   </div>
@@ -227,7 +230,7 @@ function pintar() {
     rt.setAttribute("fill", est ? tinta(est) : (RT_COLOR[n.runtime] || "#8e9aab"));
     rt.setAttribute("font-size", "10.5");
     rt.setAttribute("opacity", est ? "0.8" : "1");
-    rt.textContent = n.runtime + (est ? " · " + est : "");
+    rt.textContent = n.runtime + (n.modelo ? " · " + n.modelo : "") + (est ? " · " + est : "");
     g.appendChild(rt);
 
     g.onmousedown = e => {
@@ -292,7 +295,12 @@ function refrescarEditor() {
   const n = buscar(sel);
   $("#editor").style.display = n ? "flex" : "none";
   $("#sinNodo").style.display = n ? "none" : "block";
-  if (n) { $("#titulo").value = n.titulo || ""; $("#runtime").value = n.runtime; }
+  if (n) {
+    $("#titulo").value = n.titulo || "";
+    $("#runtime").value = n.runtime;
+    $("#modelo").value = n.modelo || "";
+    pistaDeModelo();
+  }
 }
 
 svg.ondblclick = e => {
@@ -312,7 +320,26 @@ svg.onmousemove = e => {
 svg.onmouseup = () => { arrastre = null; enlazando = null; $("#fantasma").setAttribute("d",""); };
 
 $("#titulo").oninput = e => { const n = buscar(sel); if (n) { n.titulo = e.target.value; pintar(); } };
-$("#runtime").onchange = e => { const n = buscar(sel); if (n) { n.runtime = e.target.value; pintar(); } };
+$("#runtime").onchange = e => {
+  const n = buscar(sel);
+  if (n) { n.runtime = e.target.value; pintar(); pistaDeModelo(); }
+};
+$("#modelo").oninput = e => {
+  const n = buscar(sel);
+  // Vacio = sin override: cada CLI usa su modelo por defecto.
+  if (n) { const v = e.target.value.trim(); v ? n.modelo = v : delete n.modelo; }
+};
+
+// Cada CLI quiere el modelo en su propia forma: slug en agy, proveedor/modelo
+// en opencode, nombre en claude. La pista viene de /api/capacidades, o sea del
+// mismo lugar del que sale el argv — no de un texto escrito a mano acá.
+let CAPS = {};
+function pistaDeModelo() {
+  const n = buscar(sel);
+  const c = n && CAPS[n.runtime];
+  $("#pistaModelo").textContent = c ? "— " + (c.modelo_forma || "") : "";
+}
+api("/api/capacidades").then(({ datos }) => { CAPS = datos || {}; pistaDeModelo(); });
 $("#borrar").onclick = () => {
   grafo.nodos = grafo.nodos.filter(n => n.id !== sel);
   grafo.aristas = grafo.aristas.filter(([p, h]) => p !== sel && h !== sel);

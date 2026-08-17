@@ -88,6 +88,20 @@ etiqueta: es el trabajo.
 **Ejecutor** — quién lo corre. `Hermes (nativo)`, `Claude Code`, `OpenCode` o
 `Antigravity`.
 
+**Modelo** — opcional, **por nodo**. Vacío = el que use ese CLI por defecto.
+Cada uno lo quiere en su forma, y el Studio te muestra cuál al lado del campo:
+
+| Ejecutor | Forma | Cómo listarlos |
+|---|---|---|
+| Claude Code | nombre (`claude-sonnet-4-6`) | — |
+| OpenCode | `proveedor/modelo` (`deepseek/deepseek-chat`) | — |
+| Antigravity | slug (`gemini-3.1-pro-high`) | `agy models` |
+| Hermes | el del proveedor configurado | `hermes model` |
+
+Sirve para lo que uno espera: el nodo que piensa va con un modelo caro, el que
+solo reformatea va con uno barato. En una prueba real el mismo nodo tardó 9,8s
+con `gemini-3.7-flash-low` y 18,6s con `gemini-3.1-pro-high`.
+
 ### Escribir un buen goal
 
 Es lo que más define si el flujo sirve. Lo aprendido a los golpes:

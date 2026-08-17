@@ -147,6 +147,11 @@ def compilar(grafo: dict, *, board: str = None) -> dict[str, str]:
                 # Hermes arranca vacio y el agente no ve el repo.
                 **({"workspace_kind": "dir", "workspace_path": nodo["workspace"]}
                    if nodo.get("workspace") else {}),
+                # Modelo por nodo. En un nodo `hermes` lo usa el dispatcher de
+                # Hermes; en uno externo lo lee nuestro dispatcher y lo pasa
+                # como `--model`. Mismo campo, dos consumidores.
+                **({"model_override": nodo["modelo"]} if nodo.get("modelo") else {}),
+                **({"provider_override": nodo["proveedor"]} if nodo.get("proveedor") else {}),
             )
         except ValueError as e:
             # SS4: traducir el error del kanban a algo que el canvas pueda pintar.

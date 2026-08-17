@@ -24,14 +24,14 @@ CONTRATO = {
     "required": ["status", "summary"],
 }
 
-# SS4.1: un worker de Hermes escalo solo a --dangerously-skip-permissions.
-# El nuestro no puede. Se compara sobre el argv ya construido.
 # Turnos de agente que se le conceden a `claude -p`. Arranco en 5 y una
 # revision de codigo real murio con `error_max_turns` leyendo el diff: 5 alcanza
 # para contar archivos, no para trabajar. El techo existe igual, porque un
 # agente sin limite de turnos es una factura sin limite.
 MAX_TURNS = 30
 
+# SS4.1: un worker de Hermes escalo solo a --dangerously-skip-permissions.
+# El nuestro no puede. Se compara sobre el argv ya construido.
 FLAGS_PROHIBIDOS = {
     "--dangerously-skip-permissions",
     "--yolo",
@@ -131,10 +131,13 @@ def _parse_envelope(stdout: str, clave: str) -> dict:
 # (argv, parser). `esquema` es una RUTA, nunca el JSON inline.
 BACKENDS = {
     "antigravity": (
-        lambda goal, esquema: [
+        # `--model` toma el slug de la primera columna de `agy models`
+        # (ej. `gemini-3.1-pro-high`), no el nombre para mostrar.
+        lambda goal, esquema, modelo=None: [
             "agy", "-p", goal,
             "--output-format", "json", "--json-schema", esquema,
             "--print-timeout", "5m",
+            *(["--model", modelo] if modelo else []),
         ],
         lambda out: _parse_envelope(out, "structured_output"),
     ),
@@ -144,16 +147,21 @@ BACKENDS = {
         # Pasarlo inline es seguro porque el argv va directo a CreateProcess, sin
         # shell de por medio; la regla de "schema en archivo" era contra el
         # escapado de PowerShell, que aca no participa.
-        lambda goal, esquema: [
+        lambda goal, esquema, modelo=None: [
             "claude", "-p", goal,
             "--output-format", "json", "--json-schema", json.dumps(CONTRATO),
             "--max-turns", str(MAX_TURNS),
+            *(["--model", modelo] if modelo else []),
         ],
         lambda out: _parse_envelope(out, "structured_output"),
     ),
     "opencode": (
         # opencode no tiene flag de schema: el contrato viaja en el goal.
-        lambda goal, esquema: ["opencode", "run", goal, "--format", "json"],
+        # opencode quiere `proveedor/modelo` (ej. `deepseek/deepseek-chat`).
+        lambda goal, esquema, modelo=None: [
+            "opencode", "run", goal, "--format", "json",
+            *(["--model", modelo] if modelo else []),
+        ],
         lambda out: _primer_objeto(_texto_de_jsonl(out) or out),
     ),
 }
@@ -294,12 +302,17 @@ def _validar(obj: dict) -> dict:
 
 
 def run_backend(runtime: str, goal: str, *, timeout: int = 600,
-                cwd: str = None, herramientas: list[str] = None) -> dict:
+                cwd: str = None, herramientas: list[str] = None,
+                modelo: str = None) -> dict:
     """Invocar `runtime` con `goal` y devolver un AgentAdapterOutput validado.
 
     `cwd` es el directorio donde corre el agente: sin esto heredaria el del
     dispatcher, que es una coincidencia y no una decision. Un nodo que revisa
     un repo tiene que correr *en* ese repo.
+
+    `modelo` es opcional y **por nodo**: los tres CLIs aceptan `--model`, cada
+    uno con su forma (slug en agy, `proveedor/modelo` en opencode, nombre en
+    claude). Sin modelo, cada CLI usa el suyo por defecto.
 
     `herramientas` son los permisos que el nodo necesita (ej. `["Read","Bash"]`).
     Solo `claude` los toma por linea de comandos (`--allowedTools`); opencode y
@@ -322,7 +335,7 @@ def run_backend(runtime: str, goal: str, *, timeout: int = 600,
     with tempfile.TemporaryDirectory() as tmp:
         ruta_esquema = Path(tmp) / "contrato.json"
         ruta_esquema.write_text(json.dumps(CONTRATO), encoding="utf-8")
-        argv = construir_argv(goal_final, str(ruta_esquema))
+        argv = construir_argv(goal_final, str(ruta_esquema), modelo)
         if herramientas and runtime == "claude-code":
             argv += ["--allowedTools", ",".join(herramientas)]
 

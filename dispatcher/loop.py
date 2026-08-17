@@ -96,7 +96,10 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600) -> dict:
         ctx = k.build_worker_context(conn, task_id)   # summaries de los padres
         salida = run_backend(_runtime_de(task), ctx, timeout=timeout,
                              cwd=task.workspace_path or None,
-                             herramientas=_HERRAMIENTAS)
+                             herramientas=_HERRAMIENTAS,
+                             # `model_override` ya existe en la card y significa
+                             # exactamente esto. No hace falta inventar campo.
+                             modelo=task.model_override or None)
     except BackendError as e:
         # Un nodo que falla NO se cierra: se bloquea. Si se cerrara con
         # `complete_task`, el kanban lo veria 'done' y **promoveria a sus

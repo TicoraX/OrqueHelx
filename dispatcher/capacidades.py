@@ -30,6 +30,10 @@ DECLARADO = {
         "acepta_permisos": True,            # --allowedTools
         "limite_turnos": MAX_TURNS,         # 5 mataba una revision de diff real
         "auth": "suscripcion o API key propia de Claude Code",
+        "modelo_por_nodo": True,
+        "modelo_flag": "--model",
+        "modelo_forma": "nombre del modelo (ej. claude-sonnet-4-6)",
+        "listar_modelos": None,
     },
     "opencode": {
         "binario": "opencode",
@@ -42,6 +46,10 @@ DECLARADO = {
         "acepta_permisos": False,
         "limite_turnos": None,
         "auth": "el proveedor que tenga configurado opencode",
+        "modelo_por_nodo": True,
+        "modelo_flag": "--model",
+        "modelo_forma": "proveedor/modelo (ej. deepseek/deepseek-chat)",
+        "listar_modelos": None,
     },
     "antigravity": {
         "binario": "agy",
@@ -54,6 +62,10 @@ DECLARADO = {
         "acepta_permisos": False,            # se configura en su settings.json
         "limite_turnos": None,
         "auth": "suscripcion de Antigravity",
+        "modelo_por_nodo": True,
+        "modelo_flag": "--model",
+        "modelo_forma": "slug de `agy models` (ej. gemini-3.1-pro-high)",
+        "listar_modelos": 'agy models',
         "ojo": "sale con EXIT=0 aunque falle: juzgar por la salida, no por el codigo",
     },
     "hermes": {
@@ -67,6 +79,10 @@ DECLARADO = {
         "acepta_permisos": False,
         "limite_turnos": None,
         "auth": "el proveedor de Hermes (NO uno external_process, §11)",
+        "modelo_por_nodo": True,
+        "modelo_flag": "-m (lo pasa el dispatcher de Hermes)",
+        "modelo_forma": "el que acepte el proveedor de Hermes",
+        "listar_modelos": "hermes model",
         "ojo": "lo ejecuta el dispatcher de Hermes, no el de ORQUESTER (§12)",
     },
 }

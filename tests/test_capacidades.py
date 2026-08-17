@@ -107,4 +107,27 @@ print("7. el compilador rechaza un grafo con ejecutor ausente, con el nombre: OK
 json.dumps(t)
 print("8. la tabla serializa a JSON (la consume /api/capacidades): OK")
 
+
+# --- 9. El modelo por nodo llega al argv de cada CLI, en su forma ---
+for rt in b.BACKENDS:
+    construir, _ = b.BACKENDS[rt]
+    sin = construir("goal", "/e.json")
+    con = construir("goal", "/e.json", "modelo-x")
+    assert "--model" not in sin, f"{rt}: sin modelo no debe pasar --model"
+    assert t[rt]["modelo_flag"] in " ".join(con), f"{rt}: no paso {t[rt]['modelo_flag']}"
+    assert con[con.index("--model") + 1] == "modelo-x", rt
+    assert t[rt]["modelo_por_nodo"] is True, rt
+print("9. el modelo por nodo llega al argv, y sin modelo no se pasa el flag: OK")
+
+# --- 10. El compilador lo guarda en la columna que ya existia ---
+import hermes_cli.kanban_db as _k, tempfile
+from pathlib import Path as _P
+_db = _P(tempfile.mkdtemp()) / "modelo.db"
+_k.init_db(db_path=_db)
+_c = _k.connect(db_path=_db)
+_tid = _k.create_task(_c, title="con modelo", assignee="orquester-external:opencode",
+                      model_override="deepseek/deepseek-chat")
+assert _k.get_task(_c, _tid).model_override == "deepseek/deepseek-chat"
+print("10. el modelo se persiste en `model_override`, sin inventar columna: OK")
+
 print("\nOK: la tabla de capacidades no puede mentir sin que esto falle.")

@@ -277,7 +277,7 @@ Knobs relevantes bajo `delegation:` en `config.yaml`: `max_concurrent_children` 
 
 ## 10. Estado de verificación
 
-**56 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **nueve
+**58 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **nueve
 filas "Verificado: NO"**: supuestos de diseño que parecían ciertos leyendo el
 código de Hermes y que la ejecución desmintió. Cada una habría sido un bug en
 producción, y ninguna se ve sin correr el sistema.
@@ -331,6 +331,8 @@ Convención: **Verificado (ejecutado)** = hay salida cruda pegada en `tests/`.
 | La suite corre en Linux | **Verificado (ejecutado)** | `tests/linux.sh` en `python:3.11-slim`: 7/7 más la resolución de binario con un ejecutable plano |
 | El Studio exige token en toda su API | **Verificado (ejecutado)** | `tests/test_auth_studio.py`: 10 rutas rechazan sin token; tokens parciales, largos y con otra capitalización también |
 | La tabla de capacidades puede quedar desfasada del código | **Verificado: NO puede** | `tests/test_capacidades.py` ata cada campo al argv y a los extractores reales |
+| Se puede elegir el modelo por nodo | **Verificado (ejecutado)** | los 3 CLIs aceptan `--model`; mismo nodo con `gemini-3.7-flash-low` (9.8s) y `gemini-3.1-pro-high` (18.6s) |
+| Hizo falta una columna nueva para el modelo | **Verificado: NO** | `model_override` ya existía en `tasks` y significa exactamente eso |
 | El compilador avisa antes de correr si falta un ejecutor | **Verificado (ejecutado)** | preflight con `capacidades.faltantes()`: falla en `validar`, sin tocar la base |
 | Una org queda aislada de otra | **Verificado (ejecutado)** | `tests/test_api_rbac.py` 10/10: un extraño recibe 404, no 403 |
 | Los roles limitan de verdad | **Verificado (ejecutado)** | VIEWER lista pero no crea (403); EDITOR no administra miembros (403) |
