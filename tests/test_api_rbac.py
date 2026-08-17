@@ -17,6 +17,23 @@ PUERTO = 3999
 BASE = f"http://127.0.0.1:{PUERTO}/api"
 CLAVE = "clave-larga-de-prueba-123"
 
+# Preflight: sin Postgres el API no arranca y el test moria con un URLError
+# ilegible. Mejor decir que falta y como levantarlo.
+import socket
+def _puerto_abierto(host, puerto):
+    with socket.socket() as s:
+        s.settimeout(2)
+        return s.connect_ex((host, puerto)) == 0
+
+if not _puerto_abierto("127.0.0.1", 5433):
+    print("OMITIDO: no hay Postgres en 127.0.0.1:5433.")
+    print("  Levantalo con:  docker compose up -d db")
+    raise SystemExit(0)
+if not (API / "dist" / "main.js").is_file():
+    print("OMITIDO: falta el build del API.")
+    print("  Compilalo con:  cd apps/api && npm run build")
+    raise SystemExit(0)
+
 env = {**os.environ,
        "PORT": str(PUERTO),
        "DATABASE_URL": "postgresql://orquester:orquester-local@localhost:5433/orquester?schema=public",

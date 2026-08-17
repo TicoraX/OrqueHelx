@@ -277,7 +277,7 @@ Knobs relevantes bajo `delegation:` en `config.yaml`: `max_concurrent_children` 
 
 ## 10. Estado de verificación
 
-**54 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **nueve
+**56 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **nueve
 filas "Verificado: NO"**: supuestos de diseño que parecían ciertos leyendo el
 código de Hermes y que la ejecución desmintió. Cada una habría sido un bug en
 producción, y ninguna se ve sin correr el sistema.
@@ -330,6 +330,8 @@ Convención: **Verificado (ejecutado)** = hay salida cruda pegada en `tests/`.
 | Todos los backends informan costo | **Verificado: NO** | `agy` no informa medidor: corre por suscripción. `None` se cuenta aparte, nunca como cero |
 | La suite corre en Linux | **Verificado (ejecutado)** | `tests/linux.sh` en `python:3.11-slim`: 7/7 más la resolución de binario con un ejecutable plano |
 | El Studio exige token en toda su API | **Verificado (ejecutado)** | `tests/test_auth_studio.py`: 10 rutas rechazan sin token; tokens parciales, largos y con otra capitalización también |
+| La tabla de capacidades puede quedar desfasada del código | **Verificado: NO puede** | `tests/test_capacidades.py` ata cada campo al argv y a los extractores reales |
+| El compilador avisa antes de correr si falta un ejecutor | **Verificado (ejecutado)** | preflight con `capacidades.faltantes()`: falla en `validar`, sin tocar la base |
 | Una org queda aislada de otra | **Verificado (ejecutado)** | `tests/test_api_rbac.py` 10/10: un extraño recibe 404, no 403 |
 | Los roles limitan de verdad | **Verificado (ejecutado)** | VIEWER lista pero no crea (403); EDITOR no administra miembros (403) |
 | Editar un grafo pisa la versión anterior | **Verificado: NO** | crea la versión N+1; e2e con v1 y v2, la ejecución tomó la última |
@@ -430,6 +432,55 @@ muestra que sale mal.
   ejecutó — el mismo criterio de "el pasado no se reescribe".
 - **La auditoría es append-only por diseño:** el servicio no expone update ni
   delete, y un fallo al auditar no tumba la operación que auditaba.
+
+---
+
+## 10.3 Contexto del proyecto y capacidades de los backends
+
+Dos piezas que existen para que **otro agente, u otra persona, retome sin
+arqueología**.
+
+### `contexto/estado.py` — el traspaso, generado
+
+Un grafo de LangGraph cuyo estado *es* el traspaso: sondea el sistema real
+(git, pin, tests, binarios, Postgres), deriva qué está bloqueando, y escribe
+`ESTADO.md`. Está **generado, no escrito a mano**: un traspaso a mano queda
+viejo y nadie se entera.
+
+LangGraph aporta el checkpointer: historial por thread, no solo el último
+valor. Se puede ver cómo se movió el proyecto y retomar de un punto anterior.
+
+**No es un motor de flujos.** ORQUESTER ya tiene uno prestado (§1) y adoptar un
+segundo contradiría la decisión central. Esto modela el contexto del proyecto y
+nada más — no ejecuta trabajo de usuario.
+
+Las **decisiones tomadas** viven en una lista a mano dentro de ese archivo, no
+sondeadas: son justo lo que un agente nuevo no puede deducir del código, y lo
+más caro de re-litigar.
+
+### `dispatcher/capacidades.py` — qué sabe y qué necesita cada backend
+
+§4.1 lo pidió: las skills bundleadas de Hermes se desactualizan y eso **degrada
+al worker**, no solo a la doc. El worker no usó `--json-schema` porque su skill
+decía que no existía.
+
+La tabla declara, por runtime: binario, si acepta schema por CLI y **en qué
+forma** (inline en `claude`, ruta en `agy`), dónde vive el contrato en su
+salida, si informa costo, si acepta permisos, y su auth. Cada campo salió de
+ejecutar el CLI, no de leer su README.
+
+Dos usos concretos:
+
+- **Preflight del compilador.** Un grafo que nombra un ejecutor ausente falla
+  en `validar()`, antes de tocar la base, con el nombre de lo que falta. Antes
+  se descubría a los 600s de timeout.
+- **`GET /api/capacidades`**, sin token a propósito: no expone nada del usuario,
+  solo qué sabe hacer este motor. Es la respuesta a "que los agentes sepan lo
+  que requieren" — se consulta antes de armar el grafo.
+
+Y `tests/test_capacidades.py` ata cada campo declarado al `argv` que se
+construye de verdad y a los extractores de consumo. **La tabla no puede mentir
+sin que el test falle**, que es la diferencia con la skill que nos engañó.
 
 ---
 

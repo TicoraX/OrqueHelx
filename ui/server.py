@@ -21,6 +21,7 @@ import hermes_cli.kanban_db as k
 import compile as compilador
 import loop as dispatcher
 import exportar as mcp
+import capacidades
 
 HTML = Path(__file__).parent / "index.html"
 GRAFOS = RAIZ / "ui" / "grafos"
@@ -170,7 +171,10 @@ def _arrancar(board: str) -> dict:
             while True:
                 _tick_hermes()
                 hechas = dispatcher.tick(conn, board=board)
-                if not hechas and not dispatcher._queda_trabajo(conn)                         and not _quedan_de_hermes(conn):
+                sin_trabajo = (not hechas
+                               and not dispatcher._queda_trabajo(conn)
+                               and not _quedan_de_hermes(conn))
+                if sin_trabajo:
                     return
                 time.sleep(3)
         except Exception:
@@ -207,13 +211,17 @@ class Handler(BaseHTTPRequestHandler):
         # recargar la pagina funcione (una navegacion no puede mandar cabeceras,
         # y el token se limpia de la URL a proposito). Todo `/api/*` si exige
         # token: ahi estan los datos y la ejecucion.
-        if ruta != "/" and not self._autorizado():
+        if ruta not in ("/", "/api/capacidades") and not self._autorizado():
             return
         params = dict(p.split("=", 1) for p in query.split("&") if "=" in p)
         if ruta == "/":
             return self._responder(200, HTML.read_bytes(), "text/html; charset=utf-8")
         if ruta == "/api/estado":
             return self._responder(200, _estado(params.get("board", "orquester")))
+        if ruta == "/api/capacidades":
+            # Sin token: no expone nada del usuario, solo que sabe hacer este
+            # motor. Un agente lo consulta antes de armar un grafo.
+            return self._responder(200, capacidades.tabla())
         if ruta == "/api/consumo":
             return self._responder(200, _consumo(params.get("board", "orquester")))
         if ruta == "/api/traza":

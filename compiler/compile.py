@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hermes-agent"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "dispatcher"))
 import hermes_cli.kanban_db as k
 from backends import BACKENDS
+from capacidades import faltantes
 from loop import carril
 
 RUNTIMES = set(BACKENDS) | {"hermes"}
@@ -78,6 +79,16 @@ def validar(grafo: dict) -> None:
             raise ErrorDeGrafo(f"nodo '{arista[0]}': no puede depender de si mismo")
 
     _orden_topologico(grafo)              # detecta ciclos con un mensaje util
+
+    # Preflight de capacidades: si un runtime del grafo no esta instalado, se
+    # dice ACA y no a los 600s de timeout en medio de una corrida. El agente (o
+    # la persona) sabe lo que le falta antes de empezar.
+    ausentes = faltantes({n.get("runtime", "hermes") for n in nodos})
+    if ausentes:
+        raise ErrorDeGrafo(
+            f"estos ejecutores no estan disponibles en esta maquina: {ausentes}. "
+            f"Instalalos o cambiá el runtime de esos nodos."
+        )
 
 
 def _orden_topologico(grafo: dict) -> list[dict]:
