@@ -28,6 +28,21 @@ No hace falta tener los tres. Un flujo que solo usa `opencode` solo necesita
 
 ```bash
 cd <ruta-al-repo>
+sh arrancar.sh              # motor + Studio
+sh arrancar.sh --multi      # + Postgres + API multiusuario
+sh arrancar.sh --parar      # baja lo que levantó
+```
+
+El script imprime la URL con el token. Es idempotente: si ya estaba corriendo,
+lo dice y no duplica nada. Los logs quedan en `.logs/`.
+
+El token se genera una vez y vive en `.orquester-token` (ignorado por git). En
+un archivo y no en el script porque un secreto hardcodeado en el repo termina
+publicado.
+
+A mano, si preferís:
+
+```bash
 uv run --python 3.11 --with jsonschema python ui/server.py
 ```
 
