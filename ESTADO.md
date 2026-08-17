@@ -7,7 +7,7 @@
 
 ## Dónde está el código
 
-- Commit `f6e5451` — docs: anotar los tres huecos de la ui en el contexto
+- Commit `a3e8531` — fix: el traspaso no se cuenta a si mismo como cambio pendiente
 - Remoto: https://github.com/TicoraX/orquester.git
 - Árbol limpio: **no** · sin pushear: 0
 

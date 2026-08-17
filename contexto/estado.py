@@ -15,7 +15,7 @@ flujos de usuario: modela el contexto del proyecto y nada más.
       python contexto/estado.py            # sondea, escribe ESTADO.md
     ... python contexto/estado.py historial   # los checkpoints guardados
 """
-import json, os, re, shutil, sqlite3, subprocess, sys
+import json, os, re, shutil, sqlite3, subprocess, sys, time
 from pathlib import Path
 from typing import Annotated, TypedDict
 
@@ -24,7 +24,12 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 
 RAIZ = Path(__file__).resolve().parent.parent
 CHECKPOINTS = RAIZ / "contexto" / "checkpoints.sqlite"
-THREAD = "orquester"
+
+# Un thread POR CORRIDA, no uno fijo. Con un thread unico, reinvocar un grafo
+# que ya llego a END devuelve el estado cacheado sin volver a sondear: el
+# traspaso quedaba congelado en la primera corrida y mentia en silencio.
+# El historial se arma recorriendo los threads, no los checkpoints de uno.
+THREAD_PREFIJO = "orquester"
 
 
 def _reemplazar(_viejo, nuevo):
@@ -221,17 +226,24 @@ def main(argv: list[str]) -> None:
     # `check_same_thread=False`: el saver puede leerse desde otro hilo que el
     # que abrio la conexion, igual que el resto del proyecto con SQLite.
     with sqlite3.connect(CHECKPOINTS, check_same_thread=False) as conn:
-        app = _grafo(SqliteSaver(conn))
-        cfg = {"configurable": {"thread_id": THREAD}}
+        saver = SqliteSaver(conn)
+        app = _grafo(saver)
 
         if argv[1:2] == ["historial"]:
-            for i, snap in enumerate(app.get_state_history(cfg)):
-                s = snap.values.get("sistema") or {}
-                print(f"{i:>3}  {snap.config['configurable'].get('checkpoint_id','?')[:8]}  "
-                      f"{s.get('commit','?'):<9} {snap.values.get('fase','?'):<18} "
-                      f"bloqueos={len(snap.values.get('bloqueos') or [])}")
+            vistos = set()
+            for cp in saver.list(None):                 # todos los threads
+                hilo = cp.config["configurable"]["thread_id"]
+                v = cp.checkpoint.get("channel_values") or {}
+                if hilo in vistos or "sistema" not in v:
+                    continue                            # solo el estado final de cada corrida
+                vistos.add(hilo)
+                s = v["sistema"]
+                print(f"{hilo:<28} {s.get('commit','?'):<9} "
+                      f"{v.get('fase','?'):<18} bloqueos={len(v.get('bloqueos') or [])}")
+            print(f"\n{len(vistos)} corrida(s) guardadas")
             return
 
+        cfg = {"configurable": {"thread_id": f"{THREAD_PREFIJO}-{int(time.time())}"}}
         final = app.invoke({}, cfg)
         s = final["sistema"]
         print(f"fase        : {final['fase']}")
