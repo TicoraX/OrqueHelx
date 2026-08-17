@@ -245,8 +245,17 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/validar":
                 compilador.validar(cuerpo)
                 return self._responder(200, {"ok": True})
+            if self.path == "/api/parametros":
+                # Los marcadores los detecta el exportador MCP, no una segunda
+                # regex en el navegador: si se duplica, se desincroniza y el
+                # Studio compila con un `{{marcador}}` que llega literal al disco.
+                return self._responder(200, {"parametros": mcp.parametros(cuerpo)})
             if self.path == "/api/compilar":
-                ids = compilador.compilar(cuerpo, board=cuerpo.get("board"))
+                # Un grafo con marcadores no se compila crudo: `sustituir` exige
+                # que esten todos y falla con el nombre del que falta.
+                grafo = (mcp.sustituir(cuerpo, cuerpo.get("valores") or {})
+                         if mcp.parametros(cuerpo) else cuerpo)
+                ids = compilador.compilar(grafo, board=cuerpo.get("board"))
                 return self._responder(200, {"ok": True, "ids": ids})
             if self.path == "/api/mcp":
                 nombre = cuerpo.get("board") or "sin-nombre"
@@ -269,6 +278,11 @@ class Handler(BaseHTTPRequestHandler):
         except compilador.ErrorDeGrafo as e:
             # El mensaje va tal cual al canvas: por eso los errores del
             # compilador nombran el nodo culpable.
+            return self._responder(400, {"ok": False, "error": str(e)})
+        except ValueError as e:
+            # `sustituir` con parametros faltantes. Es culpa del pedido, no del
+            # servidor: 400 y el nombre de lo que falta. (ErrorDeGrafo tambien
+            # es ValueError, por eso este `except` va despues.)
             return self._responder(400, {"ok": False, "error": str(e)})
         except Exception as e:
             traceback.print_exc()

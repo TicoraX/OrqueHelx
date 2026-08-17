@@ -7,7 +7,7 @@
 
 ## Dónde está el código
 
-- Commit `d60d351` — fix: un thread por corrida; el traspaso volvia estado cacheado
+- Commit `def8dca` — fix: ignorar los journal del checkpointer; ensuciaban el propio traspaso
 - Remoto: https://github.com/TicoraX/orquester.git
 - Árbol limpio: **no** · sin pushear: 0
 
@@ -21,7 +21,7 @@
 ## Verificación
 
 - `ARQUITECTURA.md` §10: **58 afirmaciones**, 1 pendiente(s)
-- 13 tests: api_rbac, auth_studio, capacidades, compilador, concurrencia_reintentos, consumo, contract, dag_heterogeneo, dag_rombo, dos_dispatchers, mcp_export, pin_hermes, rebanada_vertical
+- 14 tests: api_rbac, auth_studio, capacidades, compilador, concurrencia_reintentos, consumo, contract, dag_heterogeneo, dag_rombo, dos_dispatchers, mcp_export, pin_hermes, rebanada_vertical, ui_expansion
 
 ## Decisiones tomadas (no re-litigar sin motivo nuevo)
 
@@ -40,9 +40,6 @@
 ## Qué sigue
 
 - §10 tiene 1 afirmación(es) pendiente(s)
-- UI: abrir un grafo guardado — Guardar escribe en ui/grafos/ y los endpoints existen, pero el canvas nunca los usa. Hoy guardás y no podés volver
-- UI: pedir los valores de los {{parametros}} al Ejecutar — un grafo parametrizado solo se corre por MCP o por código
-- UI: elegir el `workspace` por nodo — sin eso el agente no ve tu repo, y hoy solo se pone editando el JSON
 - UI (menor): consumo por nodo (ya se calcula, solo se muestra el total), zoom del lienzo, resultado completo del nodo (la traza recorta a 300)
 - conectar el Studio a la API multiusuario (hoy le habla directo al motor)
 - medición empírica del cumplimiento del output_schema (diferida a propósito)

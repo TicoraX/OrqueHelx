@@ -59,10 +59,12 @@ try:
     print(f"2. las {len(rutas_get)} rutas GET de /api rechazan sin token: OK")
 
     grafo = {"board": "x", "nodos": [{"id": "a", "titulo": "t", "runtime": "opencode"}]}
-    for ruta in ["/api/validar", "/api/compilar", "/api/correr", "/api/grafo", "/api/mcp"]:
+    rutas_post = ["/api/validar", "/api/compilar", "/api/correr", "/api/grafo",
+                  "/api/mcp", "/api/parametros"]
+    for ruta in rutas_post:
         codigo, _ = pedir(ruta, cuerpo=grafo)
         assert codigo == 404, f"{ruta} respondio {codigo} sin token"
-    print("3. las 5 rutas POST de /api rechazan sin token: OK")
+    print(f"3. las {len(rutas_post)} rutas POST de /api rechazan sin token: OK")
 
     # Un token equivocado no vale, ni siquiera uno con el prefijo correcto.
     for malo in ["", "x", TOKEN[:-1], TOKEN + "x", TOKEN.upper()]:

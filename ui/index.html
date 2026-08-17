@@ -75,7 +75,20 @@
     <input id="board" value="mi-flujo">
   </div>
 
+  <div>
+    <label>Abrir un grafo guardado</label>
+    <select id="abrir"><option value="">(elegir…)</option></select>
+  </div>
+
   <div id="aviso"></div>
+
+  <div id="bloqueParams" style="display:none;">
+    <h2>Parámetros</h2>
+    <div class="ayuda" style="margin-bottom:6px;">
+      Los <b>{{marcadores}}</b> del grafo se reemplazan al compilar.
+    </div>
+    <div id="params" style="display:flex; flex-direction:column; gap:8px;"></div>
+  </div>
 
   <div>
     <h2>Nodo seleccionado</h2>
@@ -92,6 +105,8 @@
       </div>
       <div><label>Modelo <span class="tenue" id="pistaModelo"></span></label>
         <input id="modelo" placeholder="(el que use el CLI por defecto)"></div>
+      <div><label>Workspace <span class="tenue">— dónde corre el nodo</span></label>
+        <input id="workspace" placeholder="(scratch: se borra al terminar)"></div>
       <button id="borrar">Borrar nodo</button>
     </div>
   </div>
@@ -299,9 +314,52 @@ function refrescarEditor() {
     $("#titulo").value = n.titulo || "";
     $("#runtime").value = n.runtime;
     $("#modelo").value = n.modelo || "";
+    $("#workspace").value = n.workspace || "";
     pistaDeModelo();
   }
 }
+
+// --- Parametros ---------------------------------------------------------
+// Quien los detecta es el servidor (el mismo codigo que usa el exportador
+// MCP). Una segunda regex aca se desincronizaria del dia que cambie la sintaxis.
+let VALORES = {};                                // marcador -> valor tipeado
+
+async function refrescarParams() {
+  const { datos } = await api("/api/parametros", grafo);
+  const ps = datos.parametros || [];
+  $("#bloqueParams").style.display = ps.length ? "block" : "none";
+  if (!ps.length) return;
+  // Se conserva lo ya tipeado: esto corre en cada edicion del titulo.
+  const caja = $("#params");
+  const previos = new Set([...caja.querySelectorAll("input")].map(i => i.dataset.p));
+  if (ps.length === previos.size && ps.every(p => previos.has(p))) return;
+  caja.innerHTML = ps.map(p =>
+    `<div><label>${esc(p)}</label>
+       <input data-p="${esc(p)}" value="${esc(VALORES[p] || "")}"></div>`).join("");
+  for (const i of caja.querySelectorAll("input"))
+    i.oninput = e => { VALORES[e.target.dataset.p] = e.target.value; };
+}
+
+// --- Abrir un grafo guardado -------------------------------------------
+async function listarGrafos() {
+  const { datos } = await api("/api/grafos");
+  const s = $("#abrir");
+  s.innerHTML = '<option value="">(elegir…)</option>' +
+    (datos.grafos || []).map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join("");
+}
+$("#abrir").onchange = async e => {
+  const nombre = e.target.value;
+  if (!nombre) return;
+  const { ok, datos } = await api(`/api/grafo?nombre=${encodeURIComponent(nombre)}`);
+  if (!ok) return avisar(datos.error || "no se pudo abrir", "error");
+  grafo = { board: nombre, nodos: [], aristas: [], ...datos };
+  // El board viejo no tiene por que ser el de este grafo: los task_id de la
+  // corrida anterior no significan nada aca y pintarian estados ajenos.
+  ids = {}; estado = {}; sel = null; VALORES = {};
+  $("#board").value = grafo.board;
+  refrescarEditor(); refrescarParams(); pintar(); refrescarEstado();
+  avisar(`Abierto '${nombre}': ${(grafo.nodos || []).length} nodo(s).`, "ok");
+};
 
 svg.ondblclick = e => {
   if (e.target !== svg) return;
@@ -319,7 +377,16 @@ svg.onmousemove = e => {
 };
 svg.onmouseup = () => { arrastre = null; enlazando = null; $("#fantasma").setAttribute("d",""); };
 
-$("#titulo").oninput = e => { const n = buscar(sel); if (n) { n.titulo = e.target.value; pintar(); } };
+$("#titulo").oninput = e => {
+  const n = buscar(sel);
+  if (n) { n.titulo = e.target.value; pintar(); refrescarParams(); }
+};
+$("#workspace").oninput = e => {
+  const n = buscar(sel);
+  // Vacio = scratch de Hermes, que se BORRA en complete_task (§4.1): un nodo
+  // cuyo entregable son archivos necesita un directorio de verdad.
+  if (n) { const v = e.target.value.trim(); v ? n.workspace = v : delete n.workspace; refrescarParams(); }
+};
 $("#runtime").onchange = e => {
   const n = buscar(sel);
   if (n) { n.runtime = e.target.value; pintar(); pistaDeModelo(); }
@@ -339,7 +406,6 @@ function pistaDeModelo() {
   const c = n && CAPS[n.runtime];
   $("#pistaModelo").textContent = c ? "— " + (c.modelo_forma || "") : "";
 }
-api("/api/capacidades").then(({ datos }) => { CAPS = datos || {}; pistaDeModelo(); });
 $("#borrar").onclick = () => {
   grafo.nodos = grafo.nodos.filter(n => n.id !== sel);
   grafo.aristas = grafo.aristas.filter(([p, h]) => p !== sel && h !== sel);
@@ -380,10 +446,14 @@ $("#validar").onclick = async () => {
   avisar(ok ? "El grafo es válido." : datos.error, ok ? "ok" : "error");
 };
 $("#guardar").onclick = async () => {
-  await api("/api/grafo", grafo); avisar("Guardado en ui/grafos/.", "ok");
+  await api("/api/grafo", grafo);
+  await listarGrafos();                         // que aparezca sin recargar
+  avisar(`Guardado como '${grafo.board}' en ui/grafos/.`, "ok");
 };
 $("#compilar").onclick = async () => {
-  const { ok, datos } = await api("/api/compilar", grafo);
+  // Los valores van aparte del grafo: el grafo guardado conserva sus
+  // `{{marcadores}}` y se puede volver a correr con otros datos.
+  const { ok, datos } = await api("/api/compilar", { ...grafo, valores: VALORES });
   if (!ok) return avisar(datos.error, "error");
   ids = datos.ids;
   avisar(`Compilado: ${Object.keys(ids).length} cards en '${grafo.board}'.`, "ok");
@@ -451,5 +521,10 @@ grafo.nodos = [
   { id:"c", titulo:"Escribí la documentación",     runtime:"claude-code", x:280, y:230 },
 ];
 grafo.aristas = [["a","b"],["a","c"]];
-refrescarEditor(); pintar();
+refrescarEditor(); pintar(); listarGrafos(); refrescarParams();
+// Las capacidades se piden ACA y no junto a `pistaDeModelo`: alla el `const
+// TOKEN` todavia no existe (zona muerta) y la llamada moria con "Cannot access
+// 'TOKEN' before initialization", asi que CAPS quedaba vacio y la pista del
+// modelo nunca aparecia. Lo encontro el check de Playwright, no la vista.
+api("/api/capacidades").then(({ datos }) => { CAPS = datos || {}; pistaDeModelo(); });
 </script>

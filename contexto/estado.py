@@ -132,14 +132,9 @@ def revisar(estado: Contexto) -> Contexto:
     if s["pendientes_10"]:
         siguiente.append(f"§10 tiene {s['pendientes_10']} afirmación(es) pendiente(s)")
     siguiente += [
-        # La UI se quedó atrás del motor en tres puntos. No son mejoras: son
-        # cosas que el motor sabe hacer y desde el Studio no se pueden.
-        "UI: abrir un grafo guardado — Guardar escribe en ui/grafos/ y los "
-        "endpoints existen, pero el canvas nunca los usa. Hoy guardás y no podés volver",
-        "UI: pedir los valores de los {{parametros}} al Ejecutar — un grafo "
-        "parametrizado solo se corre por MCP o por código",
-        "UI: elegir el `workspace` por nodo — sin eso el agente no ve tu repo, "
-        "y hoy solo se pone editando el JSON",
+        # Los tres huecos grandes de la UI (abrir un grafo guardado, pasarle
+        # parámetros y elegir workspace) ya están cerrados y verificados en
+        # `tests/test_ui_expansion.py`. Queda lo menor.
         "UI (menor): consumo por nodo (ya se calcula, solo se muestra el total), "
         "zoom del lienzo, resultado completo del nodo (la traza recorta a 300)",
         "conectar el Studio a la API multiusuario (hoy le habla directo al motor)",
