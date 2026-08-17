@@ -335,7 +335,12 @@ def run_backend(runtime: str, goal: str, *, timeout: int = 600,
     with tempfile.TemporaryDirectory() as tmp:
         ruta_esquema = Path(tmp) / "contrato.json"
         ruta_esquema.write_text(json.dumps(CONTRATO), encoding="utf-8")
-        argv = construir_argv(goal_final, str(ruta_esquema), modelo)
+        # El modelo se pasa solo si lo hay: un builder de dos argumentos —los
+        # que usan los tests para sustituir un backend— sigue siendo valido
+        # mientras nadie le pida modelo. Si se lo piden, falla ruidoso, que es
+        # lo correcto: ese builder no sabe pasarlo.
+        argv = (construir_argv(goal_final, str(ruta_esquema), modelo) if modelo
+                else construir_argv(goal_final, str(ruta_esquema)))
         if herramientas and runtime == "claude-code":
             argv += ["--allowedTools", ",".join(herramientas)]
 
