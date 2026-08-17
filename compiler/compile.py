@@ -46,11 +46,18 @@ def _assignee(nodo: dict) -> str:
     return nodo.get("perfil", "default") if rt == "hermes" else carril(rt)
 
 
-def validar(grafo: dict) -> None:
+def validar(grafo: dict, *, capacidades: bool = True) -> None:
     """Todo lo que se puede rechazar sin tocar la base de datos.
 
     Se valida ANTES de crear nada: una compilacion a medias deja cards
     huerfanas en el board que despues hay que limpiar a mano.
+
+    Dos cosas distintas, y por eso `capacidades` se puede apagar:
+      - la **estructura** del grafo (ids, aristas, ciclos) es propiedad del
+        grafo y vale igual en cualquier maquina;
+      - las **capacidades** son de ESTA maquina. Un grafo estructuralmente
+        sano es invalido para correr aca si falta un binario, pero sigue
+        siendo un grafo valido para guardar, versionar o mandar a otro lado.
     """
     nodos = grafo.get("nodos") or []
     if not nodos:
@@ -83,7 +90,7 @@ def validar(grafo: dict) -> None:
     # Preflight de capacidades: si un runtime del grafo no esta instalado, se
     # dice ACA y no a los 600s de timeout en medio de una corrida. El agente (o
     # la persona) sabe lo que le falta antes de empezar.
-    ausentes = faltantes({n.get("runtime", "hermes") for n in nodos})
+    ausentes = faltantes({n.get("runtime", "hermes") for n in nodos}) if capacidades else []
     if ausentes:
         raise ErrorDeGrafo(
             f"estos ejecutores no estan disponibles en esta maquina: {ausentes}. "

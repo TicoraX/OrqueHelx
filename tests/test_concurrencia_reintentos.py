@@ -29,14 +29,31 @@ k.connect = lambda **kw: _connect(db_path=db)
 DORMIR = 'import time,json; time.sleep(2); print(json.dumps({"status":"success","summary":"ok"}))'
 b.BACKENDS["opencode"] = (lambda g, e: ["python", "-c", DORMIR], b._primer_objeto)
 
-# --- 1. Paralelismo: 3 nodos de 2s no pueden tardar 6s ---
+# --- 0. Cuanto tarda UN nodo aca ---
+# El umbral se calibra en esta maquina en vez de escribir un numero: un
+# contenedor lento hacia fallar un absoluto de 4.5s con 4.9s, y el test pasaba
+# a medir la maquina en vez del paralelismo.
+# Calentamiento descartado: el PRIMER nodo paga el arranque en frio del
+# interprete y de los imports. En un contenedor medimos 4.6s el primero y ~2.1s
+# los siguientes; calibrar con el primero inflaba el umbral y hacia fallar el
+# tope de paralelismo por ser "demasiado rapido".
+k.create_task(conn, title="calentamiento", assignee=loop.carril("opencode"))
+loop.tick(conn, timeout=60)
+
+k.create_task(conn, title="calibracion", assignee=loop.carril("opencode"))
+t0 = time.monotonic()
+loop.tick(conn, timeout=60)
+UNO = time.monotonic() - t0
+print(f"0. un nodo tarda {UNO:.1f}s en esta maquina (serial de 3 seria ~{UNO*3:.1f}s)")
+
+# --- 1. Paralelismo: 3 nodos no pueden costar 3 nodos de tiempo ---
 ids = [k.create_task(conn, title=f"n{i}", assignee=loop.carril("opencode")) for i in range(3)]
 t0 = time.monotonic()
 res = loop.tick(conn, timeout=60)
 dur = time.monotonic() - t0
-print(f"1. 3 nodos de ~2s en paralelo: {dur:.1f}s (serial serian ~6s)")
+print(f"1. 3 nodos en paralelo: {dur:.1f}s (limite {UNO*2:.1f}s)")
 assert all(o["status"] == "success" for _, o in res), res
-assert dur < 4.5, f"no corrieron en paralelo: {dur:.1f}s"
+assert dur < UNO * 2, f"no corrieron en paralelo: {dur:.1f}s con un nodo en {UNO:.1f}s"
 assert all(k.get_task(conn, i).status == "done" for i in ids)
 
 # --- 2. El tope de paralelismo se respeta ---
@@ -45,8 +62,10 @@ ids2 = [k.create_task(conn, title=f"m{i}", assignee=loop.carril("opencode")) for
 t0 = time.monotonic()
 loop.tick(conn, timeout=60)
 dur2 = time.monotonic() - t0
-print(f"2. 4 nodos con MAX_PARALELO=2: {dur2:.1f}s (esperado ~4s, no ~2s ni ~8s)")
-assert 3.0 < dur2 < 6.5, f"el tope no se respeto: {dur2:.1f}s"
+# Con tope 2, cuatro nodos son DOS tandas: ni una (seria ignorar el tope) ni
+# cuatro (seria serial). Se compara contra el costo medido de un nodo.
+print(f"2. 4 nodos con MAX_PARALELO=2: {dur2:.1f}s (esperado entre {UNO*1.4:.1f} y {UNO*3:.1f})")
+assert UNO * 1.4 < dur2 < UNO * 3, f"el tope no se respeto: {dur2:.1f}s con un nodo en {UNO:.1f}s"
 loop.MAX_PARALELO = 3
 
 # --- 3. Fallo transitorio: bloquea como `transient` y se reintenta ---

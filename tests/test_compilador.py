@@ -1,5 +1,9 @@
 """Check del compilador (ARQUITECTURA.md SS4). Sin LLM: solo grafo -> kanban.
 
+Valida con `capacidades=False`: lo que se prueba aca es la ESTRUCTURA del
+grafo, que vale en cualquier maquina. El preflight de binarios instalados es
+de esta maquina y se prueba aparte, en `test_capacidades.py`.
+
     uv run --python 3.11 python ..\\tests\\test_compilador.py
 """
 import sys, tempfile
@@ -15,7 +19,7 @@ import hermes_cli.kanban_db as k
 
 def falla(grafo, fragmento):
     try:
-        c.validar(grafo)
+        c.validar(grafo, capacidades=False)
     except c.ErrorDeGrafo as e:
         assert fragmento in str(e), f"esperaba {fragmento!r} en {e!r}"
         return
@@ -37,7 +41,7 @@ print("   arista colgada, auto-enlace y ciclo: OK")
 # --- El ciclo se nombra entero, no un solo enlace ---
 try:
     c.validar({"nodos": [N("a"), N("b"), N("c")],
-               "aristas": [["a", "b"], ["b", "c"], ["c", "a"]]})
+               "aristas": [["a", "b"], ["b", "c"], ["c", "a"]]}, capacidades=False)
 except c.ErrorDeGrafo as e:
     assert "'a', 'b', 'c'" in str(e).replace('"', "'"), e
 print("2. el error de ciclo nombra los tres nodos trabados: OK")
@@ -83,7 +87,7 @@ print("6. el DAG compilado se comporta como el rombo: OK")
 # --- Un grafo mixto: un nodo Hermes y uno externo ---
 mixto = {"nodos": [N("nativo", "hermes"), N("externo", "opencode")],
          "aristas": [["nativo", "externo"]]}
-c.validar(mixto)
+c.validar(mixto, capacidades=False)
 ids2 = {}
 for nodo in c._orden_topologico(mixto):
     ids2[nodo["id"]] = k.create_task(
