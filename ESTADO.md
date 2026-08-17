@@ -3,13 +3,13 @@
 > Generado por `contexto/estado.py`. **No editar a mano**: se sobrescribe.
 > Un traspaso escrito a mano queda viejo y nadie se entera.
 
-**Fase:** con pendientes
+**Fase:** producto en uso
 
 ## Dónde está el código
 
-- Commit `def8dca` — fix: ignorar los journal del checkpointer; ensuciaban el propio traspaso
+- Commit `9ac0241` — feat: el Studio abre grafos guardados, pide parametros y elige workspace
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: **no** · sin pushear: 0
+- Árbol limpio: sí · sin pushear: 0
 
 ## Runtime prestado
 
@@ -35,7 +35,7 @@
 
 ## Bloqueos
 
-- hay cambios sin commitear
+- ninguno
 
 ## Qué sigue
 
