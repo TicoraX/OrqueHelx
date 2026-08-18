@@ -62,6 +62,49 @@ DECISIONES = [
      "Una corrida vieja tiene que explicarse con el grafo que se ejecutó."),
     ("Nada de proveedores external_process", "§11", "Con `copilot` todo agente "
      "hijo se cuelga para siempre en `Initializing agent...`."),
+
+    # --- Studio: decisiones tomadas construyendo el producto ---
+    ("Plantillas y grafos son carpetas distintas", "TUTORIAL §5b",
+     "`plantillas/` va en el repo y es de solo lectura; usar una la COPIA a "
+     "`ui/grafos/`. Si fueran el mismo lugar, un `git pull` que mejore una "
+     "plantilla pisaría el trabajo hecho encima."),
+    ("Lo que una plantilla requiere se DERIVA de sus nodos", "TUTORIAL §5b",
+     "No se declara aparte: una lista escrita a mano se desincroniza el primer "
+     "día que alguien cambia un ejecutor."),
+    ("Una nota no puede tener dependencias", "compiler/compile.py",
+     "El compilador RECHAZA la arista en vez de ignorarla: `a → nota → b` se "
+     "vería conectado en el lienzo y `b` arrancaría sin esperar a `a`. Un error "
+     "visible es mejor que un DAG que miente."),
+    ("Las reglas del flujo van en el `body`, no en el título", "compiler/compile.py",
+     "`build_worker_context` entrega el body junto al goal, y así el título "
+     "sigue siendo legible en el lienzo y en el kanban."),
+    ("El esfuerzo no necesitó campo nuevo", "§10.5",
+     "`reasoning_effort` ya existe en la card de Hermes, igual que "
+     "`model_override`. Un campo, dos consumidores: su dispatcher y el nuestro."),
+    ("Los niveles de esfuerzo se validan en el compilador", "§10.5",
+     "No son iguales en los tres CLIs (`max` no existe en agy). Pedir un nivel "
+     "y que corra en el default es pagar por trabajo que no se pidió."),
+    ("Un tope de gasto NUNCA se simula", "§10.5",
+     "Solo se pasa al CLI que lo entiende (claude-code). En los demás corta el "
+     "dispatcher ENTRE nodos: lo que ya arrancó termina. Un tope que se cree "
+     "puesto y no lo está es peor que no tener tope."),
+    ("El Studio no persiste conversaciones", "§10.4",
+     "La sesión del chat la guarda el CLI; por la API viaja solo el id. Una "
+     "sesión por runtime: el id de claude no significa nada para opencode."),
+    ("El chat pasa por `loop.run_chat`", "§10.4",
+     "Concede las herramientas del carril y hereda la denylist: un chat es un "
+     "agente con shell igual que un nodo."),
+    ("El acomodo del grafo se calcula en Python", "compiler/disposicion.py",
+     "El orden por capas (Kahn) ya existe en el compilador. Reimplementarlo en "
+     "JS sería el mismo algoritmo dos veces y la segunda copia se desincroniza."),
+    ("El nombre de archivo va por lista blanca", "ui/server.py",
+     "Un `board: '../../x'` escribía .json fuera de ui/grafos y leía cualquier "
+     ".json del disco. Explotado antes de arreglarlo; hay un test que lo intenta."),
+    ("La suite de Python NO verifica la UI", "tests/",
+     "Ningún test toca `ui/index.html`: los cambios de interfaz se verifican con "
+     "Playwright en el navegador. Y `test_api_rbac` sale con código 0 cuando se "
+     "omite por falta de Postgres, así que un runner que mire el exit code "
+     "cuenta un test omitido como pasado."),
 ]
 
 
