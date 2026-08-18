@@ -52,6 +52,10 @@
   #traza .intento { padding:6px 8px; margin-bottom:6px; border-radius:5px;
                     background:#141720; border:1px solid var(--linea); }
   #traza .mal { border-color:#7a3b39; }
+  #traza .res { background:#141720; border:1px solid var(--linea); border-radius:5px;
+                padding:7px 9px; margin-bottom:8px; white-space:pre-wrap;
+                max-height:220px; overflow-y:auto; color:var(--texto); }
+  #traza .gasto { color:var(--tenue); margin-bottom:8px; font-variant-numeric:tabular-nums; }
   #resumen { font-size:12px; color:var(--tenue); border-top:1px solid var(--linea);
              padding-top:10px; white-space:pre-wrap; }
 </style>
@@ -120,6 +124,9 @@
       <button id="compilar">Compilar</button>
       <button id="correr" class="primario">Ejecutar</button>
     </div>
+    <div class="fila" style="margin-bottom:8px;">
+      <button id="parar">Parar</button>
+    </div>
     <button id="exportar">Exportar como MCP</button>
   </div>
 
@@ -150,7 +157,9 @@
     <b>Doble clic</b> en vacío: nodo nuevo.<br>
     <b>Arrastrar</b> un nodo: moverlo.<br>
     <b>Shift + arrastrar</b> desde un nodo a otro: dependencia.<br>
-    <b>Clic</b> en una flecha: borrarla.
+    <b>Clic</b> en una flecha: borrarla.<br>
+    <b>Rueda</b>: zoom. <b>Arrastrar</b> el fondo: mover el lienzo.<br>
+    <b>Ctrl+Z</b>: deshacer.
   </div>
 </aside>
 
@@ -169,10 +178,35 @@ const tinta = est => !est ? "#e6e8ec" : (CLAROS.has(est) ? "#14161a" : "#f2f5f8"
 let grafo = { board:"mi-flujo", nodos:[], aristas:[] };
 let ids = {};                                    // id de nodo -> task_id
 let estado = {};                                 // task_id -> {estado, ...}
-let sel = null, arrastre = null, enlazando = null;
+let sel = null, arrastre = null, enlazando = null, paneo = null;
 
 const $ = s => document.querySelector(s);
 const svg = $("#lienzo");
+
+// Con zoom, `e.offsetX` deja de servir: es pixel de pantalla y el lienzo tiene
+// su propio sistema de coordenadas. Esto convierte un evento del mouse a
+// coordenadas del grafo, que es donde viven las x/y de los nodos.
+function pt(e) {
+  const p = svg.createSVGPoint();
+  p.x = e.clientX; p.y = e.clientY;
+  return p.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+let vista = null;                                // viewBox actual, o null = 1:1
+const verVista = () => vista &&
+  svg.setAttribute("viewBox", `${vista.x} ${vista.y} ${vista.w} ${vista.h}`);
+const vistaActual = () => vista ||
+  { x:0, y:0, w:svg.clientWidth, h:svg.clientHeight };
+
+// --- Deshacer ------------------------------------------------------------
+// Solo cambios ESTRUCTURALES (crear, borrar, mover, enlazar). Tipear en el
+// titulo ya lo deshace el propio campo de texto con su Ctrl+Z nativo, y
+// apilar una instantanea por tecla llenaria la pila de ruido.
+let pila = [];
+const anotar = () => {
+  pila.push(JSON.stringify({ nodos:grafo.nodos, aristas:grafo.aristas }));
+  if (pila.length > 60) pila.shift();
+};
 const nuevoId = () => "n" + Math.random().toString(36).slice(2, 7);
 const buscar = id => grafo.nodos.find(n => n.id === id);
 
@@ -214,7 +248,7 @@ function pintar() {
     l.setAttribute("fill", "none"); l.setAttribute("stroke-width", "2");
     l.setAttribute("marker-end", "url(#punta)");
     l.style.cursor = "pointer";
-    l.onclick = () => { grafo.aristas = grafo.aristas.filter(x => !(x[0]===p && x[1]===h)); pintar(); };
+    l.onclick = () => { anotar(); grafo.aristas = grafo.aristas.filter(x => !(x[0]===p && x[1]===h)); pintar(); };
     ga.appendChild(l);
   }
 
@@ -251,14 +285,17 @@ function pintar() {
     g.onmousedown = e => {
       e.stopPropagation();
       sel = n.id; refrescarEditor(); cargarTraza();
+      const m = pt(e);
       if (e.shiftKey) enlazando = n.id;
-      else arrastre = { id:n.id, dx:e.offsetX - n.x, dy:e.offsetY - n.y };
+      else arrastre = { id:n.id, dx:m.x - n.x, dy:m.y - n.y, anotado:false };
       pintar();
     };
     g.onmouseup = e => {
       if (enlazando && enlazando !== n.id) {
         const par = [enlazando, n.id];
-        if (!grafo.aristas.some(x => x[0]===par[0] && x[1]===par[1])) grafo.aristas.push(par);
+        if (!grafo.aristas.some(x => x[0]===par[0] && x[1]===par[1])) {
+          anotar(); grafo.aristas.push(par);
+        }
       }
       enlazando = null; $("#fantasma").setAttribute("d", ""); pintar();
     };
@@ -296,10 +333,25 @@ async function cargarTraza() {
   const eventos = (datos.eventos || []).map(e =>
     `<div class="ev"><span class="k">${esc(e.kind)}</span>
        <span class="d">${hora(e.cuando)} ${esc(e.detalle)}</span></div>`).join("");
+  // El resultado es el ENTREGABLE del nodo, no un detalle de la traza: va
+  // primero y completo (el servidor dejo de recortarlo), en una caja que
+  // scrollea sola.
+  const resultado = datos.resultado
+    ? `<div class="res">${esc(datos.resultado)}</div>` : "";
+  const u = POR_NODO[tid];
+  const gasto = u
+    ? `<div class="gasto">${miles(u.total)} tokens · ${miles(u.entrada)} in / ${miles(u.salida)} out` +
+      (u.costo_usd != null ? ` · US$ ${u.costo_usd.toFixed(4)}`
+                           : " · sin medidor (suscripción)") +
+      (u.intentos > 1 ? ` · ${u.intentos} intentos` : "") + `</div>`
+    : "";
   $("#traza").innerHTML =
     (datos.block_kind ? `<div class="intento mal">bloqueo: <b>${esc(datos.block_kind)}</b></div>` : "") +
+    resultado + gasto +
     (intentos || "") + (eventos || '<div class="d">sin eventos todavía</div>');
 }
+
+const miles = n => (n || 0).toLocaleString("es-AR");
 
 // Todo lo que entra al panel viene de la base: titulos, summaries y payloads
 // los escribe un agente, asi que no se inyectan como HTML.
@@ -363,19 +415,63 @@ $("#abrir").onchange = async e => {
 
 svg.ondblclick = e => {
   if (e.target !== svg) return;
-  const n = { id:nuevoId(), titulo:"", runtime:"hermes", x:e.offsetX - A/2, y:e.offsetY - ALTO/2 };
+  const m = pt(e);
+  anotar();
+  const n = { id:nuevoId(), titulo:"", runtime:"hermes", x:m.x - A/2, y:m.y - ALTO/2 };
   grafo.nodos.push(n); sel = n.id; refrescarEditor(); pintar(); $("#titulo").focus();
 };
 svg.onmousemove = e => {
+  const m = pt(e);
   if (arrastre) {
     const n = buscar(arrastre.id);
-    n.x = e.offsetX - arrastre.dx; n.y = e.offsetY - arrastre.dy; pintar();
+    if (!arrastre.anotado) { arrastre.anotado = true; anotar(); }  // antes de mover
+    n.x = m.x - arrastre.dx; n.y = m.y - arrastre.dy; pintar();
   } else if (enlazando) {
     const n = buscar(enlazando);
-    $("#fantasma").setAttribute("d", `M${n.x + A/2},${n.y + ALTO} L${e.offsetX},${e.offsetY}`);
+    $("#fantasma").setAttribute("d", `M${n.x + A/2},${n.y + ALTO} L${m.x},${m.y}`);
+  } else if (paneo) {
+    // El paneo se calcula contra el viewBox de ANTES de moverse: usar `pt(e)`
+    // en vivo se realimenta con su propio desplazamiento y el lienzo huye.
+    vista = { ...paneo.v0,
+              x: paneo.v0.x - (e.clientX - paneo.px) * paneo.k,
+              y: paneo.v0.y - (e.clientY - paneo.py) * paneo.k };
+    verVista();
   }
 };
-svg.onmouseup = () => { arrastre = null; enlazando = null; $("#fantasma").setAttribute("d",""); };
+svg.onmouseup = () => {
+  arrastre = null; enlazando = null; paneo = null;
+  $("#fantasma").setAttribute("d","");
+};
+
+// Arrastrar el fondo mueve el lienzo. Solo sobre el vacio: sobre un nodo gana
+// el handler del nodo, que ya hace stopPropagation.
+svg.onmousedown = e => {
+  if (e.target !== svg) return;
+  const v = vistaActual();
+  paneo = { v0:v, px:e.clientX, py:e.clientY, k: v.w / (svg.clientWidth || 1) };
+};
+
+svg.onwheel = e => {
+  e.preventDefault();
+  const v = vistaActual(), m = pt(e);
+  const f = e.deltaY > 0 ? 1.12 : 1 / 1.12;
+  // El punto bajo el cursor se queda quieto: se hace zoom donde uno mira, no
+  // al centro del lienzo.
+  vista = { x: m.x - (m.x - v.x) * f, y: m.y - (m.y - v.y) * f,
+            w: v.w * f, h: v.h * f };
+  verVista();
+};
+
+document.onkeydown = e => {
+  if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;  // el del campo
+  const previo = pila.pop();
+  if (!previo) return;
+  e.preventDefault();
+  Object.assign(grafo, JSON.parse(previo));
+  if (!buscar(sel)) sel = null;
+  refrescarEditor(); pintar(); refrescarParams();
+};
 
 $("#titulo").oninput = e => {
   const n = buscar(sel);
@@ -407,6 +503,7 @@ function pistaDeModelo() {
   $("#pistaModelo").textContent = c ? "— " + (c.modelo_forma || "") : "";
 }
 $("#borrar").onclick = () => {
+  anotar();
   grafo.nodos = grafo.nodos.filter(n => n.id !== sel);
   grafo.aristas = grafo.aristas.filter(([p, h]) => p !== sel && h !== sel);
   sel = null; refrescarEditor(); pintar();
@@ -466,6 +563,13 @@ $("#correr").onclick = async () => {
                   : datos.motivo, datos.ok ? "ok" : "error");
 };
 
+$("#parar").onclick = async () => {
+  const { datos } = await api("/api/parar", { board: grafo.board });
+  avisar(datos.ok ? "Pedido de parada: no arranca nodos nuevos. Lo que ya está " +
+                    "corriendo termina y cierra su card."
+                  : datos.motivo, datos.ok ? "ok" : "error");
+};
+
 $("#exportar").onclick = async () => {
   await api("/api/grafo", grafo);               // el server MCP lee del disco
   const { datos } = await api("/api/mcp", grafo);
@@ -478,11 +582,12 @@ $("#exportar").onclick = async () => {
 ${cfg}`, "ok");
 };
 
-const miles = n => (n || 0).toLocaleString("es-AR");
+let POR_NODO = {};                               // task_id -> gasto del nodo
 
 async function cargarConsumo() {
   const caja = $("#bloqueConsumo");
   const { datos } = await api(`/api/consumo?board=${encodeURIComponent(grafo.board)}`);
+  POR_NODO = datos.por_nodo || {};
   const t = datos.total;
   if (!t || !t.intentos) { caja.style.display = "none"; return; }
   caja.style.display = "block";

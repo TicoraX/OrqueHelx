@@ -1,10 +1,14 @@
-"""Lo que el Studio suma en esta tanda: abrir un grafo, parametros y workspace.
+"""Lo que el Studio suma en esta tanda, del lado del servidor.
 
-Los tres eran agujeros reales, no adornos:
+Eran agujeros reales, no adornos:
   - se podia Guardar y no volver (el endpoint existia, el canvas no lo usaba);
   - un grafo con `{{marcadores}}` solo se podia correr por MCP o por codigo;
   - el `workspace` solo se ponia editando el JSON a mano, y sin el un nodo
-    corre en el scratch de Hermes, que se BORRA al completar (SS4.1).
+    corre en el scratch de Hermes, que se BORRA al completar (SS4.1);
+  - una corrida arrancada no se podia frenar sin matar el proceso.
+
+Lo del lienzo (zoom, paneo, deshacer, resultado completo, gasto por nodo) se
+verifica con Playwright, no aca: son eventos del navegador.
 
     uv run --python 3.11 --with jsonschema python ..\\tests\\test_ui_expansion.py
 """
@@ -110,12 +114,17 @@ try:
         conn.close()
         print("5. la card quedo con el titulo sustituido y el workspace puesto: OK")
 
-    # --- 6. El grafo guardado conserva sus marcadores ---
+    # --- 6. Parar un board donde no corre nada lo dice, no miente ---
+    codigo, datos = pedir("/api/parar", {"board": BOARD})
+    assert codigo == 200 and datos["ok"] is False and "no hay nada" in datos["motivo"], datos
+    print("6. parar sin corrida: responde que no hay nada corriendo: OK")
+
+    # --- 7. El grafo guardado conserva sus marcadores ---
     # Se guarda el grafo, no la corrida: si al guardar se sustituyera, el grafo
     # dejaria de ser reutilizable con otros datos.
     codigo, vuelto = pedir(f"/api/grafo?nombre={NOMBRE}")
     assert "{{repo}}" in vuelto["nodos"][0]["titulo"], vuelto
-    print("6. el grafo guardado sigue parametrizado: OK")
+    print("7. el grafo guardado sigue parametrizado: OK")
 finally:
     proc.terminate()
     proc.wait(timeout=10)

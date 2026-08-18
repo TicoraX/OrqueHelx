@@ -132,11 +132,12 @@ def revisar(estado: Contexto) -> Contexto:
     if s["pendientes_10"]:
         siguiente.append(f"§10 tiene {s['pendientes_10']} afirmación(es) pendiente(s)")
     siguiente += [
-        # Los tres huecos grandes de la UI (abrir un grafo guardado, pasarle
-        # parámetros y elegir workspace) ya están cerrados y verificados en
-        # `tests/test_ui_expansion.py`. Queda lo menor.
-        "UI (menor): consumo por nodo (ya se calcula, solo se muestra el total), "
-        "zoom del lienzo, resultado completo del nodo (la traza recorta a 300)",
+        # La expansión del Studio está cerrada: abrir un grafo guardado, pasarle
+        # parámetros, elegir workspace, parar una corrida, zoom/paneo, deshacer,
+        # resultado completo y gasto por nodo. Servidor en
+        # `tests/test_ui_expansion.py`; lo del lienzo, con Playwright.
+        "UI: el panel lateral ya no entra en una pantalla — la traza queda "
+        "abajo de todo justo cuando se la mira (mover Estado/Traza arriba, o pestañas)",
         "conectar el Studio a la API multiusuario (hoy le habla directo al motor)",
         "medición empírica del cumplimiento del output_schema (diferida a propósito)",
     ]

@@ -32,6 +32,11 @@ GRAFOS.mkdir(exist_ok=True)
 # nada, es trabajo duplicado sin motivo.
 _corriendo: dict[str, threading.Thread] = {}
 
+# Boards a los que se les pidio parar. No se mata nada a mitad de camino: un
+# `kill` dejaria la card reclamada y el proceso hijo huerfano. Se deja de
+# LEVANTAR trabajo nuevo, y lo que ya arranco termina y se cierra bien.
+_parar: set[str] = set()
+
 # Token de acceso. Esto ejecuta agentes con shell: sin autenticacion, exponer el
 # puerto es entregar una terminal. Se genera uno por arranque salvo que se fije
 # `ORQUESTER_TOKEN` (util para dejarlo estable entre reinicios).
@@ -78,6 +83,9 @@ def _traza(board: str, task_id: str) -> dict:
     t = k.get_task(conn, task_id)
     if t is None:
         return {"error": f"no existe la card {task_id}"}
+    # Ni `resultado` ni los summaries se recortan: el resultado de un nodo es
+    # el ENTREGABLE del flujo, y leerlo a medias obliga a abrir la base a mano.
+    # Los `payload` de los eventos si: traen PID y ruido de reclaim.
     eventos = [
         {"kind": e.kind, "cuando": e.created_at, "run": e.run_id,
          # El payload trae PID, motivo del reclaim, error... util y a veces
@@ -86,14 +94,14 @@ def _traza(board: str, task_id: str) -> dict:
         for e in k.list_events(conn, task_id)
     ]
     intentos = [
-        {"n": i + 1, "outcome": r.outcome, "resumen": (r.summary or "")[:300],
-         "error": (getattr(r, "error", None) or "")[:300],
+        {"n": i + 1, "outcome": r.outcome, "resumen": r.summary or "",
+         "error": getattr(r, "error", None) or "",
          "inicio": r.started_at, "fin": r.ended_at}
         for i, r in enumerate(k.list_runs(conn, task_id))
     ]
     return {
         "titulo": t.title, "estado": t.status, "assignee": t.assignee,
-        "block_kind": t.block_kind, "resultado": (t.result or "")[:600],
+        "block_kind": t.block_kind, "resultado": t.result or "",
         "intentos": intentos, "eventos": eventos,
     }
 
@@ -165,10 +173,14 @@ def _arrancar(board: str) -> dict:
         except Exception:
             traceback.print_exc()          # que no tumbe el loop del carril propio
 
+    _parar.discard(board)          # un arranque anterior pudo dejarlo marcado
+
     def _correr():
         try:
             conn = k.connect(board=board)
             while True:
+                if board in _parar:
+                    return
                 _tick_hermes()
                 hechas = dispatcher.tick(conn, board=board)
                 sin_trabajo = (not hechas
@@ -181,6 +193,7 @@ def _arrancar(board: str) -> dict:
             traceback.print_exc()
         finally:
             _corriendo.pop(board, None)
+            _parar.discard(board)
 
     h = threading.Thread(target=_correr, daemon=True)
     _corriendo[board] = h
@@ -268,6 +281,12 @@ class Handler(BaseHTTPRequestHandler):
                                  str(GRAFOS / f"{nombre}.json")],
                     }}},
                 })
+            if self.path == "/api/parar":
+                board = cuerpo.get("board", "orquester")
+                vivo = board in _corriendo
+                _parar.add(board)
+                return self._responder(200, {"ok": vivo, "motivo":
+                                             "" if vivo else "no hay nada corriendo en este board"})
             if self.path == "/api/correr":
                 return self._responder(200, _arrancar(cuerpo.get("board", "orquester")))
             if self.path == "/api/grafo":

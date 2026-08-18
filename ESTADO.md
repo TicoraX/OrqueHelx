@@ -3,20 +3,20 @@
 > Generado por `contexto/estado.py`. **No editar a mano**: se sobrescribe.
 > Un traspaso escrito a mano queda viejo y nadie se entera.
 
-**Fase:** producto en uso
+**Fase:** con pendientes
 
 ## Dónde está el código
 
-- Commit `9ac0241` — feat: el Studio abre grafos guardados, pide parametros y elige workspace
+- Commit `303cf7b` — chore: regenerar ESTADO.md con el arbol ya limpio
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 0
+- Árbol limpio: **no** · sin pushear: 0
 
 ## Runtime prestado
 
 - Pin de Hermes: `b7f628025905` · el clon está en el pin: sí
 - CLI instalado: v0.20.1
 - Binarios: claude ✓, opencode ✓, agy ✓, hermes ✓, node ✓, docker ✓
-- Postgres del plano de control: sí
+- Postgres del plano de control: **no**
 
 ## Verificación
 
@@ -35,12 +35,13 @@
 
 ## Bloqueos
 
-- ninguno
+- hay cambios sin commitear
 
 ## Qué sigue
 
+- `docker compose up -d db` si vas a usar multiusuario
 - §10 tiene 1 afirmación(es) pendiente(s)
-- UI (menor): consumo por nodo (ya se calcula, solo se muestra el total), zoom del lienzo, resultado completo del nodo (la traza recorta a 300)
+- UI: el panel lateral ya no entra en una pantalla — la traza queda abajo de todo justo cuando se la mira (mover Estado/Traza arriba, o pestañas)
 - conectar el Studio a la API multiusuario (hoy le habla directo al motor)
 - medición empírica del cumplimiento del output_schema (diferida a propósito)
 
