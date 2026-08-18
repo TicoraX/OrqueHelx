@@ -218,6 +218,12 @@ try:
     assert codigo == 400 and "vacio" in datos["error"], datos
     print("16. el chat rechaza runtime invalido y mensaje vacio: OK")
 
+    # El chat acepta modelo y esfuerzo, y valida el esfuerzo contra SU lista.
+    codigo, datos = pedir("/api/chat", {"runtime": "antigravity", "mensaje": "hola",
+                                        "esfuerzo": "max"})
+    assert codigo == 400 and "no acepta esfuerzo 'max'" in datos["error"], datos
+    print("16b. el chat valida el esfuerzo con la lista del ejecutor: OK")
+
     # --- 17. El tope que se informa es el que se APLICO ---
     # Editar el campo con la corrida en marcha no cambia el techo de esa
     # corrida: la barra mostraba un tope que nadie estaba respetando.

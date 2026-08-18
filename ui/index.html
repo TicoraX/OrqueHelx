@@ -252,8 +252,15 @@
           <option value="opencode">OpenCode</option>
           <option value="antigravity">Antigravity</option>
         </select>
-        <select id="chatEsfuerzo"><option value="">(esfuerzo por defecto)</option></select>
         <button id="chatNuevo" style="width:auto; white-space:nowrap;">Nueva</button>
+      </div>
+      <div>
+        <label>Modelo <span class="tenue" id="chatPistaModelo"></span></label>
+        <select id="chatModelo"><option value="">(el que use el CLI por defecto)</option></select>
+      </div>
+      <div>
+        <label>Esfuerzo</label>
+        <select id="chatEsfuerzo"><option value="">(el del CLI por defecto)</option></select>
       </div>
       <div>
         <label>Workspace <span class="tenue">— dónde trabaja el agente</span></label>
@@ -582,6 +589,8 @@ const miles = n => (n || 0).toLocaleString("es-AR");
 // de sesion que devolvio el ultimo turno. Una sesion por ejecutor, porque el
 // id de claude no significa nada para opencode.
 let SESIONES = {}, TOTALES_CHAT = {}, chateando = false;
+// Modelo y esfuerzo POR EJECUTOR: un slug de agy no significa nada en opencode.
+let MODELO_CHAT = {}, ESFUERZO_CHAT = {};
 
 function pintarChat(quien, texto, clase) {
   const d = document.createElement("div");
@@ -613,7 +622,11 @@ function pintarChat(quien, texto, clase) {
 
 function verSesion() {
   const rt = $("#chatRuntime").value, s = SESIONES[rt], tot = TOTALES_CHAT[rt];
-  llenarEsfuerzo("#chatEsfuerzo", rt, $("#chatEsfuerzo").value);
+  // El modelo elegido pertenece al ejecutor anterior: no se arrastra. Se
+  // guarda por ejecutor, asi que volver a claude recupera lo que habias
+  // elegido alla en vez de dejarte un slug de agy que ese CLI no entiende.
+  llenarModelos("#chatModelo", rt, MODELO_CHAT[rt] || "", "#chatPistaModelo");
+  llenarEsfuerzo("#chatEsfuerzo", rt, ESFUERZO_CHAT[rt] || "");
   const acum = tot && tot.turnos > 0
     ? ` · Acumulado: ${miles(tot.tokens)} tokens` +
       (tot.con_costo ? ` · US$ ${tot.costo_usd.toFixed(4)}` : " (por suscripción)") +
@@ -643,6 +656,7 @@ async function enviarChat() {
   const { ok, datos } = await api("/api/chat", {
     runtime: rt, mensaje, sesion: SESIONES[rt] || "",
     workspace: $("#chatWorkspace").value.trim(),
+    modelo: $("#chatModelo").value,
     esfuerzo: $("#chatEsfuerzo").value,
   });
   clearInterval(reloj);
@@ -672,6 +686,8 @@ async function enviarChat() {
 
 $("#chatEnviar").onclick = enviarChat;
 $("#chatRuntime").onchange = verSesion;
+$("#chatModelo").onchange = e => { MODELO_CHAT[$("#chatRuntime").value] = e.target.value; };
+$("#chatEsfuerzo").onchange = e => { ESFUERZO_CHAT[$("#chatRuntime").value] = e.target.value; };
 $("#chatNuevo").onclick = () => {
   // Se olvida el id, no se borra nada del lado del CLI: la conversacion vieja
   // sigue existiendo alla y se podria retomar con su id.
@@ -1024,24 +1040,33 @@ let CAPS = {};
 // Los modelos se le preguntan al CLI (`agy models`, `opencode models`), no se
 // escriben a mano: la lista cambia sola y el slug exacto no hay quien lo
 // recuerde. El campo de texto sigue estando para lo que la lista no traiga.
-async function cargarModelos() {
-  const n = buscar(sel);
-  const s = $("#modeloLista");
-  if (!n) return;
+// Un solo llenador para los dos desplegables de modelo (nodo y chat): los dos
+// preguntan lo mismo al mismo endpoint, y duplicarlo seria que uno se quede
+// viejo cuando cambie el otro.
+async function llenarModelos(selector, runtime, elegido, pista) {
+  const s = $(selector);
   s.innerHTML = '<option value="">(el que use el CLI por defecto)</option>';
-  const { datos } = await api(`/api/modelos?runtime=${encodeURIComponent(n.runtime)}`);
+  const { datos } = await api(`/api/modelos?runtime=${encodeURIComponent(runtime)}`);
   for (const m of datos.modelos || []) {
     const o = document.createElement("option");
     o.value = m; o.textContent = m; s.appendChild(o);
   }
   // Un modelo escrito a mano que no este en la lista no se pierde de vista.
-  if (n.modelo && !(datos.modelos || []).includes(n.modelo)) {
+  if (elegido && !(datos.modelos || []).includes(elegido)) {
     const o = document.createElement("option");
-    o.value = n.modelo; o.textContent = n.modelo + " (a mano)"; s.appendChild(o);
+    o.value = elegido; o.textContent = elegido + " (a mano)"; s.appendChild(o);
   }
-  s.value = n.modelo || "";
-  $("#pistaModelo").textContent = datos.fuente ? "— " + datos.fuente
-    : (CAPS[n.runtime]?.modelo_forma ? "— " + CAPS[n.runtime].modelo_forma : "");
+  s.value = elegido || "";
+  if (pista) {
+    $(pista).textContent = datos.fuente ? "— " + datos.fuente
+      : (CAPS[runtime]?.modelo_forma ? "— " + CAPS[runtime].modelo_forma : "");
+  }
+  return datos;
+}
+
+async function cargarModelos() {
+  const n = buscar(sel);
+  if (n) await llenarModelos("#modeloLista", n.runtime, n.modelo, "#pistaModelo");
 }
 
 $("#modeloLista").onchange = e => {
