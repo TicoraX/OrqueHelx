@@ -34,6 +34,9 @@ DECLARADO = {
         "modelo_flag": "--model",
         "modelo_forma": "alias (opus, sonnet, fable) o nombre completo",
         "listar_modelos": None,      # no tiene subcomando que liste
+        "esfuerzo_flag": "--effort",
+        "esfuerzos": ["low", "medium", "high", "xhigh", "max"],
+        "tope_gasto_flag": "--max-budget-usd",   # el unico con tope nativo
         # Los alias los documenta su propio `--help`, no los inventamos aca.
         "alias_conocidos": ["opus", "sonnet", "fable"],
     },
@@ -52,6 +55,11 @@ DECLARADO = {
         "modelo_flag": "--model",
         "modelo_forma": "proveedor/modelo (ej. deepseek/deepseek-chat)",
         "listar_modelos": "opencode models",
+        # `--variant` es el esfuerzo en opencode, y los niveles dependen del
+        # proveedor detras del modelo: los tres de abajo son los que documenta.
+        "esfuerzo_flag": "--variant",
+        "esfuerzos": ["minimal", "high", "max"],
+        "tope_gasto_flag": None,
     },
     "antigravity": {
         "binario": "agy",
@@ -68,6 +76,9 @@ DECLARADO = {
         "modelo_flag": "--model",
         "modelo_forma": "slug de `agy models` (ej. gemini-3.1-pro-high)",
         "listar_modelos": 'agy models',
+        "esfuerzo_flag": "--effort",
+        "esfuerzos": ["low", "medium", "high"],
+        "tope_gasto_flag": None,
         "ojo": "sale con EXIT=0 aunque falle: juzgar por la salida, no por el codigo",
     },
     "hermes": {
@@ -87,6 +98,12 @@ DECLARADO = {
         # `hermes model` NO sirve para listar: abre un selector INTERACTIVO que
         # se queda esperando en stdin. Estaba declarado aca como si listara.
         "listar_modelos": None,
+        # Hermes acepta mas niveles que cualquier CLI externo
+        # (`hermes_constants.VALID_REASONING_EFFORTS`), y los aplica su propio
+        # dispatcher a traves de `reasoning_effort` de la card.
+        "esfuerzo_flag": "(reasoning_effort de la card)",
+        "esfuerzos": ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+        "tope_gasto_flag": None,
         "ojo": "lo ejecuta el dispatcher de Hermes, no el de ORQUESTER (§12)",
     },
 }

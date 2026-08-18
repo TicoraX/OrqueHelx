@@ -82,7 +82,23 @@ def _runtime_de(task) -> str:
     return runtime
 
 
-def ejecutar_una(conn, task_id: str, *, timeout: int = 600) -> dict:
+def gasto_usd(conn) -> float:
+    """Lo gastado en este board, sumando el consumo de cada intento.
+
+    Sobre los RUNS y no sobre las tasks: un nodo reintentado gasto en cada
+    intento. Los backends que corren por suscripcion no informan medidor y
+    suman cero: el tope solo puede frenar lo que se puede medir.
+    """
+    total = 0.0
+    for t in k.list_tasks(conn):
+        for r in k.list_runs(conn, t.id):
+            costo = ((r.metadata or {}).get("uso") or {}).get("costo_usd")
+            total += costo or 0
+    return total
+
+
+def ejecutar_una(conn, task_id: str, *, timeout: int = 600,
+                 presupuesto: float = None) -> dict:
     """Reclamar, ejecutar y cerrar una card. Devuelve el contrato."""
     task = k.claim_task(conn, task_id, claimer=CLAIMER)
     if task is None:
@@ -107,6 +123,11 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600) -> dict:
         salida = run_backend(_runtime_de(task), ctx, timeout=timeout,
                              cwd=task.workspace_path or None,
                              herramientas=_HERRAMIENTAS,
+                             # `reasoning_effort` ya existe en la card y
+                             # significa exactamente esto: no hace falta
+                             # inventar campo, igual que con el modelo.
+                             esfuerzo=task.reasoning_effort or None,
+                             presupuesto=presupuesto,
                              # `model_override` ya existe en la card y significa
                              # exactamente esto. No hace falta inventar campo.
                              modelo=task.model_override or None)
@@ -162,12 +183,27 @@ def reintentar(conn) -> list[str]:
     return reabiertas
 
 
-def tick(conn, *, timeout: int = 600, board: str = None) -> list[tuple[str, dict]]:
-    """Una pasada: reabrir lo reintentable y ejecutar lo listo, en paralelo."""
+def tick(conn, *, timeout: int = 600, board: str = None,
+         tope_usd: float = None) -> list[tuple[str, dict]]:
+    """Una pasada: reabrir lo reintentable y ejecutar lo listo, en paralelo.
+
+    Con `tope_usd`, no arranca nodos si el board ya gasto de mas.
+
+    ponytail: el corte es ENTRE nodos, no dentro de uno. Los nodos que ya
+    arrancaron terminan, asi que el gasto real puede pasarse del tope por lo
+    que cuesten esos. El unico que corta a mitad de camino es claude-code, que
+    tiene tope nativo y recibe el resto del presupuesto. Para cortar de verdad
+    en los otros habria que matar el proceso, que deja la card reclamada.
+    """
     reintentar(conn)
     listas = _mis_cards(conn, "ready")
     if not listas:
         return []
+    resto = None
+    if tope_usd is not None:
+        resto = tope_usd - gasto_usd(conn)
+        if resto <= 0:
+            return []
 
     # Una conexion por hilo: los objetos de sqlite3 no se comparten entre
     # hilos, y `claim_task` ya es atomico entre conexiones (verificado en
@@ -178,7 +214,8 @@ def tick(conn, *, timeout: int = 600, board: str = None) -> list[tuple[str, dict
         # come los descriptores.
         c = k.connect(board=board) if board else k.connect()
         try:
-            return (t.id, ejecutar_una(c, t.id, timeout=timeout))
+            return (t.id, ejecutar_una(c, t.id, timeout=timeout,
+                                       presupuesto=resto))
         finally:
             c.close()
 

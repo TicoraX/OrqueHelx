@@ -213,7 +213,7 @@ def _quedan_de_hermes(conn) -> bool:
                for t in k.list_tasks(conn) if t.assignee not in propios)
 
 
-def _arrancar(board: str) -> dict:
+def _arrancar(board: str, tope_usd: float = None) -> dict:
     if board in _corriendo and _corriendo[board].is_alive():
         return {"ok": False, "motivo": "ya hay un dispatcher corriendo en este board"}
 
@@ -241,8 +241,15 @@ def _arrancar(board: str) -> dict:
             while True:
                 if board in _parar:
                     return
+                if tope_usd is not None and dispatcher.gasto_usd(conn) >= tope_usd:
+                    # Se anota como si lo hubieran parado a mano: el Studio ya
+                    # sabe mostrar ese estado, y el motivo se ve en el consumo.
+                    _parar.add(board)
+                    print(f"[{board}] tope de US$ {tope_usd} alcanzado: no se "
+                          f"arrancan nodos nuevos")
+                    return
                 _tick_hermes()
-                hechas = dispatcher.tick(conn, board=board)
+                hechas = dispatcher.tick(conn, board=board, tope_usd=tope_usd)
                 sin_trabajo = (not hechas
                                and not dispatcher._queda_trabajo(conn)
                                and not _quedan_de_hermes(conn))
@@ -342,6 +349,7 @@ class Handler(BaseHTTPRequestHandler):
                         sesion=cuerpo.get("sesion") or None,
                         cwd=cuerpo.get("workspace") or None,
                         modelo=cuerpo.get("modelo") or None,
+                        esfuerzo=cuerpo.get("esfuerzo") or None,
                         timeout=int(cuerpo.get("timeout") or 600))
                 except Exception as e:
                     return self._responder(400, {"error": str(e)[:1500]})
@@ -389,7 +397,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._responder(200, {"ok": vivo, "motivo":
                                              "" if vivo else "no hay nada corriendo en este board"})
             if self.path == "/api/correr":
-                return self._responder(200, _arrancar(cuerpo.get("board", "orquester")))
+                tope = cuerpo.get("presupuesto_usd")
+                try:
+                    tope = float(tope) if str(tope or "").strip() else None
+                except ValueError:
+                    return self._responder(400, {"error": f"presupuesto invalido: {tope!r}"})
+                if tope is not None and tope <= 0:
+                    return self._responder(400, {"error": "el presupuesto tiene que ser > 0"})
+                return self._responder(200, _arrancar(cuerpo.get("board", "orquester"), tope))
             if self.path == "/api/plantilla":
                 # Usar una plantilla = copiarla a los grafos propios, con el
                 # nombre que elija quien la usa. La plantilla no se toca nunca.

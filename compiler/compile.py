@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "dispatcher"))
 import hermes_cli.kanban_db as k
 from backends import BACKENDS
 from capacidades import faltantes
+from backends import ESFUERZO
 from loop import carril
 
 RUNTIMES = set(BACKENDS) | {"hermes"}
@@ -118,6 +119,19 @@ def validar(grafo: dict, *, capacidades: bool = True) -> None:
     # Preflight de capacidades: si un runtime del grafo no esta instalado, se
     # dice ACA y no a los 600s de timeout en medio de una corrida. El agente (o
     # la persona) sabe lo que le falta antes de empezar.
+    # El nivel de esfuerzo NO es el mismo en todos: `claude` llega a `max`,
+    # `agy` corta en `high`. Un nivel que el CLI no acepta lo haria fallar
+    # recien al invocarlo, con la card ya creada y el flujo a medio correr.
+    for n in nodos:
+        esf = (n.get("esfuerzo") or "").strip()
+        rt = n.get("runtime", "hermes")
+        if not esf or es_nota(n) or rt not in ESFUERZO:
+            continue
+        if esf not in ESFUERZO[rt][1]:
+            raise ErrorDeGrafo(
+                f"nodo '{n['id']}': '{rt}' no acepta esfuerzo '{esf}'. "
+                f"Validos: {list(ESFUERZO[rt][1])}")
+
     ausentes = faltantes({n.get("runtime", "hermes") for n in nodos
                           if not es_nota(n)}) if capacidades else []
     if ausentes:
@@ -197,6 +211,11 @@ def compilar(grafo: dict, *, board: str = None) -> dict[str, str]:
                 # Hermes; en uno externo lo lee nuestro dispatcher y lo pasa
                 # como `--model`. Mismo campo, dos consumidores.
                 **({"model_override": nodo["modelo"]} if nodo.get("modelo") else {}),
+                # `reasoning_effort` ya es un campo de la card en Hermes: en un
+                # nodo `hermes` lo aplica su dispatcher, en uno externo lo lee
+                # el nuestro y lo pasa como --effort/--variant. Un campo, dos
+                # consumidores, igual que el modelo.
+                **({"reasoning_effort": nodo["esfuerzo"]} if nodo.get("esfuerzo") else {}),
                 **({"provider_override": nodo["proveedor"]} if nodo.get("proveedor") else {}),
             )
         except ValueError as e:

@@ -301,6 +301,41 @@ def _validar(obj: dict) -> dict:
     return obj
 
 
+# --- Esfuerzo y tope de gasto --------------------------------------------
+# Los niveles NO son los mismos en los tres CLIs (`claude` llega a `max`, `agy`
+# corta en `high`, `opencode` los llama `--variant`), asi que se validan contra
+# la lista del backend. Un nivel invalido falla ruidoso en vez de ignorarse:
+# pedir `max` y que corra en el default es la peor forma de perder plata.
+ESFUERZO = {
+    "claude-code": ("--effort", ("low", "medium", "high", "xhigh", "max")),
+    "antigravity": ("--effort", ("low", "medium", "high")),
+    "opencode": ("--variant", ("minimal", "high", "max")),
+}
+
+# Tope de gasto por invocacion. Solo claude lo tiene nativo; en los demas el
+# limite lo aplica el dispatcher entre nodos (`loop.tick`), que es mas grueso.
+TOPE_GASTO = {"claude-code": "--max-budget-usd"}
+
+
+def _flags_extra(runtime: str, esfuerzo: str = None,
+                 presupuesto: float = None) -> list[str]:
+    """Flags de esfuerzo y presupuesto para este runtime, si los soporta."""
+    extra = []
+    if esfuerzo:
+        flag, validos = ESFUERZO.get(runtime, (None, ()))
+        if not flag:
+            raise BackendError(f"{runtime} no acepta esfuerzo por invocacion")
+        if esfuerzo not in validos:
+            raise BackendError(
+                f"{runtime} no acepta esfuerzo '{esfuerzo}'. Validos: {list(validos)}")
+        extra += [flag, esfuerzo]
+    if presupuesto is not None and TOPE_GASTO.get(runtime):
+        # Se manda solo si el CLI lo entiende. En los demas NO se simula: un
+        # tope que se cree puesto y no lo esta es peor que no tener tope.
+        extra += [TOPE_GASTO[runtime], f"{max(presupuesto, 0):.4f}"]
+    return extra
+
+
 # --- Chat: conversacion con sesion, sin contrato JSON --------------------
 # Un nodo del grafo entrega un AgentAdapterOutput; un chat entrega texto y
 # tiene que ACORDARSE del turno anterior. Los tres CLIs guardan la sesion y la
@@ -358,7 +393,8 @@ def _sesion_de_jsonl(stdout: str) -> str | None:
 
 def chat_backend(runtime: str, mensaje: str, *, sesion: str = None,
                  timeout: int = 600, cwd: str = None,
-                 herramientas: list[str] = None, modelo: str = None) -> dict:
+                 herramientas: list[str] = None, modelo: str = None,
+                 esfuerzo: str = None, presupuesto: float = None) -> dict:
     """Un turno de conversacion. Devuelve texto, la sesion y el consumo.
 
     Comparte con `run_backend` la denylist de flags, el stdin cerrado y el
@@ -370,6 +406,7 @@ def chat_backend(runtime: str, mensaje: str, *, sesion: str = None,
     argv = construir_argv(mensaje, sesion, modelo)
     if herramientas and runtime == "claude-code":
         argv += ["--allowedTools", ",".join(herramientas)]
+    argv += _flags_extra(runtime, esfuerzo, presupuesto)
 
     proc = _correr(runtime, argv, timeout=timeout, cwd=cwd)
     try:
@@ -423,7 +460,8 @@ def _correr(runtime: str, argv: list[str], *, timeout: int, cwd: str = None):
 
 def run_backend(runtime: str, goal: str, *, timeout: int = 600,
                 cwd: str = None, herramientas: list[str] = None,
-                modelo: str = None) -> dict:
+                modelo: str = None, esfuerzo: str = None,
+                presupuesto: float = None) -> dict:
     """Invocar `runtime` con `goal` y devolver un AgentAdapterOutput validado.
 
     `cwd` es el directorio donde corre el agente: sin esto heredaria el del
@@ -463,6 +501,7 @@ def run_backend(runtime: str, goal: str, *, timeout: int = 600,
                 else construir_argv(goal_final, str(ruta_esquema)))
         if herramientas and runtime == "claude-code":
             argv += ["--allowedTools", ",".join(herramientas)]
+        argv += _flags_extra(runtime, esfuerzo, presupuesto)
 
         proc = _correr(runtime, argv, timeout=timeout, cwd=cwd)
 

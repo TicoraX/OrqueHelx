@@ -277,7 +277,7 @@ Knobs relevantes bajo `delegation:` en `config.yaml`: `max_concurrent_children` 
 
 ## 10. Estado de verificación
 
-**64 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **nueve
+**70 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **nueve
 filas "Verificado: NO"**: supuestos de diseño que parecían ciertos leyendo el
 código de Hermes y que la ejecución desmintió. Cada una habría sido un bug en
 producción, y ninguna se ve sin correr el sistema.
@@ -468,6 +468,31 @@ Consecuencias de diseño:
   refrescar el estado de la corrida mientras el chat pensaba.
 - Si el CLI no informa sesión en un turno, se **conserva la anterior**: perder
   el id a mitad de la charla arrancaría una conversación nueva sin avisar.
+
+## 10.5 Esfuerzo y tope de gasto
+
+Relevado de los `--help` instalados, no de la documentación:
+
+| runtime | esfuerzo | niveles | tope de gasto |
+| --- | --- | --- | --- |
+| `claude-code` | `--effort` | low, medium, high, xhigh, max | `--max-budget-usd` |
+| `antigravity` | `--effort` | low, medium, high | no |
+| `opencode` | `--variant` | minimal, high, max (según proveedor) | no |
+| `hermes` | `reasoning_effort` de la card | los 7 de `VALID_REASONING_EFFORTS` | no |
+
+- **El esfuerzo no necesitó campo nuevo**: `reasoning_effort` ya existe en la
+  card de Hermes, igual que `model_override`. En un nodo `hermes` lo aplica su
+  dispatcher; en uno externo lo lee el nuestro y lo traduce al flag del CLI.
+  Un campo, dos consumidores.
+- **Los niveles no son intercambiables** y se validan contra la lista del
+  backend, en el compilador, antes de crear cards. `max` en `antigravity` es un
+  error, no un valor que se ignora.
+- **El tope nunca se simula.** Solo se pasa al CLI que lo entiende; en los
+  demás el corte lo hace el dispatcher entre nodos. Un tope que se cree puesto
+  y no lo está es peor que no tener tope.
+- **Límite conocido del corte propio**: es entre nodos, no dentro de uno. Los
+  que ya arrancaron terminan y el gasto puede pasarse por lo que cuesten. Está
+  marcado con un comentario `ponytail:` en `loop.tick`.
 
 ## 10.3 Contexto del proyecto y capacidades de los backends
 

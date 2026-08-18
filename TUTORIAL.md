@@ -265,6 +265,37 @@ CLI y el Studio solo lleva el id de sesión.
 
 ---
 
+## 5d. Esfuerzo y tope de gasto
+
+**Esfuerzo por nodo** (pestaña Nodo). Cada CLI lo llama distinto y acepta
+niveles distintos — la lista sale de la tabla de capacidades, no de un texto
+escrito a mano:
+
+| ejecutor | flag | niveles |
+| --- | --- | --- |
+| `claude-code` | `--effort` | low, medium, high, xhigh, max |
+| `antigravity` | `--effort` | low, medium, high |
+| `opencode` | `--variant` | minimal, high, max |
+| `hermes` | `reasoning_effort` de la card | minimal … ultra |
+
+Un nivel que el ejecutor no acepta lo **rechaza el compilador**, antes de crear
+ninguna card: pedir `max` en `antigravity` y que corriera en el default sería
+pagar por trabajo que no pediste.
+
+**Tope de gasto** (pestaña Diseño, en US$, para todo el flujo). Dos niveles:
+
+- `claude-code` tiene tope **nativo** (`--max-budget-usd`) y recibe **lo que
+  queda** del presupuesto, no el total: corta a mitad de una invocación.
+- En los demás lo aplica el dispatcher **entre nodos**: una vez superado el
+  tope no arranca ninguno nuevo. Los que ya estaban corriendo terminan, así que
+  el gasto final puede pasarse por lo que cuesten esos. Matarlos dejaría la
+  card reclamada y el proceso huérfano.
+
+Los backends por suscripción (`antigravity`) no informan medidor y suman cero:
+**el tope solo puede frenar lo que se puede medir.**
+
+---
+
 ## 6. El flujo de ejemplo: revisión de repo
 
 `ui/grafos/revision-repo.json`. Tres nodos, dos en paralelo:

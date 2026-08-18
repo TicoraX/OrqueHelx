@@ -150,6 +150,11 @@
       </div>
 
       <div>
+        <label>Tope de gasto <span class="tenue">— en US$, para todo el flujo</span></label>
+        <input id="presupuesto" placeholder="(sin tope)">
+      </div>
+
+      <div>
         <label>Reglas del flujo <span class="tenue">— van a TODOS los nodos</span></label>
         <textarea id="reglas" placeholder="Ej: no instales dependencias; no modifiques archivos; respondé en español."></textarea>
       </div>
@@ -222,6 +227,8 @@
           <option value="">(el que use el CLI por defecto)</option>
         </select>
         <input id="modelo" placeholder="o escribilo a mano"></div>
+        <div><label>Esfuerzo <span class="tenue" id="pistaEsfuerzo"></span></label>
+          <select id="esfuerzo"><option value="">(el del CLI por defecto)</option></select></div>
         <div><label>Workspace <span class="tenue">— dónde corre el nodo</span></label>
           <input id="workspace" placeholder="(scratch: se borra al terminar)"></div>
         </div>
@@ -237,6 +244,7 @@
           <option value="opencode">OpenCode</option>
           <option value="antigravity">Antigravity</option>
         </select>
+        <select id="chatEsfuerzo"><option value="">(esfuerzo por defecto)</option></select>
         <button id="chatNuevo" style="width:auto; white-space:nowrap;">Nueva</button>
       </div>
       <div>
@@ -449,7 +457,8 @@ function pintar() {
     rt.setAttribute("fill", est ? tinta(est) : (RT_COLOR[n.runtime] || "#8e9aab"));
     rt.setAttribute("font-size", "10.5");
     rt.setAttribute("opacity", est ? "0.85" : "1");
-    rt.textContent = n.runtime + (n.modelo ? " · " + n.modelo : "") + (est ? " · " + est : "");
+    rt.textContent = n.runtime + (n.modelo ? " · " + n.modelo : "") +
+                     (n.esfuerzo ? " · " + n.esfuerzo : "") + (est ? " · " + est : "");
     g.appendChild(rt);
 
     seguirNodo(g, n);
@@ -576,6 +585,7 @@ function pintarChat(quien, texto, clase) {
 
 function verSesion() {
   const rt = $("#chatRuntime").value, s = SESIONES[rt];
+  llenarEsfuerzo("#chatEsfuerzo", rt, $("#chatEsfuerzo").value);
   $("#chatSesion").textContent = s
     ? `Sesión ${s.slice(0, 12)}… — el agente recuerda los turnos anteriores.`
     : "Sesión nueva: el próximo mensaje arranca de cero.";
@@ -594,7 +604,7 @@ async function enviarChat() {
   const { ok, datos } = await api("/api/chat", {
     runtime: rt, mensaje, sesion: SESIONES[rt] || "",
     workspace: $("#chatWorkspace").value.trim(),
-    modelo: (buscar(sel) || {}).modelo || "",
+    esfuerzo: $("#chatEsfuerzo").value,
   });
   esperando.remove();
   if (!ok) {
@@ -641,6 +651,9 @@ function refrescarEditor() {
       $("#modelo").value = n.modelo || "";
       $("#workspace").value = n.workspace || "";
       pistaDeModelo(); cargarModelos();
+      llenarEsfuerzo("#esfuerzo", n.runtime, n.esfuerzo);
+      const tope = (CAPS[n.runtime] || {}).tope_gasto_flag;
+      $("#pistaEsfuerzo").textContent = tope ? "— acepta tope de gasto por nodo" : "";
     }
   }
 }
@@ -675,6 +688,7 @@ function abrirGrafo(datos, nombre) {
   ids = {}; estado = {}; sel = null; VALORES = {}; pila = [];
   $("#board").value = grafo.board;
   $("#reglas").value = grafo.reglas || "";
+  $("#presupuesto").value = grafo.presupuesto_usd || "";
   refrescarEditor(); refrescarParams(); pintar(); encuadrar(); refrescarEstado();
 }
 
@@ -832,6 +846,11 @@ $("#titulo").oninput = e => {
   const n = buscar(sel);
   if (n) { n.titulo = e.target.value; pintar(); refrescarParams(); }
 };
+$("#esfuerzo").onchange = e => {
+  const n = buscar(sel);
+  // Vacio = sin override: el CLI usa el esfuerzo de su perfil.
+  if (n) { const v = e.target.value; v ? n.esfuerzo = v : delete n.esfuerzo; pintar(); }
+};
 $("#workspace").oninput = e => {
   const n = buscar(sel);
   if (n) { const v = e.target.value.trim(); v ? n.workspace = v : delete n.workspace; refrescarParams(); }
@@ -853,7 +872,16 @@ $("#tipo").onchange = e => {
 };
 $("#runtime").onchange = e => {
   const n = buscar(sel);
-  if (n) { n.runtime = e.target.value; pintar(); pistaDeModelo(); cargarModelos(); }
+  if (!n) return;
+  n.runtime = e.target.value;
+  // El esfuerzo elegido puede no existir en el ejecutor nuevo (`max` en agy):
+  // `llenarEsfuerzo` lo deja vacio si no esta, y hay que borrarlo del nodo o
+  // el compilador lo rechaza con un valor que la UI ya no muestra.
+  const niveles = llenarEsfuerzo("#esfuerzo", n.runtime, n.esfuerzo);
+  if (n.esfuerzo && !niveles.includes(n.esfuerzo)) delete n.esfuerzo;
+  const tope = (CAPS[n.runtime] || {}).tope_gasto_flag;
+  $("#pistaEsfuerzo").textContent = tope ? "— acepta tope de gasto por nodo" : "";
+  pintar(); pistaDeModelo(); cargarModelos();
 };
 $("#modelo").oninput = e => {
   const n = buscar(sel);
@@ -899,6 +927,18 @@ $("#modeloLista").onchange = e => {
   $("#modelo").value = v;
   pintar();
 };
+// Los niveles de esfuerzo NO son iguales en los tres CLIs: salen de la tabla
+// de capacidades, que es la misma que valida el compilador. Una lista escrita
+// a mano aca ofreceria `max` en un CLI que corta en `high`.
+function llenarEsfuerzo(selector, runtime, elegido) {
+  const sel = $(selector);
+  const niveles = (CAPS[runtime] || {}).esfuerzos || [];
+  sel.innerHTML = '<option value="">(el del CLI por defecto)</option>' +
+    niveles.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
+  sel.value = niveles.includes(elegido) ? elegido : "";
+  return niveles;
+}
+
 function pistaDeModelo() {
   const n = buscar(sel);
   const c = n && CAPS[n.runtime];
@@ -911,6 +951,10 @@ $("#borrar").onclick = () => {
   sel = null; refrescarEditor(); cargarTraza(); pintar();
 };
 $("#board").oninput = e => { grafo.board = e.target.value; };
+$("#presupuesto").oninput = e => {
+  const v = e.target.value.trim();
+  v ? grafo.presupuesto_usd = v : delete grafo.presupuesto_usd;
+};
 $("#reglas").oninput = e => {
   const v = e.target.value;
   // Vacio = sin reglas: el body del nodo no se inventa.
@@ -962,9 +1006,13 @@ $("#compilar").onclick = async () => {
 };
 $("#correr").onclick = async () => {
   if (!Object.keys(ids).length) return avisar("Compilá el grafo antes de ejecutarlo.", "error");
-  const { datos } = await api("/api/correr", { board: grafo.board });
-  avisar(datos.ok ? "Dispatcher arrancado. Los nodos externos corren ahora."
-                  : datos.motivo, datos.ok ? "ok" : "error");
+  const { ok, datos } = await api("/api/correr",
+    { board: grafo.board, presupuesto_usd: grafo.presupuesto_usd || "" });
+  if (!ok) return avisar(datos.error, "error");
+  avisar(datos.ok
+    ? "Dispatcher arrancado. Los nodos externos corren ahora." +
+      (grafo.presupuesto_usd ? ` Tope: US$ ${grafo.presupuesto_usd}.` : "")
+    : datos.motivo, datos.ok ? "ok" : "error");
 };
 
 $("#parar").onclick = async () => {
@@ -1033,5 +1081,10 @@ grafo.nodos = [
 grafo.aristas = [["a","b"],["a","c"]];
 refrescarEditor(); pintar(); listarGrafos(); cargarPlantillas(); refrescarParams();
 verSesion();
-api("/api/capacidades").then(({ datos }) => { CAPS = datos || {}; pistaDeModelo(); });
+api("/api/capacidades").then(({ datos }) => {
+  // Llega asincrono y DESPUES del primer dibujo: sin este refresco, el chat
+  // arranca con el desplegable de esfuerzo vacio hasta que tocas algo.
+  CAPS = datos || {};
+  pistaDeModelo(); refrescarEditor(); verSesion();
+});
 </script>
