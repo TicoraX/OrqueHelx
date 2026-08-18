@@ -11,11 +11,26 @@
   body { margin:0; height:100vh; display:flex; background:var(--bg); color:var(--texto);
          font:14px/1.5 ui-sans-serif,system-ui,sans-serif; }
   #lienzo { flex:1; cursor:crosshair; }
-  aside { width:320px; border-left:1px solid var(--linea); background:var(--panel);
-          padding:16px; overflow-y:auto; display:flex; flex-direction:column; gap:14px; }
-  h1 { font-size:15px; margin:0; letter-spacing:.02em; }
+  aside { width:340px; border-left:1px solid var(--linea); background:var(--panel);
+          display:flex; flex-direction:column; height:100vh; overflow:hidden; }
+  .panel-header { padding:14px 16px 8px; border-bottom:1px solid var(--linea); flex-shrink:0; }
+  h1 { font-size:15px; margin:0 0 10px; letter-spacing:.02em; display:flex; align-items:center; justify-content:space-between; }
   h2 { font-size:11px; text-transform:uppercase; letter-spacing:.08em;
        color:var(--tenue); margin:0 0 6px; font-weight:600; }
+  .tabs { display:flex; gap:4px; }
+  .tab { padding:6px 8px; background:transparent; border:none; border-bottom:2px solid transparent;
+         border-radius:0; color:var(--tenue); cursor:pointer; font-size:12px; font-weight:600;
+         width:auto; flex:1; text-align:center; transition:color .15s, border-color .15s; }
+  .tab:hover { color:var(--texto); border-color:transparent; background:rgba(255,255,255,0.03); }
+  .tab.activa { color:var(--acento); border-bottom-color:var(--acento); }
+
+  #panelCuerpo { flex:1; overflow-y:auto; padding:14px 16px; display:flex; flex-direction:column; gap:14px; }
+  .tab-vista { display:none; flex-direction:column; gap:14px; }
+  .tab-vista.activa { display:flex; }
+
+  #panelFooter { padding:12px 16px; border-top:1px solid var(--linea); background:#171a20;
+                 flex-shrink:0; display:flex; flex-direction:column; gap:8px; }
+
   label { display:block; font-size:12px; color:var(--tenue); margin-bottom:4px; }
   input, select, textarea, button {
     width:100%; padding:7px 9px; background:#141720; color:var(--texto);
@@ -25,39 +40,46 @@
   button:hover:not(:disabled) { border-color:var(--acento); }
   button:disabled { opacity:.45; cursor:default; }
   button.primario { background:var(--acento); border-color:var(--acento); color:#0d1117; font-weight:600; }
+  button.peligro { border-color:#7a3b39; color:#e0706d; }
+  button.peligro:hover:not(:disabled) { border-color:#c0504d; background:#2d1a1b; }
   .fila { display:flex; gap:8px; }
   #aviso { padding:9px 11px; border-radius:6px; font-size:12.5px; white-space:pre-wrap;
            display:none; border:1px solid; }
   #aviso.error { background:#3a1d1d; border-color:#7a3b39; }
   #aviso.ok    { background:#1b3324; border-color:#2f6b41; }
-  .leyenda { display:flex; flex-wrap:wrap; gap:9px; font-size:11.5px; color:var(--tenue); }
-  .leyenda i { width:9px; height:9px; border-radius:2px; display:inline-block; margin-right:4px; }
-  .ayuda { font-size:12px; color:var(--tenue); }
+  .leyenda { display:flex; flex-wrap:wrap; gap:8px; font-size:11.5px; color:var(--tenue); }
+  .leyenda i { width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:3px; }
+  .ayuda { font-size:11.5px; color:var(--tenue); line-height:1.45; }
   .ayuda b { color:var(--texto); font-weight:600; }
   .tenue { color:var(--tenue); font-weight:400; font-size:11px; }
   .nodo rect { stroke-width:1.5; }
   .nodo.sel rect { stroke:#fff; stroke-width:2.5; }
   .nodo text { pointer-events:none; font-size:12px; }
-  .nodo .rt { font-size:10px; fill:#0e1117; opacity:.75; }
+  .nodo .rt { font-size:10px; opacity:.9; }
   #consumo { font-size:12px; }
   #consumo .linea { display:flex; justify-content:space-between; padding:2px 0; }
   #consumo .val { color:var(--texto); font-variant-numeric:tabular-nums; }
   #consumo .et { color:var(--tenue); }
   #consumo .nota { color:var(--tenue); font-size:11px; margin-top:6px;
                    border-top:1px solid var(--linea); padding-top:6px; }
-  #traza { font-size:11.5px; max-height:300px; overflow-y:auto; }
+  #traza { font-size:11.5px; max-height:360px; overflow-y:auto; }
   #traza .ev { display:flex; gap:7px; padding:2px 0; border-bottom:1px solid #232833; }
   #traza .k { color:var(--acento); flex:0 0 118px; }
   #traza .d { color:var(--tenue); word-break:break-word; }
   #traza .intento { padding:6px 8px; margin-bottom:6px; border-radius:5px;
                     background:#141720; border:1px solid var(--linea); }
   #traza .mal { border-color:#7a3b39; }
+  #traza .res-wrap { margin-bottom:8px; }
+  #traza .res-hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+  #traza .res-btn { width:auto; padding:3px 7px; font-size:11px; }
   #traza .res { background:#141720; border:1px solid var(--linea); border-radius:5px;
-                padding:7px 9px; margin-bottom:8px; white-space:pre-wrap;
-                max-height:220px; overflow-y:auto; color:var(--texto); }
+                padding:7px 9px; white-space:pre-wrap; font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+                font-size:11.5px; max-height:220px; overflow-y:auto; color:var(--texto); line-height:1.4; }
   #traza .gasto { color:var(--tenue); margin-bottom:8px; font-variant-numeric:tabular-nums; }
-  #resumen { font-size:12px; color:var(--tenue); border-top:1px solid var(--linea);
-             padding-top:10px; white-space:pre-wrap; }
+  #resumen { font-size:11.5px; color:var(--tenue); white-space:pre-wrap; }
+  pre.codigo { background:#141720; border:1px solid var(--linea); border-radius:5px;
+               padding:7px 9px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+               font-size:11px; max-height:180px; overflow-y:auto; color:var(--texto); white-space:pre-wrap; }
 </style>
 
 <svg id="lienzo">
@@ -66,100 +88,130 @@
             markerWidth="6" markerHeight="6" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#59616f"/>
     </marker>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="#222632"/>
+    </pattern>
   </defs>
+  <rect width="100000" height="100000" x="-50000" y="-50000" fill="url(#grid)" pointer-events="none"></rect>
   <g id="aristas"></g><g id="nodos"></g><path id="fantasma" stroke="#5b9dd9"
      stroke-dasharray="4 3" fill="none"></path>
 </svg>
 
 <aside>
-  <h1>ORQUESTER Studio</h1>
-
-  <div>
-    <label>Board</label>
-    <input id="board" value="mi-flujo">
-  </div>
-
-  <div>
-    <label>Abrir un grafo guardado</label>
-    <select id="abrir"><option value="">(elegir…)</option></select>
-  </div>
-
-  <div id="aviso"></div>
-
-  <div id="bloqueParams" style="display:none;">
-    <h2>Parámetros</h2>
-    <div class="ayuda" style="margin-bottom:6px;">
-      Los <b>{{marcadores}}</b> del grafo se reemplazan al compilar.
+  <div class="panel-header">
+    <h1>ORQUESTER Studio</h1>
+    <div class="tabs">
+      <button class="tab activa" data-tab="diseno">Diseño</button>
+      <button class="tab" data-tab="nodo">Nodo</button>
+      <button class="tab" data-tab="obs">Traza</button>
     </div>
-    <div id="params" style="display:flex; flex-direction:column; gap:8px;"></div>
   </div>
 
-  <div>
-    <h2>Nodo seleccionado</h2>
-    <div id="sinNodo" class="ayuda">Doble clic en el lienzo para crear uno.</div>
-    <div id="editor" style="display:none; display:flex; flex-direction:column; gap:8px;">
-      <div><label>Título (el goal del nodo)</label><textarea id="titulo"></textarea></div>
-      <div><label>Ejecutor</label>
-        <select id="runtime">
-          <option value="hermes">Hermes (nativo)</option>
-          <option value="claude-code">Claude Code</option>
-          <option value="opencode">OpenCode</option>
-          <option value="antigravity">Antigravity</option>
-        </select>
+  <div id="panelCuerpo">
+    <div id="aviso"></div>
+
+    <!-- Pestaña 1: Diseño del Flujo -->
+    <div id="vista-diseno" class="tab-vista activa">
+      <div>
+        <label>Board</label>
+        <input id="board" value="mi-flujo">
       </div>
-      <div><label>Modelo <span class="tenue" id="pistaModelo"></span></label>
-        <input id="modelo" placeholder="(el que use el CLI por defecto)"></div>
-      <div><label>Workspace <span class="tenue">— dónde corre el nodo</span></label>
-        <input id="workspace" placeholder="(scratch: se borra al terminar)"></div>
-      <button id="borrar">Borrar nodo</button>
+
+      <div>
+        <label>Abrir un grafo guardado</label>
+        <select id="abrir"><option value="">(elegir…)</option></select>
+      </div>
+
+      <div class="fila">
+        <button id="guardar">Guardar</button>
+        <button id="validar">Validar</button>
+      </div>
+
+      <div id="bloqueParams" style="display:none;">
+        <h2>Parámetros</h2>
+        <div class="ayuda" style="margin-bottom:6px;">
+          Los <b>{{marcadores}}</b> del grafo se reemplazan al compilar.
+        </div>
+        <div id="params" style="display:flex; flex-direction:column; gap:8px;"></div>
+      </div>
+
+      <div>
+        <h2>Exportación</h2>
+        <button id="exportar">Exportar como MCP</button>
+      </div>
+
+      <div id="bloqueMcp" style="display:none;">
+        <h2>Configuración MCP</h2>
+        <div class="ayuda" id="mcpResumen" style="margin-bottom:6px;"></div>
+        <pre class="codigo" id="mcpConfig"></pre>
+        <button id="btnCopiarMcp" style="margin-top:6px;">Copiar config MCP</button>
+      </div>
+
+      <div class="ayuda" style="border-top:1px solid var(--linea); padding-top:10px;">
+        <b>Doble clic</b> en vacío: nodo nuevo.<br>
+        <b>Shift + arrastrar</b> de un nodo a otro: dependencia.<br>
+        <b>Clic</b> en flecha o <b>Del</b>: borrar.<br>
+        <b>Rueda</b>: zoom. <b>Arrastrar fondo</b>: mover.<br>
+        <b>Ctrl+Z</b>: deshacer. <b>Ctrl+S</b>: guardar.
+      </div>
+    </div>
+
+    <!-- Pestaña 2: Inspector de Nodo -->
+    <div id="vista-nodo" class="tab-vista">
+      <h2>Nodo seleccionado</h2>
+      <div id="sinNodo" class="ayuda">Hacé clic en un nodo o doble clic en el lienzo para crear uno.</div>
+      <div id="editor" style="display:none; flex-direction:column; gap:8px;">
+        <div><label>Título (el goal del nodo)</label><textarea id="titulo"></textarea></div>
+        <div><label>Ejecutor</label>
+          <select id="runtime">
+            <option value="hermes">Hermes (nativo)</option>
+            <option value="claude-code">Claude Code</option>
+            <option value="opencode">OpenCode</option>
+            <option value="antigravity">Antigravity</option>
+          </select>
+        </div>
+        <div><label>Modelo <span class="tenue" id="pistaModelo"></span></label>
+          <input id="modelo" placeholder="(el que use el CLI por defecto)"></div>
+        <div><label>Workspace <span class="tenue">— dónde corre el nodo</span></label>
+          <input id="workspace" placeholder="(scratch: se borra al terminar)"></div>
+        <button id="borrar" class="peligro">Borrar nodo</button>
+      </div>
+    </div>
+
+    <!-- Pestaña 3: Observabilidad (Traza y Consumo) -->
+    <div id="vista-obs" class="tab-vista">
+      <div>
+        <h2>Leyenda de Estados</h2>
+        <div class="leyenda">
+          <span><i style="background:var(--todo)"></i>espera</span>
+          <span><i style="background:var(--ready)"></i>lista</span>
+          <span><i style="background:var(--running)"></i>corriendo</span>
+          <span><i style="background:var(--done)"></i>hecha</span>
+          <span><i style="background:var(--failed)"></i>falló</span>
+          <span><i style="background:#d1743a"></i>triage</span>
+        </div>
+      </div>
+
+      <div id="bloqueConsumo" style="display:none;">
+        <h2>Consumo Global</h2>
+        <div id="consumo"></div>
+      </div>
+
+      <div id="bloqueTraza" style="display:none;">
+        <h2>Traza del Nodo</h2>
+        <div id="traza"></div>
+      </div>
+      <div id="sinTraza" class="ayuda">Seleccioná un nodo compilado para ver su traza y entregable.</div>
     </div>
   </div>
 
-  <div>
-    <h2>Acciones</h2>
-    <div class="fila" style="margin-bottom:8px;">
-      <button id="guardar">Guardar</button><button id="validar">Validar</button>
-    </div>
-    <div class="fila" style="margin-bottom:8px;">
+  <div id="panelFooter">
+    <div class="fila">
       <button id="compilar">Compilar</button>
       <button id="correr" class="primario">Ejecutar</button>
-    </div>
-    <div class="fila" style="margin-bottom:8px;">
-      <button id="parar">Parar</button>
-    </div>
-    <button id="exportar">Exportar como MCP</button>
-  </div>
-
-  <div>
-    <h2>Estado</h2>
-    <div class="leyenda">
-      <span><i style="background:var(--todo)"></i>espera</span>
-      <span><i style="background:var(--ready)"></i>lista</span>
-      <span><i style="background:var(--running)"></i>corriendo</span>
-      <span><i style="background:var(--done)"></i>hecha</span>
-      <span><i style="background:var(--failed)"></i>falló</span>
-      <span><i style="background:#d1743a"></i>triage</span>
+      <button id="parar" class="peligro">Parar</button>
     </div>
     <div id="resumen"></div>
-  </div>
-
-  <div id="bloqueConsumo" style="display:none;">
-    <h2>Consumo</h2>
-    <div id="consumo"></div>
-  </div>
-
-  <div id="bloqueTraza" style="display:none;">
-    <h2>Traza del nodo</h2>
-    <div id="traza"></div>
-  </div>
-
-  <div class="ayuda">
-    <b>Doble clic</b> en vacío: nodo nuevo.<br>
-    <b>Arrastrar</b> un nodo: moverlo.<br>
-    <b>Shift + arrastrar</b> desde un nodo a otro: dependencia.<br>
-    <b>Clic</b> en una flecha: borrarla.<br>
-    <b>Rueda</b>: zoom. <b>Arrastrar</b> el fondo: mover el lienzo.<br>
-    <b>Ctrl+Z</b>: deshacer.
   </div>
 </aside>
 
@@ -168,12 +220,12 @@ const COLOR = { todo:"#4a5160", ready:"#c9a227", running:"#3d8bcd", blocked:"#4a
                 done:"#3f9d52", failed:"#c0504d", review:"#8e6bc0", cancelled:"#3a3f4a",
                 triage:"#d1743a" };
 const RT_COLOR = { hermes:"#8e9aab", "claude-code":"#d0873f", opencode:"#4f9c8a",
-                   antigravity:"#7a6fc4" };
+                   antigravity:"#a297fc" };
 const A = 196, ALTO = 60;
-// Rellenos claros que piden tinta oscura. Sin esto el texto del nodo se
-// pierde justo cuando mas importa: mientras el flujo corre.
-const CLAROS = new Set(["ready", "triage"]);
-const tinta = est => !est ? "#e6e8ec" : (CLAROS.has(est) ? "#14161a" : "#f2f5f8");                        // ancho/alto de un nodo
+// Rellenos claros que piden tinta oscura para cumplir contraste WCAG AA.
+// running y done incluidos para evitar ilegibilidad durante la corrida.
+const CLAROS = new Set(["ready", "running", "done", "triage"]);
+const tinta = est => !est ? "#e6e8ec" : (CLAROS.has(est) ? "#14161a" : "#f2f5f8");
 
 let grafo = { board:"mi-flujo", nodos:[], aristas:[] };
 let ids = {};                                    // id de nodo -> task_id
@@ -182,6 +234,15 @@ let sel = null, arrastre = null, enlazando = null, paneo = null;
 
 const $ = s => document.querySelector(s);
 const svg = $("#lienzo");
+
+// Manejo de pestañas
+function activarTab(nombre) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("activa", t.dataset.tab === nombre));
+  document.querySelectorAll(".tab-vista").forEach(v => v.classList.toggle("activa", v.id === `vista-${nombre}`));
+}
+document.querySelectorAll(".tab").forEach(t => {
+  t.onclick = () => activarTab(t.dataset.tab);
+});
 
 // Con zoom, `e.offsetX` deja de servir: es pixel de pantalla y el lienzo tiene
 // su propio sistema de coordenadas. Esto convierte un evento del mouse a
@@ -199,9 +260,6 @@ const vistaActual = () => vista ||
   { x:0, y:0, w:svg.clientWidth, h:svg.clientHeight };
 
 // --- Deshacer ------------------------------------------------------------
-// Solo cambios ESTRUCTURALES (crear, borrar, mover, enlazar). Tipear en el
-// titulo ya lo deshace el propio campo de texto con su Ctrl+Z nativo, y
-// apilar una instantanea por tecla llenaria la pila de ruido.
 let pila = [];
 const anotar = () => {
   pila.push(JSON.stringify({ nodos:grafo.nodos, aristas:grafo.aristas }));
@@ -242,8 +300,22 @@ function pintar() {
     const a = buscar(p), b = buscar(h);
     if (!a || !b) continue;
     const l = document.createElementNS(svg.namespaceURI, "path");
-    l.setAttribute("d", `M${a.x + A/2},${a.y + ALTO} C${a.x + A/2},${a.y + ALTO + 44}
-                         ${b.x + A/2},${b.y - 44} ${b.x + A/2},${b.y}`);
+
+    // Bézier adaptativo: vertical si el hijo está abajo, lateral si está arriba o al lado
+    let d = "";
+    if (b.y >= a.y + ALTO - 10) {
+      d = `M${a.x + A/2},${a.y + ALTO} C${a.x + A/2},${a.y + ALTO + 40} ${b.x + A/2},${b.y - 40} ${b.x + A/2},${b.y}`;
+    } else {
+      const dx = b.x - a.x;
+      const sx = dx >= 0 ? a.x + A : a.x;
+      const sy = a.y + ALTO/2;
+      const ex = dx >= 0 ? b.x : b.x + A;
+      const ey = b.y + ALTO/2;
+      const mx = (sx + ex) / 2;
+      d = `M${sx},${sy} C${mx},${sy} ${mx},${ey} ${ex},${ey}`;
+    }
+
+    l.setAttribute("d", d);
     l.setAttribute("stroke", "#59616f");
     l.setAttribute("fill", "none"); l.setAttribute("stroke-width", "2");
     l.setAttribute("marker-end", "url(#punta)");
@@ -264,12 +336,11 @@ function pintar() {
     r.setAttribute("stroke", RT_COLOR[n.runtime] || "#8e9aab");
     g.appendChild(r);
 
-    // Dos lineas con elipsis: el titulo ES el goal del nodo, cortarlo a mitad
-    // de palabra hace ilegible lo unico que importa del nodo.
     for (const [i, linea] of envolver(n.titulo || "(sin título)", 26, 2).entries()) {
       const t = document.createElementNS(svg.namespaceURI, "text");
       t.setAttribute("x", 11); t.setAttribute("y", 19 + i * 14);
       t.setAttribute("fill", tinta(est)); t.setAttribute("font-size", "12");
+      t.setAttribute("font-weight", CLAROS.has(est) ? "600" : "400");
       t.textContent = linea;
       g.appendChild(t);
     }
@@ -278,13 +349,17 @@ function pintar() {
     rt.setAttribute("x", 11); rt.setAttribute("y", 50);
     rt.setAttribute("fill", est ? tinta(est) : (RT_COLOR[n.runtime] || "#8e9aab"));
     rt.setAttribute("font-size", "10.5");
-    rt.setAttribute("opacity", est ? "0.8" : "1");
+    rt.setAttribute("opacity", est ? "0.85" : "1");
     rt.textContent = n.runtime + (n.modelo ? " · " + n.modelo : "") + (est ? " · " + est : "");
     g.appendChild(rt);
 
     g.onmousedown = e => {
       e.stopPropagation();
       sel = n.id; refrescarEditor(); cargarTraza();
+      // Con pestañas, seleccionar un nodo dejaba el editor escondido en otra
+      // solapa: clic y no pasa nada visible. Se salta a `nodo` solo desde
+      // `diseno`; si se esta mirando la traza de una corrida, se respeta.
+      if (document.querySelector(".tab.activa")?.dataset.tab === "diseno") activarTab("nodo");
       const m = pt(e);
       if (e.shiftKey) enlazando = n.id;
       else arrastre = { id:n.id, dx:m.x - n.x, dy:m.y - n.y, anotado:false };
@@ -316,10 +391,18 @@ function resumir() {
          (detalle ? `\n${detalle}` : "\nsin compilar");
 }
 
+let ULTIMO_RESULTADO = "";
+
 async function cargarTraza() {
   const tid = ids[sel];
   const caja = $("#bloqueTraza");
-  if (!tid) { caja.style.display = "none"; return; }
+  const sinTraza = $("#sinTraza");
+  if (!tid) {
+    caja.style.display = "none";
+    if (sinTraza) sinTraza.style.display = "block";
+    return;
+  }
+  if (sinTraza) sinTraza.style.display = "none";
   const { datos } = await api(`/api/traza?board=${encodeURIComponent(grafo.board)}&task=${tid}`);
   caja.style.display = "block";
   const hora = t => new Date(t * 1000).toLocaleTimeString();
@@ -330,14 +413,21 @@ async function cargarTraza() {
       ${i.resumen ? `<div class="d">${esc(i.resumen)}</div>` : ""}
       ${i.error ? `<div class="d">${esc(i.error)}</div>` : ""}
     </div>`).join("");
+
   const eventos = (datos.eventos || []).map(e =>
     `<div class="ev"><span class="k">${esc(e.kind)}</span>
        <span class="d">${hora(e.cuando)} ${esc(e.detalle)}</span></div>`).join("");
-  // El resultado es el ENTREGABLE del nodo, no un detalle de la traza: va
-  // primero y completo (el servidor dejo de recortarlo), en una caja que
-  // scrollea sola.
+
+  ULTIMO_RESULTADO = datos.resultado || "";
   const resultado = datos.resultado
-    ? `<div class="res">${esc(datos.resultado)}</div>` : "";
+    ? `<div class="res-wrap">
+         <div class="res-hdr">
+           <b>Entregable</b>
+           <button class="res-btn" id="btnCopiarRes">Copiar entregable</button>
+         </div>
+         <div class="res">${esc(datos.resultado)}</div>
+       </div>` : "";
+
   const u = POR_NODO[tid];
   const gasto = u
     ? `<div class="gasto">${miles(u.total)} tokens · ${miles(u.entrada)} in / ${miles(u.salida)} out` +
@@ -345,16 +435,25 @@ async function cargarTraza() {
                            : " · sin medidor (suscripción)") +
       (u.intentos > 1 ? ` · ${u.intentos} intentos` : "") + `</div>`
     : "";
+
   $("#traza").innerHTML =
     (datos.block_kind ? `<div class="intento mal">bloqueo: <b>${esc(datos.block_kind)}</b></div>` : "") +
     resultado + gasto +
-    (intentos || "") + (eventos || '<div class="d">sin eventos todavía</div>');
+    (intentos || "") +
+    (eventos ? `<details style="margin-top:6px;"><summary style="cursor:pointer; color:var(--tenue); font-size:11px; margin-bottom:4px;">Eventos del kanban (${(datos.eventos||[]).length})</summary>${eventos}</details>` : '<div class="d">sin eventos todavía</div>');
+
+  const btnCopiar = $("#btnCopiarRes");
+  if (btnCopiar) {
+    btnCopiar.onclick = () => {
+      navigator.clipboard.writeText(ULTIMO_RESULTADO);
+      btnCopiar.textContent = "¡Copiado!";
+      setTimeout(() => { btnCopiar.textContent = "Copiar entregable"; }, 1500);
+    };
+  }
 }
 
 const miles = n => (n || 0).toLocaleString("es-AR");
 
-// Todo lo que entra al panel viene de la base: titulos, summaries y payloads
-// los escribe un agente, asi que no se inyectan como HTML.
 const esc = t => String(t).replace(/[&<>"]/g, c =>
   ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 
@@ -371,17 +470,13 @@ function refrescarEditor() {
   }
 }
 
-// --- Parametros ---------------------------------------------------------
-// Quien los detecta es el servidor (el mismo codigo que usa el exportador
-// MCP). Una segunda regex aca se desincronizaria del dia que cambie la sintaxis.
-let VALORES = {};                                // marcador -> valor tipeado
+let VALORES = {};
 
 async function refrescarParams() {
   const { datos } = await api("/api/parametros", grafo);
   const ps = datos.parametros || [];
   $("#bloqueParams").style.display = ps.length ? "block" : "none";
   if (!ps.length) return;
-  // Se conserva lo ya tipeado: esto corre en cada edicion del titulo.
   const caja = $("#params");
   const previos = new Set([...caja.querySelectorAll("input")].map(i => i.dataset.p));
   if (ps.length === previos.size && ps.every(p => previos.has(p))) return;
@@ -392,7 +487,6 @@ async function refrescarParams() {
     i.oninput = e => { VALORES[e.target.dataset.p] = e.target.value; };
 }
 
-// --- Abrir un grafo guardado -------------------------------------------
 async function listarGrafos() {
   const { datos } = await api("/api/grafos");
   const s = $("#abrir");
@@ -405,8 +499,6 @@ $("#abrir").onchange = async e => {
   const { ok, datos } = await api(`/api/grafo?nombre=${encodeURIComponent(nombre)}`);
   if (!ok) return avisar(datos.error || "no se pudo abrir", "error");
   grafo = { board: nombre, nodos: [], aristas: [], ...datos };
-  // El board viejo no tiene por que ser el de este grafo: los task_id de la
-  // corrida anterior no significan nada aca y pintarian estados ajenos.
   ids = {}; estado = {}; sel = null; VALORES = {};
   $("#board").value = grafo.board;
   refrescarEditor(); refrescarParams(); pintar(); refrescarEstado();
@@ -414,24 +506,24 @@ $("#abrir").onchange = async e => {
 };
 
 svg.ondblclick = e => {
-  if (e.target !== svg) return;
+  if (e.target !== svg && e.target.id !== "grid") return;
   const m = pt(e);
   anotar();
   const n = { id:nuevoId(), titulo:"", runtime:"hermes", x:m.x - A/2, y:m.y - ALTO/2 };
-  grafo.nodos.push(n); sel = n.id; refrescarEditor(); pintar(); $("#titulo").focus();
+  grafo.nodos.push(n); sel = n.id; refrescarEditor(); pintar();
+  activarTab("nodo");
+  $("#titulo").focus();
 };
 svg.onmousemove = e => {
   const m = pt(e);
   if (arrastre) {
     const n = buscar(arrastre.id);
-    if (!arrastre.anotado) { arrastre.anotado = true; anotar(); }  // antes de mover
+    if (!arrastre.anotado) { arrastre.anotado = true; anotar(); }
     n.x = m.x - arrastre.dx; n.y = m.y - arrastre.dy; pintar();
   } else if (enlazando) {
     const n = buscar(enlazando);
     $("#fantasma").setAttribute("d", `M${n.x + A/2},${n.y + ALTO} L${m.x},${m.y}`);
   } else if (paneo) {
-    // El paneo se calcula contra el viewBox de ANTES de moverse: usar `pt(e)`
-    // en vivo se realimenta con su propio desplazamiento y el lienzo huye.
     vista = { ...paneo.v0,
               x: paneo.v0.x - (e.clientX - paneo.px) * paneo.k,
               y: paneo.v0.y - (e.clientY - paneo.py) * paneo.k };
@@ -443,10 +535,8 @@ svg.onmouseup = () => {
   $("#fantasma").setAttribute("d","");
 };
 
-// Arrastrar el fondo mueve el lienzo. Solo sobre el vacio: sobre un nodo gana
-// el handler del nodo, que ya hace stopPropagation.
 svg.onmousedown = e => {
-  if (e.target !== svg) return;
+  if (e.target !== svg && e.target.id !== "grid") return;
   const v = vistaActual();
   paneo = { v0:v, px:e.clientX, py:e.clientY, k: v.w / (svg.clientWidth || 1) };
 };
@@ -455,23 +545,48 @@ svg.onwheel = e => {
   e.preventDefault();
   const v = vistaActual(), m = pt(e);
   const f = e.deltaY > 0 ? 1.12 : 1 / 1.12;
-  // El punto bajo el cursor se queda quieto: se hace zoom donde uno mira, no
-  // al centro del lienzo.
   vista = { x: m.x - (m.x - v.x) * f, y: m.y - (m.y - v.y) * f,
             w: v.w * f, h: v.h * f };
   verVista();
 };
 
-document.onkeydown = e => {
-  if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
-  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;  // el del campo
-  const previo = pila.pop();
-  if (!previo) return;
-  e.preventDefault();
-  Object.assign(grafo, JSON.parse(previo));
-  if (!buscar(sel)) sel = null;
-  refrescarEditor(); pintar(); refrescarParams();
-};
+// Atajos de teclado seguros
+document.addEventListener("keydown", e => {
+  if (/^(INPUT|TEXTAREA|SELECT)$/i.test(e.target.tagName)) return;
+
+  // Deshacer (Ctrl+Z o Cmd+Z)
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+    const previo = pila.pop();
+    if (!previo) return;
+    e.preventDefault();
+    Object.assign(grafo, JSON.parse(previo));
+    if (!buscar(sel)) sel = null;
+    refrescarEditor(); pintar(); refrescarParams();
+    return;
+  }
+
+  // Guardar (Ctrl+S o Cmd+S)
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+    e.preventDefault();
+    $("#guardar").click();
+    return;
+  }
+
+  // Borrar nodo seleccionado (Delete o Backspace)
+  if ((e.key === "Delete" || e.key === "Backspace") && sel) {
+    e.preventDefault();
+    $("#borrar").click();
+    return;
+  }
+
+  // Deseleccionar (Escape)
+  if (e.key === "Escape" && sel) {
+    e.preventDefault();
+    sel = null;
+    refrescarEditor(); cargarTraza(); pintar();
+    return;
+  }
+});
 
 $("#titulo").oninput = e => {
   const n = buscar(sel);
@@ -479,8 +594,6 @@ $("#titulo").oninput = e => {
 };
 $("#workspace").oninput = e => {
   const n = buscar(sel);
-  // Vacio = scratch de Hermes, que se BORRA en complete_task (§4.1): un nodo
-  // cuyo entregable son archivos necesita un directorio de verdad.
   if (n) { const v = e.target.value.trim(); v ? n.workspace = v : delete n.workspace; refrescarParams(); }
 };
 $("#runtime").onchange = e => {
@@ -489,13 +602,9 @@ $("#runtime").onchange = e => {
 };
 $("#modelo").oninput = e => {
   const n = buscar(sel);
-  // Vacio = sin override: cada CLI usa su modelo por defecto.
   if (n) { const v = e.target.value.trim(); v ? n.modelo = v : delete n.modelo; }
 };
 
-// Cada CLI quiere el modelo en su propia forma: slug en agy, proveedor/modelo
-// en opencode, nombre en claude. La pista viene de /api/capacidades, o sea del
-// mismo lugar del que sale el argv — no de un texto escrito a mano acá.
 let CAPS = {};
 function pistaDeModelo() {
   const n = buscar(sel);
@@ -506,12 +615,10 @@ $("#borrar").onclick = () => {
   anotar();
   grafo.nodos = grafo.nodos.filter(n => n.id !== sel);
   grafo.aristas = grafo.aristas.filter(([p, h]) => p !== sel && h !== sel);
-  sel = null; refrescarEditor(); pintar();
+  sel = null; refrescarEditor(); cargarTraza(); pintar();
 };
 $("#board").oninput = e => { grafo.board = e.target.value; };
 
-// El token llega por la URL una sola vez y se guarda en la sesion; despues se
-// limpia de la barra para que no quede en el historial ni en un screenshot.
 const TOKEN = (() => {
   const u = new URL(location.href);
   const t = u.searchParams.get("token");
@@ -544,12 +651,10 @@ $("#validar").onclick = async () => {
 };
 $("#guardar").onclick = async () => {
   await api("/api/grafo", grafo);
-  await listarGrafos();                         // que aparezca sin recargar
+  await listarGrafos();
   avisar(`Guardado como '${grafo.board}' en ui/grafos/.`, "ok");
 };
 $("#compilar").onclick = async () => {
-  // Los valores van aparte del grafo: el grafo guardado conserva sus
-  // `{{marcadores}}` y se puede volver a correr con otros datos.
   const { ok, datos } = await api("/api/compilar", { ...grafo, valores: VALORES });
   if (!ok) return avisar(datos.error, "error");
   ids = datos.ids;
@@ -570,19 +675,26 @@ $("#parar").onclick = async () => {
                   : datos.motivo, datos.ok ? "ok" : "error");
 };
 
+let CONFIG_MCP = "";
 $("#exportar").onclick = async () => {
-  await api("/api/grafo", grafo);               // el server MCP lee del disco
+  await api("/api/grafo", grafo);
   const { datos } = await api("/api/mcp", grafo);
-  const cfg = JSON.stringify(datos.config, null, 2);
-  avisar(`Tool '${datos.tool}' con ${datos.parametros.length} parametro(s): ` +
-         `${datos.parametros.join(", ") || "ninguno"}
-
-` +
-         `Pegá esto en la config MCP de tu cliente:
-${cfg}`, "ok");
+  CONFIG_MCP = JSON.stringify(datos.config, null, 2);
+  $("#bloqueMcp").style.display = "block";
+  $("#mcpResumen").innerHTML = `Tool <b>${esc(datos.tool)}</b> con ${datos.parametros.length} parámetro(s): <code>${esc(datos.parametros.join(", ") || "ninguno")}</code>`;
+  $("#mcpConfig").textContent = CONFIG_MCP;
+  activarTab("diseno");
+  avisar("Configuración MCP generada abajo.", "ok");
 };
 
-let POR_NODO = {};                               // task_id -> gasto del nodo
+$("#btnCopiarMcp").onclick = () => {
+  if (!CONFIG_MCP) return;
+  navigator.clipboard.writeText(CONFIG_MCP);
+  $("#btnCopiarMcp").textContent = "¡Copiado al portapapeles!";
+  setTimeout(() => { $("#btnCopiarMcp").textContent = "Copiar config MCP"; }, 1500);
+};
+
+let POR_NODO = {};
 
 async function cargarConsumo() {
   const caja = $("#bloqueConsumo");
@@ -593,8 +705,6 @@ async function cargarConsumo() {
   caja.style.display = "block";
   const fila = (et, val) =>
     `<div class="linea"><span class="et">${et}</span><span class="val">${val}</span></div>`;
-  // El costo que informa un CLI es lo que ESE trabajo habria costado por API.
-  // Los backends por suscripcion no informan medidor, y no se cuentan como 0.
   const costo = t.con_costo
     ? `US$ ${t.costo_usd.toFixed(4)}` : "—";
   $("#consumo").innerHTML =
@@ -609,9 +719,6 @@ async function cargarConsumo() {
 }
 
 async function refrescarEstado() {
-  // El consumo depende del BOARD, no de que este navegador haya compilado el
-  // grafo. Antes colgaba del early-return de abajo y desaparecia al recargar
-  // la pagina, que es justo cuando uno quiere ver cuanto gasto la corrida.
   cargarConsumo();
   if (!Object.keys(ids).length) return;
   const { datos } = await api(`/api/estado?board=${encodeURIComponent(grafo.board)}`);
@@ -619,7 +726,6 @@ async function refrescarEstado() {
 }
 setInterval(refrescarEstado, 2500);
 
-// Un grafo de arranque que muestra la idea: un nodo nativo y dos externos.
 grafo.nodos = [
   { id:"a", titulo:"Diseñá un plan de tres pasos", runtime:"hermes",      x:150, y:70  },
   { id:"b", titulo:"Implementá el módulo",         runtime:"opencode",    x:60,  y:230 },
@@ -627,9 +733,5 @@ grafo.nodos = [
 ];
 grafo.aristas = [["a","b"],["a","c"]];
 refrescarEditor(); pintar(); listarGrafos(); refrescarParams();
-// Las capacidades se piden ACA y no junto a `pistaDeModelo`: alla el `const
-// TOKEN` todavia no existe (zona muerta) y la llamada moria con "Cannot access
-// 'TOKEN' before initialization", asi que CAPS quedaba vacio y la pista del
-// modelo nunca aparecia. Lo encontro el check de Playwright, no la vista.
 api("/api/capacidades").then(({ datos }) => { CAPS = datos || {}; pistaDeModelo(); });
 </script>
