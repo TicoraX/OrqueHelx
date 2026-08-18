@@ -35,6 +35,12 @@ falla({"nodos": [N("a"), N("a")]}, "ids repetidos")
 falla({"nodos": [N("a")], "aristas": [["a", "z"]]}, "nodo inexistente")
 falla({"nodos": [N("a")], "aristas": [["a", "a"]]}, "de si mismo")
 falla({"nodos": [N("a"), N("b")], "aristas": [["a", "b"], ["b", "a"]]}, "ciclo")
+NOTA = lambda i: {"id": i, "titulo": "esto explica el flujo", "tipo": "nota"}
+falla({"nodos": [NOTA("n1")]}, "todo notas")
+falla({"nodos": [N("a"), NOTA("n1")], "aristas": [["a", "n1"]]}, "no puede tener dependencias")
+falla({"nodos": [N("a"), NOTA("n1")], "aristas": [["n1", "a"]]}, "no puede tener dependencias")
+# Una nota con un runtime inventado NO es un error: no se ejecuta.
+c.validar({"nodos": [N("a"), NOTA("n1")]}, capacidades=False)
 print("1. validacion rechaza: vacio, runtime malo, sin titulo, ids repetidos,")
 print("   arista colgada, auto-enlace y ciclo: OK")
 
@@ -97,5 +103,33 @@ for nodo in c._orden_topologico(mixto):
 assert k.get_task(conn, ids2["nativo"]).assignee == "default"
 assert k.get_task(conn, ids2["externo"]).assignee == "orquester-external:opencode"
 print("7. grafo mixto: cada nodo cae en el carril de su ejecutor: OK")
+
+
+# --- Notas y reglas ---
+db = Path(tempfile.mkdtemp()) / "notas.db"
+k.init_db(db_path=db)
+_connect = k.connect
+k.connect = lambda **kw: _connect(db_path=db)
+k.create_board = lambda *a, **kw: None
+
+g = {"board": "notas", "reglas": "No instales dependencias. Respondé en español.",
+     "nodos": [N("a"), N("b"), NOTA("n1")], "aristas": [["a", "b"]]}
+ids = c.compilar(g, board="notas")
+assert set(ids) == {"a", "b"}, f"la nota se compilo como card: {ids}"
+
+conn = k.connect(board="notas")
+for tid in ids.values():
+    body = k.get_task(conn, tid).body or ""
+    assert "No instales dependencias" in body, f"las reglas no llegaron al nodo: {body!r}"
+    assert "Reglas del flujo" in body
+# El goal sigue limpio: las reglas van en el body, no pegadas al titulo.
+assert "No instales" not in k.get_task(conn, ids["a"]).title
+print("8. las notas no se compilan y las reglas llegan a TODOS los nodos: OK")
+
+# Sin reglas, el body no se inventa.
+g2 = {"board": "sinreglas", "nodos": [N("z")], "aristas": []}
+ids2 = c.compilar(g2, board="notas")
+assert k.get_task(conn, ids2["z"]).body in (None, ""), "invento un body sin reglas"
+print("9. sin reglas, el body queda vacio: OK")
 
 print("\nOK: el compilador traduce el grafo al kanban.")

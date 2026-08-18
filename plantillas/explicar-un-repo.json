@@ -1,30 +1,54 @@
 {
   "board": "explicar-un-repo",
-  "descripcion": "Para caer parado en un repo que no conocés: mapa de la arquitectura, puntos de entrada y dónde están los riesgos, en paralelo y con síntesis final.",
+  "descripcion": "Para caer parado en un repo ajeno: arquitectura, puntos de entrada, dependencias y cobertura en paralelo, y una sintesis con los riesgos.",
+  "reglas": "Basate en el codigo, no en el README: si el README miente, decilo.\nNo modifiques nada.\nResponde en espanol rioplatense, directo y sin relleno.",
   "nodos": [
     {
+      "id": "nota",
+      "tipo": "nota",
+      "titulo": "EXPLICAR UN REPO - pensado para el primer dia en un proyecto ajeno. Cambia {{ruta}} y corre: no necesita mas parametros.",
+      "x": 40,
+      "y": 430
+    },
+    {
       "id": "mapa",
-      "titulo": "Explorá {{ruta}} y explicá su ARQUITECTURA: qué hace el proyecto, cuáles son los módulos principales y cómo se relacionan. Máximo 15 líneas. Basate en el código, no en el README, y marcá si el README miente.",
+      "titulo": "Explora {{ruta}} y explica su ARQUITECTURA: que hace el proyecto, cuales son los modulos principales y como se relacionan. Maximo 15 lineas.",
       "runtime": "claude-code",
       "workspace": "{{ruta}}",
-      "x": 60,
-      "y": 70
+      "x": 40,
+      "y": 60
     },
     {
       "id": "entradas",
-      "titulo": "En {{ruta}} encontrá los PUNTOS DE ENTRADA: cómo se corre esto, qué comandos hay, cómo se corren los tests y qué necesita instalado para funcionar. Comandos concretos, copiables.",
+      "titulo": "En {{ruta}} encontra los PUNTOS DE ENTRADA: como se corre esto, que comandos hay, como se corren los tests y que necesita instalado. Comandos concretos y copiables.",
       "runtime": "opencode",
       "workspace": "{{ruta}}",
-      "x": 420,
-      "y": 70
+      "x": 300,
+      "y": 60
+    },
+    {
+      "id": "dependencias",
+      "titulo": "Lista las dependencias de {{ruta}} y de cuales depende el proyecto de verdad (las que si faltan lo rompen). Marca las que esten sin fijar de version y las que parezcan abandonadas.",
+      "runtime": "antigravity",
+      "workspace": "{{ruta}}",
+      "x": 560,
+      "y": 60
+    },
+    {
+      "id": "cobertura",
+      "titulo": "En {{ruta}} mira que esta cubierto por tests y que NO. No corras nada pesado: alcanza con ver que tests hay y que modulos no aparecen en ninguno. Nombra las tres zonas mas desprotegidas.",
+      "runtime": "opencode",
+      "workspace": "{{ruta}}",
+      "x": 820,
+      "y": 60
     },
     {
       "id": "riesgos",
-      "titulo": "Tus padres mapearon un repo. Con eso y mirando el código, decí por dónde empezaría alguien nuevo y DÓNDE están los riesgos: la parte más enredada, lo que no tiene tests, lo que se rompe fácil. Máximo 8 líneas.",
-      "runtime": "antigravity",
+      "titulo": "Tus padres mapearon el repo. Deci por donde empezaria alguien nuevo y DONDE estan los riesgos: lo mas enredado, lo que no tiene tests, lo que se rompe facil. Maximo 10 lineas, ordenado por lo que mas duele.",
+      "runtime": "claude-code",
       "workspace": "{{ruta}}",
-      "x": 240,
-      "y": 280
+      "x": 430,
+      "y": 300
     }
   ],
   "aristas": [
@@ -34,6 +58,14 @@
     ],
     [
       "entradas",
+      "riesgos"
+    ],
+    [
+      "dependencias",
+      "riesgos"
+    ],
+    [
+      "cobertura",
       "riesgos"
     ]
   ]

@@ -76,6 +76,13 @@
                 padding:7px 9px; white-space:pre-wrap; font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
                 font-size:11.5px; max-height:220px; overflow-y:auto; color:var(--texto); line-height:1.4; }
   #traza .gasto { color:var(--tenue); margin-bottom:8px; font-variant-numeric:tabular-nums; }
+  .titulo { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .titulo button { width:auto; padding:4px 10px; font-size:12px; }
+  #panelPlantillas { display:none; position:absolute; top:46px; right:12px; width:330px;
+                     max-height:70vh; overflow-y:auto; z-index:20; background:var(--panel);
+                     border:1px solid var(--linea); border-radius:8px; padding:10px;
+                     box-shadow:0 12px 34px rgba(0,0,0,.55); }
+  #panelPlantillas.abierto { display:block; }
   #plantillas .pl { border:1px solid var(--linea); border-radius:6px; padding:8px 10px;
                     margin-bottom:7px; background:#141720; }
   #plantillas .pl b { font-size:12.5px; }
@@ -109,7 +116,11 @@
 
 <aside>
   <div class="panel-header">
+    <div class="titulo">
     <h1>ORQUESTER Studio</h1>
+    <button id="verPlantillas">Plantillas ▾</button>
+  </div>
+  <div id="panelPlantillas"><div id="plantillas"></div></div>
     <div class="tabs">
       <button class="tab activa" data-tab="diseno">Diseño</button>
       <button class="tab" data-tab="nodo">Nodo</button>
@@ -123,13 +134,13 @@
     <!-- Pestaña 1: Diseño del Flujo -->
     <div id="vista-diseno" class="tab-vista activa">
       <div>
-        <h2>Plantillas</h2>
-        <div id="plantillas"></div>
+        <label>Board</label>
+        <input id="board" value="mi-flujo">
       </div>
 
       <div>
-        <label>Board</label>
-        <input id="board" value="mi-flujo">
+        <label>Reglas del flujo <span class="tenue">— van a TODOS los nodos</span></label>
+        <textarea id="reglas" placeholder="Ej: no instales dependencias; no modifiques archivos; respondé en español."></textarea>
       </div>
 
       <div>
@@ -180,6 +191,13 @@
       <div id="sinNodo" class="ayuda">Hacé clic en un nodo o doble clic en el lienzo para crear uno.</div>
       <div id="editor" style="display:none; flex-direction:column; gap:8px;">
         <div><label>Título (el goal del nodo)</label><textarea id="titulo"></textarea></div>
+        <div><label>Tipo</label>
+          <select id="tipo">
+            <option value="agente">Agente (se ejecuta)</option>
+            <option value="nota">Nota (solo explica, no se ejecuta)</option>
+          </select>
+        </div>
+        <div id="camposAgente" style="display:flex; flex-direction:column; gap:8px;">
         <div><label>Ejecutor</label>
           <select id="runtime">
             <option value="hermes">Hermes (nativo)</option>
@@ -195,6 +213,7 @@
         <input id="modelo" placeholder="o escribilo a mano"></div>
         <div><label>Workspace <span class="tenue">— dónde corre el nodo</span></label>
           <input id="workspace" placeholder="(scratch: se borra al terminar)"></div>
+        </div>
         <button id="borrar" class="peligro">Borrar nodo</button>
       </div>
     </div>
@@ -274,6 +293,24 @@ function pt(e) {
   return p.matrixTransform(svg.getScreenCTM().inverse());
 }
 
+// Encuadrar: las plantillas anchas se salian del lienzo y habia que buscarlas
+// a rueda. Se calcula la caja de todos los nodos y se ajusta el viewBox.
+function encuadrar() {
+  if (!grafo.nodos.length) { vista = null; svg.removeAttribute("viewBox"); return; }
+  const ancho = n => (n.tipo === "nota" ? A * 1.35 : A);
+  const alto  = n => (n.tipo === "nota" ? ALTO * 1.9 : ALTO);
+  const x0 = Math.min(...grafo.nodos.map(n => n.x)) - 40;
+  const y0 = Math.min(...grafo.nodos.map(n => n.y)) - 40;
+  const x1 = Math.max(...grafo.nodos.map(n => n.x + ancho(n))) + 40;
+  const y1 = Math.max(...grafo.nodos.map(n => n.y + alto(n))) + 40;
+  // Se respeta la proporcion del lienzo: sin esto el SVG la corrige solo y el
+  // encuadre queda descentrado.
+  const w = svg.clientWidth || 1, h = svg.clientHeight || 1;
+  const escala = Math.max((x1 - x0) / w, (y1 - y0) / h, 1);
+  vista = { x: x0, y: y0, w: w * escala, h: h * escala };
+  verVista();
+}
+
 let vista = null;                                // viewBox actual, o null = 1:1
 const verVista = () => vista &&
   svg.setAttribute("viewBox", `${vista.x} ${vista.y} ${vista.w} ${vista.h}`);
@@ -346,18 +383,25 @@ function pintar() {
   }
 
   for (const n of grafo.nodos) {
-    const est = estado[ids[n.id]]?.estado;
+    // Una nota no se ejecuta: no tiene estado, no tiene color de ejecutor y no
+    // se pinta como algo que este por correr.
+    const nota = n.tipo === "nota";
+    const est = nota ? null : estado[ids[n.id]]?.estado;
     const g = document.createElementNS(svg.namespaceURI, "g");
     g.setAttribute("class", "nodo" + (sel === n.id ? " sel" : ""));
     g.setAttribute("transform", `translate(${n.x},${n.y})`);
 
     const r = document.createElementNS(svg.namespaceURI, "rect");
-    r.setAttribute("width", A); r.setAttribute("height", ALTO); r.setAttribute("rx", "8");
-    r.setAttribute("fill", est ? COLOR[est] || "#4a5160" : "#252a34");
-    r.setAttribute("stroke", RT_COLOR[n.runtime] || "#8e9aab");
+    // La nota es mas alta y mas ancha: es texto para leer, no una etiqueta.
+    const ancho = nota ? A * 1.35 : A, alto = nota ? ALTO * 1.9 : ALTO;
+    r.setAttribute("width", ancho); r.setAttribute("height", alto); r.setAttribute("rx", "8");
+    r.setAttribute("fill", est ? COLOR[est] || "#4a5160" : (nota ? "#1b1f2a" : "#252a34"));
+    r.setAttribute("stroke", nota ? "#5c6478" : (RT_COLOR[n.runtime] || "#8e9aab"));
+    if (nota) r.setAttribute("stroke-dasharray", "5 3");
     g.appendChild(r);
 
-    for (const [i, linea] of envolver(n.titulo || "(sin título)", 26, 2).entries()) {
+    for (const [i, linea] of envolver(n.titulo || "(sin título)",
+                                      nota ? 38 : 26, nota ? 7 : 2).entries()) {
       const t = document.createElementNS(svg.namespaceURI, "text");
       t.setAttribute("x", 11); t.setAttribute("y", 19 + i * 14);
       t.setAttribute("fill", tinta(est)); t.setAttribute("font-size", "12");
@@ -365,6 +409,8 @@ function pintar() {
       t.textContent = linea;
       g.appendChild(t);
     }
+
+    if (nota) { gn.appendChild(g); seguirNodo(g, n); continue; }
 
     const rt = document.createElementNS(svg.namespaceURI, "text");
     rt.setAttribute("x", 11); rt.setAttribute("y", 50);
@@ -374,6 +420,13 @@ function pintar() {
     rt.textContent = n.runtime + (n.modelo ? " · " + n.modelo : "") + (est ? " · " + est : "");
     g.appendChild(rt);
 
+    seguirNodo(g, n);
+    gn.appendChild(g);
+  }
+  $("#resumen").textContent = resumir();
+}
+
+function seguirNodo(g, n) {
     g.onmousedown = e => {
       e.stopPropagation();
       sel = n.id; refrescarEditor(); cargarTraza();
@@ -382,12 +435,12 @@ function pintar() {
       // `diseno`; si se esta mirando la traza de una corrida, se respeta.
       if (document.querySelector(".tab.activa")?.dataset.tab === "diseno") activarTab("nodo");
       const m = pt(e);
-      if (e.shiftKey) enlazando = n.id;
+      if (e.shiftKey && n.tipo !== "nota") enlazando = n.id;
       else arrastre = { id:n.id, dx:m.x - n.x, dy:m.y - n.y, anotado:false };
       pintar();
     };
     g.onmouseup = e => {
-      if (enlazando && enlazando !== n.id) {
+      if (enlazando && enlazando !== n.id && n.tipo !== "nota") {
         const par = [enlazando, n.id];
         if (!grafo.aristas.some(x => x[0]===par[0] && x[1]===par[1])) {
           anotar(); grafo.aristas.push(par);
@@ -395,20 +448,19 @@ function pintar() {
       }
       enlazando = null; $("#fantasma").setAttribute("d", ""); pintar();
     };
-    gn.appendChild(g);
-  }
-  $("#resumen").textContent = resumir();
 }
 
 function resumir() {
-  const n = grafo.nodos.length, a = grafo.aristas.length;
+  const notas = grafo.nodos.filter(x => x.tipo === "nota").length;
+  const n = grafo.nodos.length - notas, a = grafo.aristas.length;
   const cuenta = {};
   for (const nodo of grafo.nodos) {
     const e = estado[ids[nodo.id]]?.estado;
     if (e) cuenta[e] = (cuenta[e] || 0) + 1;
   }
   const detalle = Object.entries(cuenta).map(([k, v]) => `${k}: ${v}`).join("  ");
-  return `${n} nodo${n===1?"":"s"}, ${a} dependencia${a===1?"":"s"}` +
+  return `${n} nodo${n===1?"":"s"}${notas ? ` + ${notas} nota${notas===1?"":"s"}` : ""}, ` +
+         `${a} dependencia${a===1?"":"s"}` +
          (detalle ? `\n${detalle}` : "\nsin compilar");
 }
 
@@ -483,11 +535,16 @@ function refrescarEditor() {
   $("#editor").style.display = n ? "flex" : "none";
   $("#sinNodo").style.display = n ? "none" : "block";
   if (n) {
+    const nota = n.tipo === "nota";
+    $("#tipo").value = nota ? "nota" : "agente";
+    $("#camposAgente").style.display = nota ? "none" : "flex";
     $("#titulo").value = n.titulo || "";
-    $("#runtime").value = n.runtime;
-    $("#modelo").value = n.modelo || "";
-    $("#workspace").value = n.workspace || "";
-    pistaDeModelo(); cargarModelos();
+    if (!nota) {
+      $("#runtime").value = n.runtime;
+      $("#modelo").value = n.modelo || "";
+      $("#workspace").value = n.workspace || "";
+      pistaDeModelo(); cargarModelos();
+    }
   }
 }
 
@@ -520,7 +577,8 @@ function abrirGrafo(datos, nombre) {
   // corrida anterior no significan nada aca y pintarian estados ajenos.
   ids = {}; estado = {}; sel = null; VALORES = {}; pila = [];
   $("#board").value = grafo.board;
-  refrescarEditor(); refrescarParams(); pintar(); refrescarEstado();
+  $("#reglas").value = grafo.reglas || "";
+  refrescarEditor(); refrescarParams(); pintar(); encuadrar(); refrescarEstado();
 }
 
 $("#abrir").onchange = async e => {
@@ -552,6 +610,8 @@ async function cargarPlantillas() {
       <p>${esc(p.descripcion || p.error || "")}</p>
       <div class="meta">
         <i>${p.nodos || 0} nodo(s)</i>
+        ${p.notas ? `<i>${p.notas} nota(s)</i>` : ""}
+        ${p.reglas ? `<i>con reglas</i>` : ""}
         ${(p.runtimes || []).map(r =>
           `<i class="${(p.faltan || []).includes(r) ? "falta" : ""}">${esc(r)}</i>`).join("")}
         ${(p.parametros || []).map(x => `<i>{{${esc(x)}}}</i>`).join("")}
@@ -565,7 +625,20 @@ async function cargarPlantillas() {
     b.onclick = () => usarPlantilla(b.dataset.pl);
 }
 
+$("#verPlantillas").onclick = e => {
+  e.stopPropagation();
+  $("#panelPlantillas").classList.toggle("abierto");
+};
+// Cerrar al hacer clic afuera: un panel flotante que tapa el lienzo y no se
+// va solo es peor que la lista fija que habia antes.
+document.addEventListener("mousedown", e => {
+  const p = $("#panelPlantillas");
+  if (p.classList.contains("abierto") && !p.contains(e.target) && e.target.id !== "verPlantillas")
+    p.classList.remove("abierto");
+});
+
 async function usarPlantilla(nombre) {
+  $("#panelPlantillas").classList.remove("abierto");
   const destino = (prompt("Nombre para tu copia:", nombre) || "").trim();
   if (!destino) return;
   const { ok, datos } = await api("/api/plantilla", { plantilla: nombre, nombre: destino });
@@ -666,6 +739,21 @@ $("#workspace").oninput = e => {
   const n = buscar(sel);
   if (n) { const v = e.target.value.trim(); v ? n.workspace = v : delete n.workspace; refrescarParams(); }
 };
+$("#tipo").onchange = e => {
+  const n = buscar(sel);
+  if (!n) return;
+  anotar();
+  if (e.target.value === "nota") {
+    n.tipo = "nota";
+    // Una nota no se ejecuta: sus aristas dejarian de significar nada, y el
+    // compilador las rechaza. Se sacan al convertir, no al compilar.
+    grafo.aristas = grafo.aristas.filter(([p, h]) => p !== n.id && h !== n.id);
+  } else {
+    delete n.tipo;
+    if (!n.runtime) n.runtime = "hermes";
+  }
+  refrescarEditor(); pintar();
+};
 $("#runtime").onchange = e => {
   const n = buscar(sel);
   if (n) { n.runtime = e.target.value; pintar(); pistaDeModelo(); cargarModelos(); }
@@ -726,6 +814,12 @@ $("#borrar").onclick = () => {
   sel = null; refrescarEditor(); cargarTraza(); pintar();
 };
 $("#board").oninput = e => { grafo.board = e.target.value; };
+$("#reglas").oninput = e => {
+  const v = e.target.value;
+  // Vacio = sin reglas: el body del nodo no se inventa.
+  v.trim() ? grafo.reglas = v : delete grafo.reglas;
+  refrescarParams();
+};
 
 const TOKEN = (() => {
   const u = new URL(location.href);

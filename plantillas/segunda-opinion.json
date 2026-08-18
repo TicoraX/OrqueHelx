@@ -1,40 +1,72 @@
 {
   "board": "segunda-opinion",
-  "descripcion": "La misma pregunta a dos ejecutores distintos, y un tercero que compara las respuestas y marca en qué difieren. Para decisiones donde un solo modelo te puede estar mintiendo con seguridad.",
+  "descripcion": "La misma pregunta a tres ejecutores que no se ven entre si, un cuarto que contrasta y un quinto que verifica lo que quedo en disputa.",
+  "reglas": "No te apoyes en lo que ya sabes: verifica contra el codigo o los datos a mano.\nSi no podes verificar algo, marcalo como no verificado en vez de afirmarlo.\nResponde en espanol rioplatense, directo y sin relleno.",
   "nodos": [
     {
+      "id": "nota",
+      "tipo": "nota",
+      "titulo": "SEGUNDA OPINION - el valor no esta en las tres respuestas sino en DONDE se contradicen: ahi es donde alguno de los tres esta inventando.",
+      "x": 40,
+      "y": 430
+    },
+    {
       "id": "a",
-      "titulo": "{{pregunta}}\n\nRespondé de forma concreta y breve. Si no estás seguro de algo, decí explícitamente qué no sabés en vez de rellenar.",
+      "titulo": "{{pregunta}}\n\nResponde concreto y breve. Si no estas seguro de algo, deci explicitamente que no sabes.",
       "runtime": "claude-code",
       "workspace": "{{ruta}}",
-      "x": 60,
-      "y": 70
+      "x": 40,
+      "y": 60
     },
     {
       "id": "b",
-      "titulo": "{{pregunta}}\n\nRespondé de forma concreta y breve. Si no estás seguro de algo, decí explícitamente qué no sabés en vez de rellenar.",
+      "titulo": "{{pregunta}}\n\nResponde concreto y breve. Si no estas seguro de algo, deci explicitamente que no sabes.",
       "runtime": "opencode",
       "workspace": "{{ruta}}",
-      "x": 420,
-      "y": 70
+      "x": 320,
+      "y": 60
     },
     {
-      "id": "comparar",
-      "titulo": "Tus padres respondieron la MISMA pregunta por separado. Compará las dos respuestas: (1) en qué coinciden, (2) en qué se contradicen —eso es lo importante—, (3) qué habría que verificar a mano para saber cuál tiene razón. No elijas ganador si la evidencia no alcanza.",
+      "id": "c",
+      "titulo": "{{pregunta}}\n\nResponde concreto y breve. Si no estas seguro de algo, deci explicitamente que no sabes.",
       "runtime": "antigravity",
       "workspace": "{{ruta}}",
-      "x": 240,
+      "x": 600,
+      "y": 60
+    },
+    {
+      "id": "contraste",
+      "titulo": "Tus padres respondieron la MISMA pregunta por separado. Arma: (1) en que coinciden los tres, (2) en que se contradicen -eso es lo importante-, (3) que afirmo uno solo y los otros no mencionaron. No elijas ganador todavia.",
+      "runtime": "claude-code",
+      "workspace": "{{ruta}}",
+      "x": 200,
       "y": 280
+    },
+    {
+      "id": "verificar",
+      "titulo": "Tu padre listo coincidencias y contradicciones. Para cada contradiccion, deci el comando, archivo o prueba CONCRETA que la resuelve. Si algo se puede verificar aca mismo, verificalo y deci que salio. Cerra con la respuesta que la evidencia sostiene, y con lo que quedo sin resolver.",
+      "runtime": "claude-code",
+      "workspace": "{{ruta}}",
+      "x": 460,
+      "y": 430
     }
   ],
   "aristas": [
     [
       "a",
-      "comparar"
+      "contraste"
     ],
     [
       "b",
-      "comparar"
+      "contraste"
+    ],
+    [
+      "c",
+      "contraste"
+    ],
+    [
+      "contraste",
+      "verificar"
     ]
   ]
 }

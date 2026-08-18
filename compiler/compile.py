@@ -29,6 +29,21 @@ from loop import carril
 
 RUNTIMES = set(BACKENDS) | {"hermes"}
 
+# Sin literales con escapes: este archivo se edita desde varias herramientas
+# y un "\n" se convirtio en un salto de linea real mas de una vez.
+SEPARADOR = chr(10) * 2
+ENCABEZADO_REGLAS = "## Reglas del flujo" + chr(10)
+
+
+def es_nota(nodo: dict) -> bool:
+    """Un bloque de explicacion en el lienzo. NO se ejecuta ni se compila.
+
+    Existe porque un grafo de diez nodos sin una linea de contexto es
+    ilegible dentro de una semana, y meter la explicacion en el goal de un
+    nodo se la manda al agente como si fuera parte del trabajo.
+    """
+    return nodo.get("tipo") == "nota"
+
 
 class ErrorDeGrafo(ValueError):
     """El grafo no es compilable. El mensaje va tal cual al canvas."""
@@ -73,8 +88,13 @@ def validar(grafo: dict, *, capacidades: bool = True) -> None:
     for n in nodos:
         if not (n.get("titulo") or "").strip():
             raise ErrorDeGrafo(f"nodo '{n['id']}': falta 'titulo'")
-        _assignee(n)                      # valida el runtime
+        if not es_nota(n):
+            _assignee(n)                  # valida el runtime
 
+    if all(es_nota(n) for n in nodos):
+        raise ErrorDeGrafo("el grafo es todo notas: no hay nada que ejecutar")
+
+    por_id = {n["id"]: n for n in nodos}
     conocidos = set(ids)
     for arista in grafo.get("aristas") or []:
         if len(arista) != 2:
@@ -84,13 +104,22 @@ def validar(grafo: dict, *, capacidades: bool = True) -> None:
                 raise ErrorDeGrafo(f"arista {arista!r} apunta a un nodo inexistente: '{extremo}'")
         if arista[0] == arista[1]:
             raise ErrorDeGrafo(f"nodo '{arista[0]}': no puede depender de si mismo")
+        # Una nota no puede estar en una cadena de dependencias. Se rechaza en
+        # vez de ignorarla en silencio: `a -> nota -> b` se veria conectado en
+        # el lienzo y al compilar b arrancaria sin esperar a a.
+        for extremo in arista:
+            if es_nota(por_id[extremo]):
+                raise ErrorDeGrafo(
+                    f"nodo '{extremo}' es una nota y no puede tener dependencias: "
+                    "las notas explican, no se ejecutan")
 
     _orden_topologico(grafo)              # detecta ciclos con un mensaje util
 
     # Preflight de capacidades: si un runtime del grafo no esta instalado, se
     # dice ACA y no a los 600s de timeout en medio de una corrida. El agente (o
     # la persona) sabe lo que le falta antes de empezar.
-    ausentes = faltantes({n.get("runtime", "hermes") for n in nodos}) if capacidades else []
+    ausentes = faltantes({n.get("runtime", "hermes") for n in nodos
+                          if not es_nota(n)}) if capacidades else []
     if ausentes:
         raise ErrorDeGrafo(
             f"estos ejecutores no estan disponibles en esta maquina: {ausentes}. "
@@ -105,10 +134,12 @@ def _orden_topologico(grafo: dict) -> list[dict]:
     aca podemos nombrar el conjunto de nodos que quedaron trabados, que es lo
     que el canvas necesita para pintarlos en rojo.
     """
-    por_id = {n["id"]: n for n in grafo["nodos"]}
+    por_id = {n["id"]: n for n in grafo["nodos"] if not es_nota(n)}
     padres = {i: set() for i in por_id}
     hijos = {i: set() for i in por_id}
     for p, h in grafo.get("aristas") or []:
+        if p not in por_id or h not in por_id:
+            continue                      # arista de/hacia una nota
         padres[h].add(p)
         hijos[p].add(h)
 
@@ -139,6 +170,11 @@ def compilar(grafo: dict, *, board: str = None) -> dict[str, str]:
     conn = k.connect(board=board)
 
     aristas = grafo.get("aristas") or []
+    # Reglas del flujo: valen para TODOS los nodos y van en el `body`, que
+    # `build_worker_context` le entrega al worker junto al goal. En el body y
+    # no pegadas al titulo para que el goal siga siendo legible en el lienzo y
+    # en el kanban.
+    reglas = (grafo.get("reglas") or "").strip()
     ids = {}
     for nodo in _orden_topologico(grafo):
         parents = [ids[p] for p, h in aristas if h == nodo["id"]]
@@ -146,7 +182,10 @@ def compilar(grafo: dict, *, board: str = None) -> dict[str, str]:
             ids[nodo["id"]] = k.create_task(
                 conn,
                 title=nodo["titulo"],
-                body=nodo.get("cuerpo"),
+                body=SEPARADOR.join(x for x in
+                                  (nodo.get("cuerpo"),
+                                   ENCABEZADO_REGLAS + reglas if reglas else None)
+                                  if x) or None,
                 assignee=_assignee(nodo),
                 parents=parents,
                 board=board,

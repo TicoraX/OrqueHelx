@@ -1,30 +1,54 @@
 {
   "board": "documentar-cambios",
-  "descripcion": "Lee el diff de los últimos commits y redacta la entrada de changelog y las actualizaciones de documentación que ese cambio necesita.",
+  "descripcion": "Del diff salen en paralelo el changelog, la doc que quedo vieja y el texto del PR; un ultimo nodo revisa que los tres digan lo mismo.",
+  "reglas": "No inventes cambios que el diff no muestra.\nVoz activa, sin relleno, sin emojis y sin frases de cierre tipo eslogan.\nResponde en espanol rioplatense.",
   "nodos": [
     {
+      "id": "nota",
+      "tipo": "nota",
+      "titulo": "DOCUMENTAR - los tres hijos parten del MISMO resumen: si se contradicen entre si, el problema esta en el resumen y no en ellos.",
+      "x": 40,
+      "y": 430
+    },
+    {
       "id": "leer",
-      "titulo": "En {{ruta}} leé `git log --oneline -{{commits}}` y `git diff HEAD~{{commits}}`. Resumí QUÉ cambió y POR QUÉ, en términos de comportamiento observable para quien usa esto. Nada de listar archivos tocados: eso ya está en el diff.",
+      "titulo": "En {{ruta}} lee `git log --oneline -{{commits}}` y `git diff HEAD~{{commits}}`. Resumi QUE cambio y POR QUE, en terminos de comportamiento observable para quien usa esto. Nada de listar archivos tocados: eso ya esta en el diff.",
       "runtime": "claude-code",
       "workspace": "{{ruta}}",
-      "x": 200,
-      "y": 60
+      "x": 340,
+      "y": 50
     },
     {
       "id": "changelog",
-      "titulo": "Con el resumen de tu padre, escribí la entrada de CHANGELOG: qué se agregó, qué se arregló y qué rompe compatibilidad si algo rompe. Voz activa, sin relleno, sin emojis. Si el cambio no amerita entrada, decilo.",
+      "titulo": "Con el resumen de tu padre, escribi la entrada de CHANGELOG: que se agrego, que se arreglo y que rompe compatibilidad. Si el cambio no amerita entrada, decilo.",
       "runtime": "opencode",
       "workspace": "{{ruta}}",
-      "x": 60,
+      "x": 40,
       "y": 230
     },
     {
       "id": "docs",
-      "titulo": "Con el resumen de tu padre, decí qué documentación de {{ruta}} quedó DESACTUALIZADA por este cambio: archivo, sección y qué habría que corregir. Si no quedó nada desactualizado, decilo en una línea.",
+      "titulo": "Con el resumen de tu padre, deci que documentacion de {{ruta}} quedo DESACTUALIZADA: archivo, seccion y que corregir. Si no quedo nada viejo, decilo en una linea.",
       "runtime": "antigravity",
       "workspace": "{{ruta}}",
-      "x": 400,
+      "x": 340,
       "y": 230
+    },
+    {
+      "id": "pr",
+      "titulo": "Con el resumen de tu padre, escribi el titulo y el cuerpo del pull request: que problema resuelve, como, y como lo verifico quien lo hizo. Maximo 12 lineas.",
+      "runtime": "claude-code",
+      "workspace": "{{ruta}}",
+      "x": 640,
+      "y": 230
+    },
+    {
+      "id": "coherencia",
+      "titulo": "Tus padres escribieron changelog, notas de doc y texto de PR sobre el MISMO cambio. Revisa que no se contradigan y que ninguno prometa algo que el diff no hace. Devolve los tres textos ya corregidos, listos para pegar.",
+      "runtime": "claude-code",
+      "workspace": "{{ruta}}",
+      "x": 340,
+      "y": 430
     }
   ],
   "aristas": [
@@ -35,6 +59,22 @@
     [
       "leer",
       "docs"
+    ],
+    [
+      "leer",
+      "pr"
+    ],
+    [
+      "changelog",
+      "coherencia"
+    ],
+    [
+      "docs",
+      "coherencia"
+    ],
+    [
+      "pr",
+      "coherencia"
     ]
   ]
 }

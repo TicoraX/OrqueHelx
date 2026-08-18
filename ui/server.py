@@ -95,11 +95,17 @@ def _catalogo() -> dict:
         except Exception as e:
             salida.append({"nombre": f.stem, "error": f"no se pudo leer: {e}"})
             continue
-        runtimes = sorted({n.get("runtime", "hermes") for n in g.get("nodos") or []})
+        nodos = g.get("nodos") or []
+        # Las notas no se ejecutan: contarlas como nodos o mirarles el runtime
+        # haria que el catalogo pida un binario que nadie va a usar.
+        ejecutables = [n for n in nodos if n.get("tipo") != "nota"]
+        runtimes = sorted({n.get("runtime", "hermes") for n in ejecutables})
         salida.append({
             "nombre": f.stem,
             "descripcion": g.get("descripcion", ""),
-            "nodos": len(g.get("nodos") or []),
+            "nodos": len(ejecutables),
+            "notas": len(nodos) - len(ejecutables),
+            "reglas": bool((g.get("reglas") or "").strip()),
             "runtimes": runtimes,
             "parametros": mcp.parametros(g),
             # Se avisa ACA lo que falta, no a los 600s de una corrida.

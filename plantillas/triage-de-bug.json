@@ -1,30 +1,54 @@
 {
   "board": "triage-de-bug",
-  "descripcion": "Cadena de tres pasos sobre un bug: reproducirlo, encontrar la causa raíz y recién ahí proponer el arreglo. Ningún paso puede saltearse al siguiente.",
+  "descripcion": "Cinco pasos en cadena sobre un bug: reproducir, causa raiz, buscar hermanos rotos, arreglo minimo y como se verifica. Ningun paso puede saltearse.",
+  "reglas": "Prohibido proponer el arreglo antes del nodo que lo pide: el orden es el metodo.\nNo arregles el sintoma. Si no llegas a la causa, deci que falta medir.\nNo modifiques archivos salvo que el nodo lo pida explicitamente.\nResponde en espanol rioplatense, directo y sin relleno.",
   "nodos": [
     {
+      "id": "nota",
+      "tipo": "nota",
+      "titulo": "TRIAGE - la cadena existe para que nadie salte a proponer un parche antes de probar la causa. Si 'reproducir' falla, lo que sigue no sirve: para ahi y arregla la reproduccion primero.",
+      "x": 480,
+      "y": 60
+    },
+    {
       "id": "reproducir",
-      "titulo": "En {{ruta}} hay este bug: {{sintoma}}\n\nTu ÚNICO trabajo es reproducirlo. Encontrá el comando o el caso mínimo que lo dispara y pegá la salida real del error. Si NO lográs reproducirlo, decilo claramente y explicá qué probaste: eso también es un resultado.",
+      "titulo": "En {{ruta}} hay este bug: {{sintoma}}\n\nTu UNICO trabajo es reproducirlo. Encontra el comando o el caso minimo que lo dispara y pega la salida real del error. Si NO lo lograste reproducir, decilo y explica que probaste: eso tambien es un resultado.",
       "runtime": "opencode",
       "workspace": "{{ruta}}",
-      "x": 200,
-      "y": 50
+      "x": 180,
+      "y": 40
     },
     {
       "id": "causa",
-      "titulo": "Tu padre reprodujo un bug. Encontrá la CAUSA RAÍZ leyendo el código: qué línea, por qué falla, y por qué el síntoma aparece donde aparece. Prohibido proponer un arreglo todavía. Si la evidencia no alcanza para afirmar la causa, decí qué falta medir.",
+      "titulo": "Tu padre reprodujo un bug. Encontra la CAUSA RAIZ leyendo el codigo: que linea, por que falla y por que el sintoma aparece donde aparece. Prohibido proponer arreglo. Si la evidencia no alcanza, deci que falta medir.",
       "runtime": "claude-code",
       "workspace": "{{ruta}}",
-      "x": 200,
-      "y": 200
+      "x": 180,
+      "y": 180
+    },
+    {
+      "id": "hermanos",
+      "titulo": "Tu padre encontro la causa raiz. Busca en {{ruta}} TODOS los otros lugares con el mismo problema: grepea los llamadores de esa funcion y los patrones parecidos. Un arreglo que solo tapa el caso del ticket deja hermanos rotos. Lista archivo:linea de cada uno.",
+      "runtime": "opencode",
+      "workspace": "{{ruta}}",
+      "x": 180,
+      "y": 320
     },
     {
       "id": "arreglo",
-      "titulo": "Tu padre identificó la causa raíz. Proponé el arreglo MÁS CHICO que la ataque —no el síntoma— y decí cómo se verifica que quedó arreglado. Si hay otros llamadores del mismo código, nombralos: el arreglo va donde está la causa, no en cada llamador.",
+      "titulo": "Con la causa raiz y la lista de lugares afectados, propone el arreglo MAS CHICO que ataque la causa -no el sintoma- y que cubra a los hermanos de una sola vez. Mostra el diff propuesto. No lo apliques.",
       "runtime": "claude-code",
       "workspace": "{{ruta}}",
-      "x": 200,
-      "y": 350
+      "x": 180,
+      "y": 460
+    },
+    {
+      "id": "verificacion",
+      "titulo": "Tu padre propuso un arreglo. Escribi COMO se comprueba que quedo arreglado: el check mas chico que falla si el bug vuelve. Comando concreto o test minimo. Si el arreglo no es verificable, decilo: eso es un problema del arreglo.",
+      "runtime": "antigravity",
+      "workspace": "{{ruta}}",
+      "x": 180,
+      "y": 600
     }
   ],
   "aristas": [
@@ -34,7 +58,15 @@
     ],
     [
       "causa",
+      "hermanos"
+    ],
+    [
+      "hermanos",
       "arreglo"
+    ],
+    [
+      "arreglo",
+      "verificacion"
     ]
   ]
 }

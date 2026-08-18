@@ -217,6 +217,9 @@ No arranques con un lienzo en blanco. El Studio trae un catálogo en la pestaña
 | `documentar-cambios` | del diff salen la entrada de changelog y qué doc quedó vieja |
 | `explicar-un-repo` | mapa, puntos de entrada y riesgos de un repo que no conocés |
 
+Cada una trae **cinco nodos ejecutables, una nota y sus reglas**. Se abren con
+el botón **Plantillas** de arriba a la derecha.
+
 **Las plantillas viven en `plantillas/` y son de solo lectura.** "Usar esta" la
 copia a `ui/grafos/` con el nombre que le des; a partir de ahí es tuya y la
 editás sin miedo. Por eso son dos carpetas: un `git pull` que mejore una
@@ -225,6 +228,19 @@ plantilla no te pisa lo que hayas armado encima.
 Cada tarjeta muestra cuántos nodos tiene, qué ejecutores usa y qué parámetros
 va a pedir. Si te falta un binario, lo dice **antes** de correr, en vez de
 descubrirlo a los 600 segundos.
+
+### Notas y reglas
+
+Dos cosas que no se ejecutan pero cambian cómo sale el trabajo:
+
+- **Nota**: un bloque de explicación en el lienzo. No se compila, no genera
+  card y no puede tener dependencias (el compilador lo rechaza en vez de
+  ignorarlo, porque `a → nota → b` se vería conectado y `b` arrancaría sin
+  esperar a `a`). Se crea con el selector **Tipo** en la pestaña Nodo.
+- **Reglas del flujo**: un texto que va a **todos** los nodos del grafo. Viaja
+  en el `body` de la card, no pegado al goal, así el título sigue siendo
+  legible en el lienzo y en el kanban. Es donde van las barandas: "no instales
+  dependencias", "no modifiques archivos", "respondé en español".
 
 Para borrar uno de tus grafos, elegilo en "Abrir un grafo guardado" y dale a
 **Borrar**. Las plantillas no se pueden borrar desde la UI: para eso está git.
