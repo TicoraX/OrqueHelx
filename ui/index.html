@@ -171,7 +171,10 @@
           </select>
         </div>
         <div><label>Modelo <span class="tenue" id="pistaModelo"></span></label>
-          <input id="modelo" placeholder="(el que use el CLI por defecto)"></div>
+          <select id="modeloLista" style="margin-bottom:6px;">
+          <option value="">(el que use el CLI por defecto)</option>
+        </select>
+        <input id="modelo" placeholder="o escribilo a mano"></div>
         <div><label>Workspace <span class="tenue">— dónde corre el nodo</span></label>
           <input id="workspace" placeholder="(scratch: se borra al terminar)"></div>
         <button id="borrar" class="peligro">Borrar nodo</button>
@@ -466,7 +469,7 @@ function refrescarEditor() {
     $("#runtime").value = n.runtime;
     $("#modelo").value = n.modelo || "";
     $("#workspace").value = n.workspace || "";
-    pistaDeModelo();
+    pistaDeModelo(); cargarModelos();
   }
 }
 
@@ -598,14 +601,52 @@ $("#workspace").oninput = e => {
 };
 $("#runtime").onchange = e => {
   const n = buscar(sel);
-  if (n) { n.runtime = e.target.value; pintar(); pistaDeModelo(); }
+  if (n) { n.runtime = e.target.value; pintar(); pistaDeModelo(); cargarModelos(); }
 };
 $("#modelo").oninput = e => {
   const n = buscar(sel);
-  if (n) { const v = e.target.value.trim(); v ? n.modelo = v : delete n.modelo; }
+  if (n) {
+    const v = e.target.value.trim();
+    v ? n.modelo = v : delete n.modelo;
+    // El desplegable sigue al campo si el texto coincide con una opcion; si no,
+    // queda en blanco para no mostrar un modelo que no es el que corre.
+    $("#modeloLista").value = [...$("#modeloLista").options].some(o => o.value === v) ? v : "";
+  }
 };
 
 let CAPS = {};
+
+// Los modelos se le preguntan al CLI (`agy models`, `opencode models`), no se
+// escriben a mano: la lista cambia sola y el slug exacto no hay quien lo
+// recuerde. El campo de texto sigue estando para lo que la lista no traiga.
+async function cargarModelos() {
+  const n = buscar(sel);
+  const s = $("#modeloLista");
+  if (!n) return;
+  s.innerHTML = '<option value="">(el que use el CLI por defecto)</option>';
+  const { datos } = await api(`/api/modelos?runtime=${encodeURIComponent(n.runtime)}`);
+  for (const m of datos.modelos || []) {
+    const o = document.createElement("option");
+    o.value = m; o.textContent = m; s.appendChild(o);
+  }
+  // Un modelo escrito a mano que no este en la lista no se pierde de vista.
+  if (n.modelo && !(datos.modelos || []).includes(n.modelo)) {
+    const o = document.createElement("option");
+    o.value = n.modelo; o.textContent = n.modelo + " (a mano)"; s.appendChild(o);
+  }
+  s.value = n.modelo || "";
+  $("#pistaModelo").textContent = datos.fuente ? "— " + datos.fuente
+    : (CAPS[n.runtime]?.modelo_forma ? "— " + CAPS[n.runtime].modelo_forma : "");
+}
+
+$("#modeloLista").onchange = e => {
+  const n = buscar(sel);
+  if (!n) return;
+  const v = e.target.value;
+  v ? n.modelo = v : delete n.modelo;
+  $("#modelo").value = v;
+  pintar();
+};
 function pistaDeModelo() {
   const n = buscar(sel);
   const c = n && CAPS[n.runtime];

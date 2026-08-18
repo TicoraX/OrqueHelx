@@ -119,12 +119,23 @@ try:
     assert codigo == 200 and datos["ok"] is False and "no hay nada" in datos["motivo"], datos
     print("6. parar sin corrida: responde que no hay nada corriendo: OK")
 
-    # --- 7. El grafo guardado conserva sus marcadores ---
+    # --- 7. Los modelos salen del CLI, no de una lista escrita a mano ---
+    # `claude-code` no tiene subcomando que liste: sus alias los documenta su
+    # propio --help. Se prueba ese camino porque no lanza subproceso y no
+    # depende de la red.
+    codigo, datos = pedir("/api/modelos?runtime=claude-code")
+    assert codigo == 200 and "sonnet" in datos["modelos"], datos
+    assert "--help" in datos["fuente"], datos
+    codigo, datos = pedir("/api/modelos?runtime=no-existe")
+    assert datos["modelos"] == [] and "desconocido" in datos["fuente"], datos
+    print("7. /api/modelos ofrece los modelos del runtime: OK")
+
+    # --- 8. El grafo guardado conserva sus marcadores ---
     # Se guarda el grafo, no la corrida: si al guardar se sustituyera, el grafo
     # dejaria de ser reutilizable con otros datos.
     codigo, vuelto = pedir(f"/api/grafo?nombre={NOMBRE}")
     assert "{{repo}}" in vuelto["nodos"][0]["titulo"], vuelto
-    print("7. el grafo guardado sigue parametrizado: OK")
+    print("8. el grafo guardado sigue parametrizado: OK")
 finally:
     proc.terminate()
     proc.wait(timeout=10)

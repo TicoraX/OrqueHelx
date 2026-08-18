@@ -12,7 +12,7 @@ que faltaba un binario.
 Los campos NO son opinión: cada uno salió de ejecutar el CLI y mirar la salida.
 Están citados en §10.
 """
-import shutil
+import shutil, subprocess, time
 from pathlib import Path
 
 from backends import BACKENDS, MAX_TURNS, USO
@@ -32,8 +32,10 @@ DECLARADO = {
         "auth": "suscripcion o API key propia de Claude Code",
         "modelo_por_nodo": True,
         "modelo_flag": "--model",
-        "modelo_forma": "nombre del modelo (ej. claude-sonnet-4-6)",
-        "listar_modelos": None,
+        "modelo_forma": "alias (opus, sonnet, fable) o nombre completo",
+        "listar_modelos": None,      # no tiene subcomando que liste
+        # Los alias los documenta su propio `--help`, no los inventamos aca.
+        "alias_conocidos": ["opus", "sonnet", "fable"],
     },
     "opencode": {
         "binario": "opencode",
@@ -49,7 +51,7 @@ DECLARADO = {
         "modelo_por_nodo": True,
         "modelo_flag": "--model",
         "modelo_forma": "proveedor/modelo (ej. deepseek/deepseek-chat)",
-        "listar_modelos": None,
+        "listar_modelos": "opencode models",
     },
     "antigravity": {
         "binario": "agy",
@@ -82,10 +84,64 @@ DECLARADO = {
         "modelo_por_nodo": True,
         "modelo_flag": "-m (lo pasa el dispatcher de Hermes)",
         "modelo_forma": "el que acepte el proveedor de Hermes",
-        "listar_modelos": "hermes model",
+        # `hermes model` NO sirve para listar: abre un selector INTERACTIVO que
+        # se queda esperando en stdin. Estaba declarado aca como si listara.
+        "listar_modelos": None,
         "ojo": "lo ejecuta el dispatcher de Hermes, no el de ORQUESTER (§12)",
     },
 }
+
+
+# `agy models` tarda unos segundos (consulta al proveedor). Se cachea por
+# proceso: los modelos no cambian entre dos clics del Studio.
+_CACHE: dict[str, tuple[float, list[str]]] = {}
+_TTL = 600
+
+
+def modelos(runtime: str) -> dict:
+    """Los modelos que acepta un runtime, preguntandoselo al CLI.
+
+    Sale de `listar_modelos`, el campo que esta tabla ya declaraba y que nadie
+    usaba: el Studio pedia el modelo como texto libre y habia que saberse el
+    slug de memoria.
+    """
+    d = DECLARADO.get(runtime)
+    if not d:
+        return {"modelos": [], "fuente": f"runtime desconocido: {runtime}"}
+    if d.get("alias_conocidos") and not d.get("listar_modelos"):
+        return {"modelos": d["alias_conocidos"], "fuente": "alias que documenta su --help"}
+    cmd = d.get("listar_modelos")
+    if not cmd or not shutil.which(d["binario"]):
+        return {"modelos": [], "fuente": ""}
+
+    hit = _CACHE.get(runtime)
+    if hit and time.time() - hit[0] < _TTL:
+        return {"modelos": hit[1], "fuente": cmd + " (cache)"}
+    try:
+        # stdin cerrado por lo mismo de siempre (`backends.run_backend`): si el
+        # padre es el servidor MCP, el stdin heredado es el canal JSON-RPC.
+        r = subprocess.run(_resolver(cmd), capture_output=True, text=True,
+                           timeout=60, stdin=subprocess.DEVNULL,
+                           encoding="utf-8", errors="replace")
+    except Exception as e:
+        return {"modelos": [], "fuente": f"fallo `{cmd}`: {type(e).__name__}"}
+
+    vistos = []
+    for linea in (r.stdout or "").splitlines():
+        # Primera columna: `agy` devuelve `slug<TAB>etiqueta`, `opencode` solo
+        # el slug. Un slug siempre trae `/`, `-`, `.` o `:`; asi se cae solo el
+        # banner ("Fetching available models...") sin listarlo como modelo.
+        slug = linea.split("	")[0].split()[0] if linea.split() else ""
+        if slug and not slug.endswith("...") and any(c in slug for c in "/-.:")                 and slug not in vistos:
+            vistos.append(slug)
+    _CACHE[runtime] = (time.time(), vistos)
+    return {"modelos": vistos, "fuente": cmd}
+
+
+def _resolver(cmd: str) -> list[str]:
+    """El argv del comando de listado, con el binario real detras del shim."""
+    from backends import _resolver_argv
+    return _resolver_argv(cmd.split())
 
 
 def tabla() -> dict:

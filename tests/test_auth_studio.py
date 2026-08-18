@@ -52,7 +52,9 @@ try:
     # Todo /api/* exige token. Se recorren TODAS las rutas, no una de muestra:
     # el riesgo real es que alguien agregue un endpoint fuera de la guardia.
     rutas_get = ["/api/estado?board=x", "/api/traza?board=x&task=t",
-                 "/api/consumo?board=x", "/api/grafos", "/api/grafo?nombre=x"]
+                 "/api/consumo?board=x", "/api/grafos", "/api/grafo?nombre=x",
+                 # Lanza un subproceso (`agy models`): sin token, ni eso.
+                 "/api/modelos?runtime=claude-code"]
     for ruta in rutas_get:
         codigo, _ = pedir(ruta)
         assert codigo == 404, f"{ruta} respondio {codigo} sin token"

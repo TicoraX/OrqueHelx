@@ -235,6 +235,10 @@ class Handler(BaseHTTPRequestHandler):
             # Sin token: no expone nada del usuario, solo que sabe hacer este
             # motor. Un agente lo consulta antes de armar un grafo.
             return self._responder(200, capacidades.tabla())
+        if ruta == "/api/modelos":
+            # Con token: lanza un subproceso (`agy models` consulta al
+            # proveedor). No va junto a /api/capacidades, que es estatico.
+            return self._responder(200, capacidades.modelos(params.get("runtime", "")))
         if ruta == "/api/consumo":
             return self._responder(200, _consumo(params.get("board", "orquester")))
         if ruta == "/api/traza":
