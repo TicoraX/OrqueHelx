@@ -27,6 +27,27 @@ HTML = Path(__file__).parent / "index.html"
 GRAFOS = RAIZ / "ui" / "grafos"
 GRAFOS.mkdir(exist_ok=True)
 
+
+def _archivo(nombre: str) -> Path:
+    """La ruta del grafo `nombre`, garantizada dentro de GRAFOS.
+
+    El nombre lo elige quien manda el pedido y terminaba en un `Path` sin
+    filtrar: con `board: "../../x"` se escribia un .json en cualquier lado del
+    disco, y se leia cualquier .json existente. Verificado explotandolo.
+    """
+    limpio = (nombre or "").strip()
+    if not limpio or set(limpio) <= {"."}:
+        raise ValueError("nombre de grafo vacio")
+    if any(c in limpio for c in '/\:*?"<>|') or ".." in limpio:
+        raise ValueError(f"nombre de grafo invalido: {nombre!r} "
+                         "(solo letras, numeros, guiones y puntos)")
+    f = (GRAFOS / f"{limpio}.json").resolve()
+    # Cinturon y tiradores: aunque la validacion de arriba se afloje, el
+    # archivo TIENE que quedar dentro de la carpeta de grafos.
+    if f.parent != GRAFOS.resolve():
+        raise ValueError(f"nombre de grafo invalido: {nombre!r}")
+    return f
+
 # board -> hilo del dispatcher. Un solo dispatcher por board a la vez: dos
 # reclamarian las mismas cards y, aunque `claim_task` lo resuelve sin corromper
 # nada, es trabajo duplicado sin motivo.
@@ -247,7 +268,10 @@ class Handler(BaseHTTPRequestHandler):
         if ruta == "/api/grafos":
             return self._responder(200, {"grafos": sorted(p.stem for p in GRAFOS.glob("*.json"))})
         if ruta == "/api/grafo":
-            f = GRAFOS / f"{params.get('nombre', 'sin-nombre')}.json"
+            try:
+                f = _archivo(params.get("nombre", ""))
+            except ValueError as e:
+                return self._responder(400, {"error": str(e)})
             if not f.exists():
                 return self._responder(404, {"error": "no existe"})
             return self._responder(200, json.loads(f.read_text(encoding="utf-8")))
@@ -282,7 +306,7 @@ class Handler(BaseHTTPRequestHandler):
                     "config": {"mcpServers": {nombre: {
                         "command": "python",
                         "args": [str(RAIZ / "mcp_exporter" / "mcp_server.py"),
-                                 str(GRAFOS / f"{nombre}.json")],
+                                 str(_archivo(nombre))],
                     }}},
                 })
             if self.path == "/api/parar":
@@ -294,8 +318,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/correr":
                 return self._responder(200, _arrancar(cuerpo.get("board", "orquester")))
             if self.path == "/api/grafo":
-                nombre = cuerpo.get("board") or "sin-nombre"
-                (GRAFOS / f"{nombre}.json").write_text(
+                _archivo(cuerpo.get("board") or "").write_text(
                     json.dumps(cuerpo, indent=2, ensure_ascii=False), encoding="utf-8")
                 return self._responder(200, {"ok": True})
         except compilador.ErrorDeGrafo as e:

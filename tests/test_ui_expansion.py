@@ -12,7 +12,7 @@ verifica con Playwright, no aca: son eventos del navegador.
 
     uv run --python 3.11 --with jsonschema python ..\\tests\\test_ui_expansion.py
 """
-import json, os, subprocess, sys, time, urllib.error, urllib.request
+import json, os, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -130,12 +130,24 @@ try:
     assert datos["modelos"] == [] and "desconocido" in datos["fuente"], datos
     print("7. /api/modelos ofrece los modelos del runtime: OK")
 
-    # --- 8. El grafo guardado conserva sus marcadores ---
+    # --- 8. El nombre del grafo no puede salirse de ui/grafos ---
+    # Explotado de verdad antes del arreglo: `board: "../../ESCAPE_TEST"`
+    # escribio un .json en la raiz del repo, y el mismo truco leia cualquier
+    # .json del disco. El nombre lo elige quien manda el pedido.
+    for malo in ["../../ESCAPE_TEST", "..\..\ESCAPE_TEST", "sub/dir", "", ".", ".."]:
+        codigo, datos = pedir("/api/grafo", {**GRAFO, "board": malo})
+        assert codigo == 400, f"acepto guardar como {malo!r}: {codigo} {datos}"
+        codigo, _ = pedir(f"/api/grafo?nombre={urllib.parse.quote(malo)}")
+        assert codigo in (400, 404), f"acepto leer {malo!r}: {codigo}"
+    assert not (RAIZ / "ESCAPE_TEST.json").exists(), "escribio fuera de ui/grafos"
+    print("8. nombres con .. o / rechazados al guardar y al leer: OK")
+
+    # --- 9. El grafo guardado conserva sus marcadores ---
     # Se guarda el grafo, no la corrida: si al guardar se sustituyera, el grafo
     # dejaria de ser reutilizable con otros datos.
     codigo, vuelto = pedir(f"/api/grafo?nombre={NOMBRE}")
     assert "{{repo}}" in vuelto["nodos"][0]["titulo"], vuelto
-    print("8. el grafo guardado sigue parametrizado: OK")
+    print("9. el grafo guardado sigue parametrizado: OK")
 finally:
     proc.terminate()
     proc.wait(timeout=10)
