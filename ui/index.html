@@ -762,9 +762,27 @@ $("#abrir").onchange = async e => {
   avisar(`Abierto '${nombre}': ${(grafo.nodos || []).length} nodo(s).`, "ok");
 };
 
+// Confirmacion en el propio boton, por lo mismo que arriba: un confirm()
+// suprimido por el navegador devuelve false y el borrado no pasa nunca.
+let confirmarBorrado = null;
 $("#borrarGrafo").onclick = async () => {
   const nombre = $("#abrir").value || grafo.board;
-  if (!nombre || !confirm(`¿Borrar el grafo '${nombre}'? Esto no se deshace.`)) return;
+  if (!nombre) return;
+  if (confirmarBorrado !== nombre) {
+    confirmarBorrado = nombre;
+    $("#borrarGrafo").textContent = "¿Seguro?";
+    $("#borrarGrafo").classList.add("peligro");
+    setTimeout(() => {
+      if (confirmarBorrado !== nombre) return;
+      confirmarBorrado = null;
+      $("#borrarGrafo").textContent = "Borrar";
+      $("#borrarGrafo").classList.remove("peligro");
+    }, 4000);
+    return;
+  }
+  confirmarBorrado = null;
+  $("#borrarGrafo").textContent = "Borrar";
+  $("#borrarGrafo").classList.remove("peligro");
   const { ok, datos } = await api("/api/grafo/borrar", { board: nombre });
   if (!ok) return avisar(datos.error || "no se pudo borrar", "error");
   await listarGrafos();
@@ -794,7 +812,7 @@ async function cargarPlantillas() {
     </div>`).join("") || '<div class="ayuda">No hay plantillas en plantillas/.</div>';
 
   for (const b of $("#plantillas").querySelectorAll("button"))
-    b.onclick = () => usarPlantilla(b.dataset.pl);
+    b.onclick = () => pedirNombre(b, b.dataset.pl);
 }
 
 $("#verPlantillas").onclick = e => {
@@ -809,12 +827,34 @@ document.addEventListener("mousedown", e => {
     p.classList.remove("abierto");
 });
 
-async function usarPlantilla(nombre) {
-  $("#panelPlantillas").classList.remove("abierto");
-  const destino = (prompt("Nombre para tu copia:", nombre) || "").trim();
-  if (!destino) return;
+// El nombre se pide EN la tarjeta, no con prompt(). Chrome ofrece "impedir que
+// esta pagina cree mas dialogos" despues de un par de prompts seguidos, y con
+// eso tildado "Usar esta" deja de hacer nada, en silencio y para siempre.
+function pedirNombre(boton, nombre) {
+  const fila = document.createElement("div");
+  fila.className = "fila";
+  fila.innerHTML = `<input value="${esc(nombre)}" spellcheck="false">
+                    <button style="width:auto">Copiar</button>`;
+  const [campo, aceptar] = [fila.querySelector("input"), fila.querySelector("button")];
+  const cerrar = () => { fila.replaceWith(boton); };
+  aceptar.onclick = () => {
+    const destino = campo.value.trim();
+    if (!destino) return campo.focus();
+    cerrar();
+    copiarPlantilla(nombre, destino);
+  };
+  campo.onkeydown = e => {
+    if (e.key === "Enter") { e.preventDefault(); aceptar.click(); }
+    if (e.key === "Escape") cerrar();
+  };
+  boton.replaceWith(fila);
+  campo.select();
+}
+
+async function copiarPlantilla(nombre, destino) {
   const { ok, datos } = await api("/api/plantilla", { plantilla: nombre, nombre: destino });
   if (!ok) return avisar(datos.error, "error");
+  $("#panelPlantillas").classList.remove("abierto");
   await listarGrafos();
   abrirGrafo(datos.grafo, destino);
   avisar(`'${nombre}' copiada como '${destino}'. Es tuya: editala sin miedo.`, "ok");
