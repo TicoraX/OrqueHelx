@@ -207,7 +207,7 @@ try:
     assert datos["faltan"] == ["repo"], datos
     codigo, datos = pedir("/api/parametros", {**GRAFO, "valores": {"repo": "  "}})
     assert datos["faltan"] == ["repo"], f"un valor en blanco cuenta como puesto: {datos}"
-    codigo, datos = pedir("/api/parametros", {**GRAFO, "valores": {"repo": "C:/x"}})
+    codigo, datos = pedir("/api/parametros", {**GRAFO, "valores": {"repo": "cualquier-cosa"}})
     assert datos["faltan"] == [], datos
     print("15. los parametros sin valor se listan aparte (y en blanco no cuenta): OK")
 

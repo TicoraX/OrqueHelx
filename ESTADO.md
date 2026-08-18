@@ -7,7 +7,7 @@
 
 ## Dónde está el código
 
-- Commit `c437097` — chore: regenerar ESTADO.md
+- Commit `80f15e2` — feat: acomodo automatico del grafo y deteccion de parametros sin valor
 - Remoto: https://github.com/TicoraX/orquester.git
 - Árbol limpio: **no** · sin pushear: 0
 
