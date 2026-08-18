@@ -3,13 +3,13 @@
 > Generado por `contexto/estado.py`. **No editar a mano**: se sobrescribe.
 > Un traspaso escrito a mano queda viejo y nadie se entera.
 
-**Fase:** con pendientes
+**Fase:** producto en uso
 
 ## Dónde está el código
 
-- Commit `732e98a` — fix: el check de portabilidad cazo una ruta absoluta en el test nuevo
+- Commit `1534f9d` — feat: chat con sesion, con las mismas barandas que un nodo del grafo
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: **no** · sin pushear: 0
+- Árbol limpio: sí · sin pushear: 0
 
 ## Runtime prestado
 
@@ -35,7 +35,7 @@
 
 ## Bloqueos
 
-- hay cambios sin commitear
+- ninguno
 
 ## Qué sigue
 
