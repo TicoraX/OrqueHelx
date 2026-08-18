@@ -54,7 +54,7 @@ try:
     rutas_get = ["/api/estado?board=x", "/api/traza?board=x&task=t",
                  "/api/consumo?board=x", "/api/grafos", "/api/grafo?nombre=x",
                  # Lanza un subproceso (`agy models`): sin token, ni eso.
-                 "/api/modelos?runtime=claude-code"]
+                 "/api/modelos?runtime=claude-code", "/api/plantillas"]
     for ruta in rutas_get:
         codigo, _ = pedir(ruta)
         assert codigo == 404, f"{ruta} respondio {codigo} sin token"
@@ -62,7 +62,8 @@ try:
 
     grafo = {"board": "x", "nodos": [{"id": "a", "titulo": "t", "runtime": "opencode"}]}
     rutas_post = ["/api/validar", "/api/compilar", "/api/correr", "/api/grafo",
-                  "/api/mcp", "/api/parametros", "/api/parar"]
+                  "/api/mcp", "/api/parametros", "/api/parar",
+                  "/api/plantilla", "/api/grafo/borrar"]
     for ruta in rutas_post:
         codigo, _ = pedir(ruta, cuerpo=grafo)
         assert codigo == 404, f"{ruta} respondio {codigo} sin token"

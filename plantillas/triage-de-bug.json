@@ -1,0 +1,40 @@
+{
+  "board": "triage-de-bug",
+  "descripcion": "Cadena de tres pasos sobre un bug: reproducirlo, encontrar la causa raíz y recién ahí proponer el arreglo. Ningún paso puede saltearse al siguiente.",
+  "nodos": [
+    {
+      "id": "reproducir",
+      "titulo": "En {{ruta}} hay este bug: {{sintoma}}\n\nTu ÚNICO trabajo es reproducirlo. Encontrá el comando o el caso mínimo que lo dispara y pegá la salida real del error. Si NO lográs reproducirlo, decilo claramente y explicá qué probaste: eso también es un resultado.",
+      "runtime": "opencode",
+      "workspace": "{{ruta}}",
+      "x": 200,
+      "y": 50
+    },
+    {
+      "id": "causa",
+      "titulo": "Tu padre reprodujo un bug. Encontrá la CAUSA RAÍZ leyendo el código: qué línea, por qué falla, y por qué el síntoma aparece donde aparece. Prohibido proponer un arreglo todavía. Si la evidencia no alcanza para afirmar la causa, decí qué falta medir.",
+      "runtime": "claude-code",
+      "workspace": "{{ruta}}",
+      "x": 200,
+      "y": 200
+    },
+    {
+      "id": "arreglo",
+      "titulo": "Tu padre identificó la causa raíz. Proponé el arreglo MÁS CHICO que la ataque —no el síntoma— y decí cómo se verifica que quedó arreglado. Si hay otros llamadores del mismo código, nombralos: el arreglo va donde está la causa, no en cada llamador.",
+      "runtime": "claude-code",
+      "workspace": "{{ruta}}",
+      "x": 200,
+      "y": 350
+    }
+  ],
+  "aristas": [
+    [
+      "reproducir",
+      "causa"
+    ],
+    [
+      "causa",
+      "arreglo"
+    ]
+  ]
+}

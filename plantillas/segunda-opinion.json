@@ -1,0 +1,40 @@
+{
+  "board": "segunda-opinion",
+  "descripcion": "La misma pregunta a dos ejecutores distintos, y un tercero que compara las respuestas y marca en qué difieren. Para decisiones donde un solo modelo te puede estar mintiendo con seguridad.",
+  "nodos": [
+    {
+      "id": "a",
+      "titulo": "{{pregunta}}\n\nRespondé de forma concreta y breve. Si no estás seguro de algo, decí explícitamente qué no sabés en vez de rellenar.",
+      "runtime": "claude-code",
+      "workspace": "{{ruta}}",
+      "x": 60,
+      "y": 70
+    },
+    {
+      "id": "b",
+      "titulo": "{{pregunta}}\n\nRespondé de forma concreta y breve. Si no estás seguro de algo, decí explícitamente qué no sabés en vez de rellenar.",
+      "runtime": "opencode",
+      "workspace": "{{ruta}}",
+      "x": 420,
+      "y": 70
+    },
+    {
+      "id": "comparar",
+      "titulo": "Tus padres respondieron la MISMA pregunta por separado. Compará las dos respuestas: (1) en qué coinciden, (2) en qué se contradicen —eso es lo importante—, (3) qué habría que verificar a mano para saber cuál tiene razón. No elijas ganador si la evidencia no alcanza.",
+      "runtime": "antigravity",
+      "workspace": "{{ruta}}",
+      "x": 240,
+      "y": 280
+    }
+  ],
+  "aristas": [
+    [
+      "a",
+      "comparar"
+    ],
+    [
+      "b",
+      "comparar"
+    ]
+  ]
+}

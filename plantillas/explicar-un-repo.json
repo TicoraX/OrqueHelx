@@ -1,0 +1,40 @@
+{
+  "board": "explicar-un-repo",
+  "descripcion": "Para caer parado en un repo que no conocés: mapa de la arquitectura, puntos de entrada y dónde están los riesgos, en paralelo y con síntesis final.",
+  "nodos": [
+    {
+      "id": "mapa",
+      "titulo": "Explorá {{ruta}} y explicá su ARQUITECTURA: qué hace el proyecto, cuáles son los módulos principales y cómo se relacionan. Máximo 15 líneas. Basate en el código, no en el README, y marcá si el README miente.",
+      "runtime": "claude-code",
+      "workspace": "{{ruta}}",
+      "x": 60,
+      "y": 70
+    },
+    {
+      "id": "entradas",
+      "titulo": "En {{ruta}} encontrá los PUNTOS DE ENTRADA: cómo se corre esto, qué comandos hay, cómo se corren los tests y qué necesita instalado para funcionar. Comandos concretos, copiables.",
+      "runtime": "opencode",
+      "workspace": "{{ruta}}",
+      "x": 420,
+      "y": 70
+    },
+    {
+      "id": "riesgos",
+      "titulo": "Tus padres mapearon un repo. Con eso y mirando el código, decí por dónde empezaría alguien nuevo y DÓNDE están los riesgos: la parte más enredada, lo que no tiene tests, lo que se rompe fácil. Máximo 8 líneas.",
+      "runtime": "antigravity",
+      "workspace": "{{ruta}}",
+      "x": 240,
+      "y": 280
+    }
+  ],
+  "aristas": [
+    [
+      "mapa",
+      "riesgos"
+    ],
+    [
+      "entradas",
+      "riesgos"
+    ]
+  ]
+}

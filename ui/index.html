@@ -76,6 +76,16 @@
                 padding:7px 9px; white-space:pre-wrap; font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
                 font-size:11.5px; max-height:220px; overflow-y:auto; color:var(--texto); line-height:1.4; }
   #traza .gasto { color:var(--tenue); margin-bottom:8px; font-variant-numeric:tabular-nums; }
+  #plantillas .pl { border:1px solid var(--linea); border-radius:6px; padding:8px 10px;
+                    margin-bottom:7px; background:#141720; }
+  #plantillas .pl b { font-size:12.5px; }
+  #plantillas .pl p { margin:3px 0 6px; font-size:11.5px; color:var(--tenue); }
+  #plantillas .meta { font-size:11px; color:var(--tenue); margin-bottom:6px;
+                      display:flex; flex-wrap:wrap; gap:6px; }
+  #plantillas .meta i { font-style:normal; border:1px solid var(--linea);
+                        border-radius:9px; padding:0 6px; }
+  #plantillas .falta { color:#e0a0a0; border-color:#7a3b39; }
+  #plantillas button { width:auto; padding:4px 9px; font-size:12px; }
   #resumen { font-size:11.5px; color:var(--tenue); white-space:pre-wrap; }
   pre.codigo { background:#141720; border:1px solid var(--linea); border-radius:5px;
                padding:7px 9px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
@@ -113,13 +123,21 @@
     <!-- Pestaña 1: Diseño del Flujo -->
     <div id="vista-diseno" class="tab-vista activa">
       <div>
+        <h2>Plantillas</h2>
+        <div id="plantillas"></div>
+      </div>
+
+      <div>
         <label>Board</label>
         <input id="board" value="mi-flujo">
       </div>
 
       <div>
         <label>Abrir un grafo guardado</label>
-        <select id="abrir"><option value="">(elegir…)</option></select>
+        <div class="fila">
+          <select id="abrir"><option value="">(elegir…)</option></select>
+          <button id="borrarGrafo" style="width:auto; white-space:nowrap;">Borrar</button>
+        </div>
       </div>
 
       <div class="fila">
@@ -496,17 +514,66 @@ async function listarGrafos() {
   s.innerHTML = '<option value="">(elegir…)</option>' +
     (datos.grafos || []).map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join("");
 }
+function abrirGrafo(datos, nombre) {
+  grafo = { nodos: [], aristas: [], ...datos, board: nombre };
+  // El board viejo no tiene por que ser el de este grafo: los task_id de la
+  // corrida anterior no significan nada aca y pintarian estados ajenos.
+  ids = {}; estado = {}; sel = null; VALORES = {}; pila = [];
+  $("#board").value = grafo.board;
+  refrescarEditor(); refrescarParams(); pintar(); refrescarEstado();
+}
+
 $("#abrir").onchange = async e => {
   const nombre = e.target.value;
   if (!nombre) return;
   const { ok, datos } = await api(`/api/grafo?nombre=${encodeURIComponent(nombre)}`);
   if (!ok) return avisar(datos.error || "no se pudo abrir", "error");
-  grafo = { board: nombre, nodos: [], aristas: [], ...datos };
-  ids = {}; estado = {}; sel = null; VALORES = {};
-  $("#board").value = grafo.board;
-  refrescarEditor(); refrescarParams(); pintar(); refrescarEstado();
+  abrirGrafo(datos, nombre);
   avisar(`Abierto '${nombre}': ${(grafo.nodos || []).length} nodo(s).`, "ok");
 };
+
+$("#borrarGrafo").onclick = async () => {
+  const nombre = $("#abrir").value || grafo.board;
+  if (!nombre || !confirm(`¿Borrar el grafo '${nombre}'? Esto no se deshace.`)) return;
+  const { ok, datos } = await api("/api/grafo/borrar", { board: nombre });
+  if (!ok) return avisar(datos.error || "no se pudo borrar", "error");
+  await listarGrafos();
+  avisar(`Borrado '${nombre}'. Las plantillas no se tocan.`, "ok");
+};
+
+// --- Plantillas -------------------------------------------------------
+// Son de solo lectura: usar una la COPIA a los grafos propios. Asi un `git
+// pull` que mejore una plantilla no te pisa lo que hayas armado encima.
+async function cargarPlantillas() {
+  const { datos } = await api("/api/plantillas");
+  $("#plantillas").innerHTML = (datos.plantillas || []).map(p => `
+    <div class="pl">
+      <b>${esc(p.nombre)}</b>
+      <p>${esc(p.descripcion || p.error || "")}</p>
+      <div class="meta">
+        <i>${p.nodos || 0} nodo(s)</i>
+        ${(p.runtimes || []).map(r =>
+          `<i class="${(p.faltan || []).includes(r) ? "falta" : ""}">${esc(r)}</i>`).join("")}
+        ${(p.parametros || []).map(x => `<i>{{${esc(x)}}}</i>`).join("")}
+      </div>
+      ${(p.faltan || []).length
+        ? `<div class="meta falta">te falta instalar: ${esc(p.faltan.join(", "))}</div>` : ""}
+      <button data-pl="${esc(p.nombre)}">Usar esta</button>
+    </div>`).join("") || '<div class="ayuda">No hay plantillas en plantillas/.</div>';
+
+  for (const b of $("#plantillas").querySelectorAll("button"))
+    b.onclick = () => usarPlantilla(b.dataset.pl);
+}
+
+async function usarPlantilla(nombre) {
+  const destino = (prompt("Nombre para tu copia:", nombre) || "").trim();
+  if (!destino) return;
+  const { ok, datos } = await api("/api/plantilla", { plantilla: nombre, nombre: destino });
+  if (!ok) return avisar(datos.error, "error");
+  await listarGrafos();
+  abrirGrafo(datos.grafo, destino);
+  avisar(`'${nombre}' copiada como '${destino}'. Es tuya: editala sin miedo.`, "ok");
+}
 
 svg.ondblclick = e => {
   if (e.target !== svg && e.target.id !== "grid") return;
@@ -773,6 +840,6 @@ grafo.nodos = [
   { id:"c", titulo:"Escribí la documentación",     runtime:"claude-code", x:280, y:230 },
 ];
 grafo.aristas = [["a","b"],["a","c"]];
-refrescarEditor(); pintar(); listarGrafos(); refrescarParams();
+refrescarEditor(); pintar(); listarGrafos(); cargarPlantillas(); refrescarParams();
 api("/api/capacidades").then(({ datos }) => { CAPS = datos || {}; pistaDeModelo(); });
 </script>

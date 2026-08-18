@@ -204,6 +204,33 @@ Dos llamadas concurrentes no se pisan: cada una usa su board.
 
 ---
 
+## 5b. Plantillas: por dónde empezar
+
+No arranques con un lienzo en blanco. El Studio trae un catálogo en la pestaña
+**Diseño**:
+
+| plantilla | qué hace |
+| --- | --- |
+| `revision-de-repo` | revisa el diff, corre los tests y emite veredicto de merge |
+| `segunda-opinion` | la misma pregunta a dos ejecutores y un tercero que los compara |
+| `triage-de-bug` | reproducir → causa raíz → arreglo, en cadena y sin saltear pasos |
+| `documentar-cambios` | del diff salen la entrada de changelog y qué doc quedó vieja |
+| `explicar-un-repo` | mapa, puntos de entrada y riesgos de un repo que no conocés |
+
+**Las plantillas viven en `plantillas/` y son de solo lectura.** "Usar esta" la
+copia a `ui/grafos/` con el nombre que le des; a partir de ahí es tuya y la
+editás sin miedo. Por eso son dos carpetas: un `git pull` que mejore una
+plantilla no te pisa lo que hayas armado encima.
+
+Cada tarjeta muestra cuántos nodos tiene, qué ejecutores usa y qué parámetros
+va a pedir. Si te falta un binario, lo dice **antes** de correr, en vez de
+descubrirlo a los 600 segundos.
+
+Para borrar uno de tus grafos, elegilo en "Abrir un grafo guardado" y dale a
+**Borrar**. Las plantillas no se pueden borrar desde la UI: para eso está git.
+
+---
+
 ## 6. El flujo de ejemplo: revisión de repo
 
 `ui/grafos/revision-repo.json`. Tres nodos, dos en paralelo:

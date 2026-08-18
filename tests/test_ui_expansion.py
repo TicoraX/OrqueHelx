@@ -21,6 +21,8 @@ sys.path.insert(0, str(RAIZ / "dispatcher"))
 import hermes_cli.kanban_db as k
 import capacidades
 import loop as dispatcher
+sys.path.insert(0, str(RAIZ / "mcp_exporter"))
+from exportar import parametros as mcp_par
 
 PUERTO = 8798
 TOKEN = "token-de-prueba-ui"
@@ -142,12 +144,64 @@ try:
     assert not (RAIZ / "ESCAPE_TEST.json").exists(), "escribio fuera de ui/grafos"
     print("8. nombres con .. o / rechazados al guardar y al leer: OK")
 
-    # --- 9. El grafo guardado conserva sus marcadores ---
+    # --- 9. Plantillas: catalogo, copiar, no pisar, borrar ---
+    codigo, datos = pedir("/api/plantillas")
+    cat = {p["nombre"]: p for p in datos["plantillas"]}
+    assert cat, "no hay plantillas en plantillas/"
+    for nombre, pl in cat.items():
+        assert pl["descripcion"], f"la plantilla {nombre} no dice para que sirve"
+        assert pl["nodos"] >= 2, f"{nombre} tiene {pl['nodos']} nodo(s)"
+        # `requiere` se deriva del grafo: tiene que coincidir con sus nodos.
+        assert pl["runtimes"], nombre
+    print(f"9. catalogo: {len(cat)} plantillas, todas con descripcion y runtimes: OK")
+
+    # Una plantilla que no compila no sirve para nada. Se valida la ESTRUCTURA
+    # (capacidades=False): que le falte un binario a esta maquina no invalida
+    # la plantilla, pero un ciclo o una arista colgada si.
+    sys.path.insert(0, str(RAIZ / "compiler"))
+    import compile as compilador
+    for f in sorted((RAIZ / "plantillas").glob("*.json")):
+        g = json.loads(f.read_text(encoding="utf-8"))
+        compilador.validar(g, capacidades=False)
+        # Y los marcadores tienen que ser sustituibles: si el titulo pide
+        # {{ruta}} y nadie lo declara, el grafo llega literal al disco.
+        assert mcp_par(g), f"{f.stem} no tiene ningun parametro: no es reutilizable"
+    print(f"9b. las {len(cat)} plantillas compilan y estan parametrizadas: OK")
+
+    COPIA = "copia-de-prueba"
+    codigo, datos = pedir("/api/plantilla", {"plantilla": "revision-de-repo", "nombre": COPIA})
+    assert codigo == 200 and datos["grafo"]["board"] == COPIA, (codigo, datos)
+    codigo, lista = pedir("/api/grafos")
+    assert COPIA in lista["grafos"], lista
+    # Usar una plantilla NO la modifica: es del repo, no del usuario.
+    original = json.loads((RAIZ / "plantillas" / "revision-de-repo.json").read_text(encoding="utf-8"))
+    assert original["board"] == "revision-de-repo", "la plantilla se modifico al usarla"
+    print("10. usar una plantilla la copia sin tocar el original: OK")
+
+    codigo, datos = pedir("/api/plantilla", {"plantilla": "revision-de-repo", "nombre": COPIA})
+    assert codigo == 409, f"piso un grafo existente sin avisar: {codigo}"
+    print("11. copiar sobre un nombre existente: 409, no lo pisa: OK")
+
+    # El nombre de la plantilla tambien viene de afuera.
+    for malo in ["../../ui/grafos/prueba-ui-expansion", "..", "no-existe"]:
+        codigo, _ = pedir("/api/plantilla", {"plantilla": malo, "nombre": "x"})
+        assert codigo == 404, f"acepto la plantilla {malo!r}: {codigo}"
+    print("12. nombres de plantilla con .. o inexistentes: 404: OK")
+
+    codigo, _ = pedir("/api/grafo/borrar", {"board": COPIA})
+    assert codigo == 200, codigo
+    codigo, lista = pedir("/api/grafos")
+    assert COPIA not in lista["grafos"], lista
+    codigo, _ = pedir("/api/grafo/borrar", {"board": COPIA})
+    assert codigo == 404, "borrar algo que no existe deberia ser 404"
+    print("13. borrar un grafo propio: OK")
+
+    # --- 14. El grafo guardado conserva sus marcadores ---
     # Se guarda el grafo, no la corrida: si al guardar se sustituyera, el grafo
     # dejaria de ser reutilizable con otros datos.
     codigo, vuelto = pedir(f"/api/grafo?nombre={NOMBRE}")
     assert "{{repo}}" in vuelto["nodos"][0]["titulo"], vuelto
-    print("9. el grafo guardado sigue parametrizado: OK")
+    print("14. el grafo guardado sigue parametrizado: OK")
 finally:
     proc.terminate()
     proc.wait(timeout=10)

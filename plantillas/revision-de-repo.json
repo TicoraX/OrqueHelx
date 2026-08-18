@@ -1,0 +1,40 @@
+{
+  "board": "revision-de-repo",
+  "descripcion": "Revisa los últimos commits buscando bugs reales, corre la suite de tests y emite un veredicto de merge. Tres ejecutores distintos: el que revisa no es el que juzga.",
+  "nodos": [
+    {
+      "id": "codigo",
+      "titulo": "Revisá el código de {{ruta}}: mirá `git diff HEAD~{{commits}} --stat` y después `git diff HEAD~{{commits}}`. Buscá bugs REALES: errores de lógica, casos borde sin cubrir, recursos que no se cierran, excepciones que se tragan. NO comentes estilo ni nombres. Si no hay nada serio, decilo. Máximo 5 hallazgos, cada uno con archivo:línea y por qué falla.",
+      "runtime": "claude-code",
+      "workspace": "{{ruta}}",
+      "x": 60,
+      "y": 70
+    },
+    {
+      "id": "tests",
+      "titulo": "En {{ruta}} corré la suite de tests con: {{comando_tests}}\nReportá cuáles pasaron y cuáles fallaron, con la línea de error de los que fallen. NO arregles nada: esto es un diagnóstico.",
+      "runtime": "opencode",
+      "workspace": "{{ruta}}",
+      "x": 420,
+      "y": 70
+    },
+    {
+      "id": "veredicto",
+      "titulo": "Tus padres te pasaron una revisión de código y un resultado de tests. Decidí si esto se puede mergear. Máximo 4 líneas: veredicto (MERGEAR / NO MERGEAR / MERGEAR CON REPAROS), el motivo principal, y qué arreglar primero si aplica. Si los tests fallaron, el veredicto NO puede ser MERGEAR.",
+      "runtime": "antigravity",
+      "workspace": "{{ruta}}",
+      "x": 240,
+      "y": 280
+    }
+  ],
+  "aristas": [
+    [
+      "codigo",
+      "veredicto"
+    ],
+    [
+      "tests",
+      "veredicto"
+    ]
+  ]
+}

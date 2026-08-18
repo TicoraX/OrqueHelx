@@ -1,0 +1,40 @@
+{
+  "board": "documentar-cambios",
+  "descripcion": "Lee el diff de los últimos commits y redacta la entrada de changelog y las actualizaciones de documentación que ese cambio necesita.",
+  "nodos": [
+    {
+      "id": "leer",
+      "titulo": "En {{ruta}} leé `git log --oneline -{{commits}}` y `git diff HEAD~{{commits}}`. Resumí QUÉ cambió y POR QUÉ, en términos de comportamiento observable para quien usa esto. Nada de listar archivos tocados: eso ya está en el diff.",
+      "runtime": "claude-code",
+      "workspace": "{{ruta}}",
+      "x": 200,
+      "y": 60
+    },
+    {
+      "id": "changelog",
+      "titulo": "Con el resumen de tu padre, escribí la entrada de CHANGELOG: qué se agregó, qué se arregló y qué rompe compatibilidad si algo rompe. Voz activa, sin relleno, sin emojis. Si el cambio no amerita entrada, decilo.",
+      "runtime": "opencode",
+      "workspace": "{{ruta}}",
+      "x": 60,
+      "y": 230
+    },
+    {
+      "id": "docs",
+      "titulo": "Con el resumen de tu padre, decí qué documentación de {{ruta}} quedó DESACTUALIZADA por este cambio: archivo, sección y qué habría que corregir. Si no quedó nada desactualizado, decilo en una línea.",
+      "runtime": "antigravity",
+      "workspace": "{{ruta}}",
+      "x": 400,
+      "y": 230
+    }
+  ],
+  "aristas": [
+    [
+      "leer",
+      "changelog"
+    ],
+    [
+      "leer",
+      "docs"
+    ]
+  ]
+}

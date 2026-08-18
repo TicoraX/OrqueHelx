@@ -9,7 +9,7 @@ pidio.
     uv run --python 3.11 --with jsonschema python ui/server.py
     -> http://127.0.0.1:8765
 """
-import hmac, json, os, secrets, subprocess, sys, threading, time, traceback
+import hmac, json, os, re, secrets, subprocess, sys, threading, time, traceback
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -27,6 +27,12 @@ HTML = Path(__file__).parent / "index.html"
 GRAFOS = RAIZ / "ui" / "grafos"
 GRAFOS.mkdir(exist_ok=True)
 
+# Plantillas: versionadas en el repo y de SOLO LECTURA desde el Studio. Usar
+# una la copia a `ui/grafos/`. Si fueran el mismo lugar, editar una plantilla y
+# despues hacer `git pull` te pisaria el trabajo: por eso dos carpetas con
+# dueños distintos.
+PLANTILLAS = RAIZ / "plantillas"
+
 
 def _archivo(nombre: str) -> Path:
     """La ruta del grafo `nombre`, garantizada dentro de GRAFOS.
@@ -38,7 +44,7 @@ def _archivo(nombre: str) -> Path:
     limpio = (nombre or "").strip()
     if not limpio or set(limpio) <= {"."}:
         raise ValueError("nombre de grafo vacio")
-    if any(c in limpio for c in '/\:*?"<>|') or ".." in limpio:
+    if ".." in limpio or not re.fullmatch(r"[\w .-]+", limpio, re.UNICODE):
         raise ValueError(f"nombre de grafo invalido: {nombre!r} "
                          "(solo letras, numeros, guiones y puntos)")
     f = (GRAFOS / f"{limpio}.json").resolve()
@@ -74,6 +80,32 @@ def _token_ok(handler) -> bool:
                 dado = par[6:]
                 break
     return hmac.compare_digest(dado, TOKEN)
+
+
+def _catalogo() -> dict:
+    """Las plantillas del repo, con lo que hace falta para correr cada una.
+
+    `requiere` se DERIVA de los nodos en vez de declararse: una lista escrita a
+    mano se desincroniza del grafo la primera vez que alguien cambia un nodo.
+    """
+    salida = []
+    for f in sorted(PLANTILLAS.glob("*.json")):
+        try:
+            g = json.loads(f.read_text(encoding="utf-8"))
+        except Exception as e:
+            salida.append({"nombre": f.stem, "error": f"no se pudo leer: {e}"})
+            continue
+        runtimes = sorted({n.get("runtime", "hermes") for n in g.get("nodos") or []})
+        salida.append({
+            "nombre": f.stem,
+            "descripcion": g.get("descripcion", ""),
+            "nodos": len(g.get("nodos") or []),
+            "runtimes": runtimes,
+            "parametros": mcp.parametros(g),
+            # Se avisa ACA lo que falta, no a los 600s de una corrida.
+            "faltan": capacidades.faltantes(runtimes),
+        })
+    return {"plantillas": salida}
 
 
 def _estado(board: str) -> dict:
@@ -265,6 +297,8 @@ class Handler(BaseHTTPRequestHandler):
         if ruta == "/api/traza":
             return self._responder(200, _traza(params.get("board", "orquester"),
                                                params.get("task", "")))
+        if ruta == "/api/plantillas":
+            return self._responder(200, _catalogo())
         if ruta == "/api/grafos":
             return self._responder(200, {"grafos": sorted(p.stem for p in GRAFOS.glob("*.json"))})
         if ruta == "/api/grafo":
@@ -317,6 +351,27 @@ class Handler(BaseHTTPRequestHandler):
                                              "" if vivo else "no hay nada corriendo en este board"})
             if self.path == "/api/correr":
                 return self._responder(200, _arrancar(cuerpo.get("board", "orquester")))
+            if self.path == "/api/plantilla":
+                # Usar una plantilla = copiarla a los grafos propios, con el
+                # nombre que elija quien la usa. La plantilla no se toca nunca.
+                origen = PLANTILLAS / f"{cuerpo.get('plantilla', '')}.json"
+                if origen.parent != PLANTILLAS or not origen.is_file():
+                    return self._responder(404, {"error": "no existe esa plantilla"})
+                g = json.loads(origen.read_text(encoding="utf-8"))
+                g["board"] = cuerpo.get("nombre") or g.get("board") or "sin-nombre"
+                destino = _archivo(g["board"])
+                if destino.exists() and not cuerpo.get("pisar"):
+                    return self._responder(409, {"error": f"ya tenés un grafo llamado "
+                                                          f"'{g['board']}'"})
+                destino.write_text(json.dumps(g, indent=2, ensure_ascii=False),
+                                   encoding="utf-8")
+                return self._responder(200, {"ok": True, "grafo": g})
+            if self.path == "/api/grafo/borrar":
+                f = _archivo(cuerpo.get("board") or "")
+                if not f.is_file():
+                    return self._responder(404, {"error": "no existe"})
+                f.unlink()
+                return self._responder(200, {"ok": True})
             if self.path == "/api/grafo":
                 _archivo(cuerpo.get("board") or "").write_text(
                     json.dumps(cuerpo, indent=2, ensure_ascii=False), encoding="utf-8")
