@@ -7,9 +7,9 @@
 
 ## Dónde está el código
 
-- Commit `93cb6a1` — chore: regenerar ESTADO.md
+- Commit `66d4a71` — docs: registrar en el traspaso las decisiones tomadas construyendo el Studio
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: **no** · sin pushear: 0
+- Árbol limpio: sí · sin pushear: 1
 
 ## Runtime prestado
 
@@ -47,7 +47,7 @@
 
 ## Bloqueos
 
-- hay cambios sin commitear
+- 1 commit(s) sin pushear
 
 ## Qué sigue
 
