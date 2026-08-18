@@ -3,13 +3,13 @@
 > Generado por `contexto/estado.py`. **No editar a mano**: se sobrescribe.
 > Un traspaso escrito a mano queda viejo y nadie se entera.
 
-**Fase:** con pendientes
+**Fase:** producto en uso
 
 ## Dónde está el código
 
-- Commit `303cf7b` — chore: regenerar ESTADO.md con el arbol ya limpio
+- Commit `8f1b9b6` — feat: zoom, deshacer, parar, resultado completo y gasto por nodo en el Studio
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: **no** · sin pushear: 0
+- Árbol limpio: sí · sin pushear: 0
 
 ## Runtime prestado
 
@@ -35,7 +35,7 @@
 
 ## Bloqueos
 
-- hay cambios sin commitear
+- ninguno
 
 ## Qué sigue
 
