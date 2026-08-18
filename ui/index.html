@@ -93,6 +93,16 @@
                         border-radius:9px; padding:0 6px; }
   #plantillas .falta { color:#e0a0a0; border-color:#7a3b39; }
   #plantillas button { width:auto; padding:4px 9px; font-size:12px; }
+  #chatHilo { display:flex; flex-direction:column; gap:8px; max-height:46vh;
+              overflow-y:auto; }
+  #chatHilo .msg { padding:7px 10px; border-radius:7px; font-size:12.5px;
+                   white-space:pre-wrap; word-break:break-word; }
+  #chatHilo .yo { background:#233047; align-self:flex-end; max-width:88%; }
+  #chatHilo .el { background:#141720; border:1px solid var(--linea);
+                  font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+  #chatHilo .mal { background:#3a1d1d; border:1px solid #7a3b39; }
+  #chatHilo .pensando { color:var(--tenue); font-style:italic; }
+  #chatSesion { margin:2px 0 4px; }
   #resumen { font-size:11.5px; color:var(--tenue); white-space:pre-wrap; }
   pre.codigo { background:#141720; border:1px solid var(--linea); border-radius:5px;
                padding:7px 9px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
@@ -125,6 +135,7 @@
       <button class="tab activa" data-tab="diseno">Diseño</button>
       <button class="tab" data-tab="nodo">Nodo</button>
       <button class="tab" data-tab="obs">Traza</button>
+      <button class="tab" data-tab="chat">Chat</button>
     </div>
   </div>
 
@@ -219,6 +230,27 @@
     </div>
 
     <!-- Pestaña 3: Observabilidad (Traza y Consumo) -->
+    <div id="vista-chat" class="tab-vista">
+      <div class="fila">
+        <select id="chatRuntime">
+          <option value="claude-code">Claude Code</option>
+          <option value="opencode">OpenCode</option>
+          <option value="antigravity">Antigravity</option>
+        </select>
+        <button id="chatNuevo" style="width:auto; white-space:nowrap;">Nueva</button>
+      </div>
+      <div>
+        <label>Workspace <span class="tenue">— dónde trabaja el agente</span></label>
+        <input id="chatWorkspace" placeholder="(el directorio del Studio)">
+      </div>
+      <div id="chatSesion" class="ayuda"></div>
+      <div id="chatHilo"></div>
+      <div>
+        <textarea id="chatMensaje" placeholder="Pedile algo. Enter manda, Shift+Enter hace salto de línea."></textarea>
+        <button id="chatEnviar" class="primario" style="margin-top:6px;">Enviar</button>
+      </div>
+    </div>
+
     <div id="vista-obs" class="tab-vista">
       <div>
         <h2>Leyenda de Estados</h2>
@@ -526,6 +558,71 @@ async function cargarTraza() {
 }
 
 const miles = n => (n || 0).toLocaleString("es-AR");
+
+// --- Chat ---------------------------------------------------------------
+// La conversacion la guarda el CLI, no el Studio: aca solo se recuerda el id
+// de sesion que devolvio el ultimo turno. Una sesion por ejecutor, porque el
+// id de claude no significa nada para opencode.
+let SESIONES = {}, chateando = false;
+
+function pintarChat(quien, texto, clase) {
+  const d = document.createElement("div");
+  d.className = "msg " + (clase || (quien === "yo" ? "yo" : "el"));
+  d.textContent = texto;                       // textContent, no innerHTML
+  $("#chatHilo").appendChild(d);
+  $("#chatHilo").scrollTop = $("#chatHilo").scrollHeight;
+  return d;
+}
+
+function verSesion() {
+  const rt = $("#chatRuntime").value, s = SESIONES[rt];
+  $("#chatSesion").textContent = s
+    ? `Sesión ${s.slice(0, 12)}… — el agente recuerda los turnos anteriores.`
+    : "Sesión nueva: el próximo mensaje arranca de cero.";
+}
+
+async function enviarChat() {
+  if (chateando) return;                       // un turno a la vez por pestaña
+  const mensaje = $("#chatMensaje").value.trim();
+  if (!mensaje) return;
+  const rt = $("#chatRuntime").value;
+  chateando = true; $("#chatEnviar").disabled = true;
+  pintarChat("yo", mensaje);
+  $("#chatMensaje").value = "";
+  const esperando = pintarChat("el", `${rt} está trabajando…`, "el pensando");
+  const t0 = Date.now();
+  const { ok, datos } = await api("/api/chat", {
+    runtime: rt, mensaje, sesion: SESIONES[rt] || "",
+    workspace: $("#chatWorkspace").value.trim(),
+    modelo: (buscar(sel) || {}).modelo || "",
+  });
+  esperando.remove();
+  if (!ok) {
+    pintarChat("el", datos.error || "falló el turno", "msg mal");
+  } else {
+    SESIONES[rt] = datos.sesion || SESIONES[rt];
+    pintarChat("el", datos.texto);
+    const u = datos.uso || {};
+    const seg = Math.round((Date.now() - t0) / 1000);
+    pintarChat("el", `${seg}s · ${miles(u.total)} tokens` +
+      (u.costo_usd != null ? ` · US$ ${u.costo_usd.toFixed(4)}` : " · sin medidor"),
+      "msg pensando");
+    verSesion();
+  }
+  chateando = false; $("#chatEnviar").disabled = false;
+}
+
+$("#chatEnviar").onclick = enviarChat;
+$("#chatRuntime").onchange = verSesion;
+$("#chatNuevo").onclick = () => {
+  // Se olvida el id, no se borra nada del lado del CLI: la conversacion vieja
+  // sigue existiendo alla y se podria retomar con su id.
+  delete SESIONES[$("#chatRuntime").value];
+  $("#chatHilo").innerHTML = ""; verSesion();
+};
+$("#chatMensaje").onkeydown = e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviarChat(); }
+};
 
 const esc = t => String(t).replace(/[&<>"]/g, c =>
   ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
@@ -935,5 +1032,6 @@ grafo.nodos = [
 ];
 grafo.aristas = [["a","b"],["a","c"]];
 refrescarEditor(); pintar(); listarGrafos(); cargarPlantillas(); refrescarParams();
+verSesion();
 api("/api/capacidades").then(({ datos }) => { CAPS = datos || {}; pistaDeModelo(); });
 </script>

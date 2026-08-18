@@ -7,7 +7,7 @@
 
 ## Dónde está el código
 
-- Commit `80f15e2` — feat: acomodo automatico del grafo y deteccion de parametros sin valor
+- Commit `732e98a` — fix: el check de portabilidad cazo una ruta absoluta en el test nuevo
 - Remoto: https://github.com/TicoraX/orquester.git
 - Árbol limpio: **no** · sin pushear: 0
 
@@ -20,8 +20,8 @@
 
 ## Verificación
 
-- `ARQUITECTURA.md` §10: **58 afirmaciones**, 1 pendiente(s)
-- 15 tests: api_rbac, auth_studio, capacidades, compilador, concurrencia_reintentos, consumo, contract, dag_heterogeneo, dag_rombo, disposicion, dos_dispatchers, mcp_export, pin_hermes, rebanada_vertical, ui_expansion
+- `ARQUITECTURA.md` §10: **64 afirmaciones**, 1 pendiente(s)
+- 16 tests: api_rbac, auth_studio, capacidades, chat, compilador, concurrencia_reintentos, consumo, contract, dag_heterogeneo, dag_rombo, disposicion, dos_dispatchers, mcp_export, pin_hermes, rebanada_vertical, ui_expansion
 
 ## Decisiones tomadas (no re-litigar sin motivo nuevo)
 

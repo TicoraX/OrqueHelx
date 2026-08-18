@@ -17,7 +17,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ / "hermes-agent"))
 import hermes_cli.kanban_db as k
 
-from backends import run_backend, BackendError, BACKENDS
+from backends import run_backend, chat_backend, BackendError, BACKENDS
 
 # El carril va en `assignee`, y el runtime como sufijo: `orquester-external:opencode`.
 # Informacion de ruteo en el campo de ruteo. Dos razones para no usar `skills`:
@@ -56,6 +56,16 @@ _PERMANENTES = ("no esta en el PATH", "no se pudo lanzar",
 # siguen en la denylist de `backends.FLAGS_PROHIBIDOS`). Cuando el Studio deje
 # elegir permisos por nodo, esto pasa a ser el default y no la unica opcion.
 _HERRAMIENTAS = ["Read", "Grep", "Glob", "Bash"]
+
+
+def run_chat(runtime: str, mensaje: str, **kw) -> dict:
+    """Un turno de chat con las MISMAS barandas que un nodo del grafo.
+
+    Existe para que el Studio no llame a `chat_backend` en crudo y se saltee
+    los permisos: un chat es un agente con shell igual que un nodo, solo que
+    sin contrato de salida.
+    """
+    return chat_backend(runtime, mensaje, herramientas=_HERRAMIENTAS, **kw)
 
 
 def carril(runtime: str) -> str:

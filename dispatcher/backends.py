@@ -301,6 +301,126 @@ def _validar(obj: dict) -> dict:
     return obj
 
 
+# --- Chat: conversacion con sesion, sin contrato JSON --------------------
+# Un nodo del grafo entrega un AgentAdapterOutput; un chat entrega texto y
+# tiene que ACORDARSE del turno anterior. Los tres CLIs guardan la sesion y la
+# retoman por id. Medido, no supuesto (§10):
+#   claude-code : session_id     -> --resume
+#   opencode    : sessionID      -> --session
+#   antigravity : conversation_id-> --conversation
+# En los tres, retomar devuelve el MISMO id, asi que la sesion no se renumera
+# a mitad de la conversacion.
+CHAT = {
+    "claude-code": (
+        lambda msg, sesion, modelo: [
+            "claude", "-p", msg, "--output-format", "json",
+            "--max-turns", str(MAX_TURNS),
+            *(["--resume", sesion] if sesion else []),
+            *(["--model", modelo] if modelo else []),
+        ],
+        lambda out: (_primer_objeto(out).get("result") or "",
+                     _primer_objeto(out).get("session_id")),
+    ),
+    "antigravity": (
+        lambda msg, sesion, modelo: [
+            "agy", "-p", msg, "--output-format", "json", "--print-timeout", "5m",
+            *(["--conversation", sesion] if sesion else []),
+            *(["--model", modelo] if modelo else []),
+        ],
+        lambda out: (_primer_objeto(out).get("response") or "",
+                     _primer_objeto(out).get("conversation_id")),
+    ),
+    "opencode": (
+        lambda msg, sesion, modelo: [
+            "opencode", "run", msg, "--format", "json",
+            *(["--session", sesion] if sesion else []),
+            *(["--model", modelo] if modelo else []),
+        ],
+        lambda out: (_texto_de_jsonl(out), _sesion_de_jsonl(out)),
+    ),
+}
+
+
+def _sesion_de_jsonl(stdout: str) -> str | None:
+    """El `sessionID` de los eventos de opencode. El primero que aparezca."""
+    for linea in stdout.splitlines():
+        if not linea.strip().startswith("{"):
+            continue
+        try:
+            ev = json.loads(linea)
+        except json.JSONDecodeError:
+            continue
+        for sitio in (ev, ev.get("part") or {}):
+            if isinstance(sitio, dict) and isinstance(sitio.get("sessionID"), str):
+                return sitio["sessionID"]
+    return None
+
+
+def chat_backend(runtime: str, mensaje: str, *, sesion: str = None,
+                 timeout: int = 600, cwd: str = None,
+                 herramientas: list[str] = None, modelo: str = None) -> dict:
+    """Un turno de conversacion. Devuelve texto, la sesion y el consumo.
+
+    Comparte con `run_backend` la denylist de flags, el stdin cerrado y el
+    `cwd`: es el mismo agente con las mismas barandas, solo que sin contrato.
+    """
+    if runtime not in CHAT:
+        raise BackendError(f"runtime desconocido para chat: {runtime}")
+    construir_argv, parser = CHAT[runtime]
+    argv = construir_argv(mensaje, sesion, modelo)
+    if herramientas and runtime == "claude-code":
+        argv += ["--allowedTools", ",".join(herramientas)]
+
+    proc = _correr(runtime, argv, timeout=timeout, cwd=cwd)
+    try:
+        texto, sesion_nueva = parser(proc.stdout)
+    except Exception as e:
+        cola = (proc.stderr or proc.stdout or "")[-400:]
+        raise BackendError(
+            f"{runtime}: {type(e).__name__}: {e}. Ultimos 400 chars: {cola!r}") from e
+    if not (texto or "").strip():
+        raise BackendError(f"{runtime} no devolvio texto")
+
+    extraer = USO.get(runtime)
+    return {"texto": texto,
+            # Si el CLI no informa sesion, se conserva la que ya tenia: perder
+            # el id a mitad de la charla arrancaria una conversacion nueva sin
+            # avisar, y el usuario veria al agente olvidarse de todo.
+            "sesion": sesion_nueva or sesion,
+            "uso": extraer(proc.stdout) if extraer else _uso_vacio(runtime)}
+
+
+def _correr(runtime: str, argv: list[str], *, timeout: int, cwd: str = None):
+    """Lanzar un CLI de agente. Las reglas de invocacion viven ACA, una vez.
+
+    Estaban duplicadas y la duplicacion costo caro: el bug de `stdin` heredado
+    se arreglo primero en `run_backend` y aparecio de nuevo, identico, en el
+    exportador MCP. Una sola copia o vuelve a pasar.
+    """
+    prohibidos = FLAGS_PROHIBIDOS.intersection(argv)
+    if prohibidos:
+        raise BackendError(f"flags de bypass prohibidos: {sorted(prohibidos)}")
+    try:
+        return subprocess.run(
+            _resolver_argv(argv), capture_output=True, text=True, timeout=timeout,
+            encoding="utf-8", errors="replace",
+            # stdin cerrado, SIEMPRE. Sin esto el CLI hereda el stdin del padre
+            # y puede quedarse leyendolo — y cuando el padre es el servidor MCP,
+            # ese stdin **es el canal JSON-RPC**: el agente se come los mensajes
+            # del protocolo y las dos partes se cuelgan. Verificado: opencode
+            # responde en 9s suelto y colgaba >600s lanzado desde el servidor.
+            stdin=subprocess.DEVNULL,
+            cwd=cwd,
+        )
+    except OSError as e:
+        # OSError y no solo FileNotFoundError: un `cwd` inexistente tira
+        # NotADirectoryError, y sin atraparlo se escapaba del pool de hilos y
+        # mataba el tick entero por un nodo mal configurado.
+        raise BackendError(f"no se pudo lanzar {runtime}: {e}") from e
+    except subprocess.TimeoutExpired as e:
+        raise BackendError(f"{runtime} excedio {timeout}s") from e
+
+
 def run_backend(runtime: str, goal: str, *, timeout: int = 600,
                 cwd: str = None, herramientas: list[str] = None,
                 modelo: str = None) -> dict:
@@ -344,30 +464,7 @@ def run_backend(runtime: str, goal: str, *, timeout: int = 600,
         if herramientas and runtime == "claude-code":
             argv += ["--allowedTools", ",".join(herramientas)]
 
-        prohibidos = FLAGS_PROHIBIDOS.intersection(argv)
-        if prohibidos:
-            raise BackendError(f"flags de bypass prohibidos: {sorted(prohibidos)}")
-
-        try:
-            proc = subprocess.run(
-                _resolver_argv(argv), capture_output=True, text=True, timeout=timeout,
-                encoding="utf-8", errors="replace",
-                # stdin cerrado, SIEMPRE. Sin esto el CLI hereda el stdin del
-                # padre y puede quedarse leyendolo — y cuando el padre es el
-                # servidor MCP, ese stdin **es el canal JSON-RPC**: el agente se
-                # come los mensajes del protocolo y las dos partes se cuelgan.
-                # Verificado: opencode responde en 9s suelto y colgaba >600s
-                # lanzado desde el servidor MCP.
-                stdin=subprocess.DEVNULL,
-                cwd=cwd,
-            )
-        except OSError as e:
-            # OSError y no solo FileNotFoundError: un `cwd` inexistente tira
-            # NotADirectoryError, y sin atraparlo se escapaba del pool de hilos
-            # y mataba el tick entero por un nodo mal configurado.
-            raise BackendError(f"no se pudo lanzar {runtime}: {e}") from e
-        except subprocess.TimeoutExpired as e:
-            raise BackendError(f"{runtime} excedio {timeout}s") from e
+        proc = _correr(runtime, argv, timeout=timeout, cwd=cwd)
 
     # Deliberadamente NO se mira proc.returncode: `agy -p` sale 0 aunque falle
     # (SS4.1, verificado). El veredicto sale de parsear la salida.

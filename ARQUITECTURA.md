@@ -277,7 +277,7 @@ Knobs relevantes bajo `delegation:` en `config.yaml`: `max_concurrent_children` 
 
 ## 10. Estado de verificación
 
-**58 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **nueve
+**64 afirmaciones, 1 pendiente.** Lo que más vale de esta tabla son las **nueve
 filas "Verificado: NO"**: supuestos de diseño que parecían ciertos leyendo el
 código de Hermes y que la ejecución desmintió. Cada una habría sido un bug en
 producción, y ninguna se ve sin correr el sistema.
@@ -436,6 +436,38 @@ muestra que sale mal.
   delete, y un fallo al auditar no tumba la operación que auditaba.
 
 ---
+
+## 10.4 Chat: sesión por backend
+
+Un nodo del grafo entrega un contrato; un chat entrega texto y tiene que
+**acordarse del turno anterior**. Los tres CLIs guardan la conversación y la
+retoman por id. Medido contra los binarios instalados, no leído de la doc:
+
+| runtime | id en la salida | flag para retomar | ¿el id se mantiene? |
+| --- | --- | --- | --- |
+| `claude-code` | `session_id` | `--resume <id>` | sí |
+| `opencode` | `sessionID` (en los eventos JSONL) | `--session <id>` | sí |
+| `antigravity` | `conversation_id` | `--conversation <id>` | sí |
+
+Verificado ejecutando: primer turno "responde exactamente: ok", segundo turno
+"repetí textual mi mensaje anterior" con el id devuelto. Los tres recuperaron
+el mensaje original y **devolvieron el mismo id**, así que la sesión no se
+renumera a mitad de la conversación.
+
+Consecuencias de diseño:
+
+- **El Studio no persiste conversaciones.** La sesión la guarda el CLI; por la
+  API viaja solo el id. Una sesión por runtime, porque el id de `claude` no
+  significa nada para `opencode`.
+- **Las barandas son las mismas que las de un nodo.** El chat entra por
+  `loop.run_chat`, que concede las herramientas del carril, y comparte con
+  `run_backend` la denylist de flags de bypass, el `stdin` cerrado y el `cwd`.
+  Un chat es un agente con shell, igual que un nodo.
+- **El servidor pasó a `ThreadingHTTPServer`.** Un turno tarda entre 20 y 120
+  segundos y con un solo hilo congelaba el Studio entero: el canvas dejaba de
+  refrescar el estado de la corrida mientras el chat pensaba.
+- Si el CLI no informa sesión en un turno, se **conserva la anterior**: perder
+  el id a mitad de la charla arrancaría una conversación nueva sin avisar.
 
 ## 10.3 Contexto del proyecto y capacidades de los backends
 

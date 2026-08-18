@@ -247,6 +247,24 @@ Para borrar uno de tus grafos, elegilo en "Abrir un grafo guardado" y dale a
 
 ---
 
+## 5c. El chat: una tarea suelta, sin dibujar un grafo
+
+Pestaña **Chat**. Elegís ejecutor, opcionalmente un workspace, y hablás. El
+agente **recuerda los turnos anteriores**: la conversación la guarda el propio
+CLI y el Studio solo lleva el id de sesión.
+
+- Una sesión **por ejecutor**: cambiar de Claude Code a OpenCode es entrar a
+  otra conversación, no continuar la misma.
+- **Nueva** olvida el id y limpia el hilo. No borra nada del lado del CLI: esa
+  conversación sigue existiendo allá.
+- Cada turno muestra cuánto tardó y cuánto consumió. **No son gratis**: un
+  turno corto sobre un repo puede costar decenas de miles de tokens, porque el
+  agente carga contexto.
+- El chat corre con **las mismas barandas que un nodo**: las herramientas del
+  carril y la denylist de flags de bypass.
+
+---
+
 ## 6. El flujo de ejemplo: revisión de repo
 
 `ui/grafos/revision-repo.json`. Tres nodos, dos en paralelo:

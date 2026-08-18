@@ -108,7 +108,10 @@ assert p not in loop.reintentar(conn), "un `capability` NO se reintenta"
 # "no se pudo lanzar" y `_PERMANENTES` quedo buscando una cadena que ya nadie
 # emitia, asi que un fallo permanente se reintentaba dos veces al pedo.
 import inspect
-fuente = inspect.getsource(b.run_backend) + inspect.getsource(b._resolver_argv)
+# `_correr` incluido: las reglas de invocacion (y sus mensajes de error) se
+# mudaron ahi al unificarlas con el chat. Este assert lo detecto solo.
+fuente = (inspect.getsource(b.run_backend) + inspect.getsource(b._resolver_argv)
+          + inspect.getsource(b._correr))
 for frase in loop._PERMANENTES:
     assert frase in fuente, f"'{frase}' no lo emite nadie en backends.py"
 print("7. cada frase de _PERMANENTES existe de verdad en backends: OK")

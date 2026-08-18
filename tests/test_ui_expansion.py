@@ -211,12 +211,19 @@ try:
     assert datos["faltan"] == [], datos
     print("15. los parametros sin valor se listan aparte (y en blanco no cuenta): OK")
 
-    # --- 16. El grafo guardado conserva sus marcadores ---
+    # --- 16. El chat rechaza lo que no puede atender, sin gastar un turno ---
+    codigo, datos = pedir("/api/chat", {"runtime": "hermes", "mensaje": "hola"})
+    assert codigo == 400 and "no puede chatear" in datos["error"], datos
+    codigo, datos = pedir("/api/chat", {"runtime": "claude-code", "mensaje": "   "})
+    assert codigo == 400 and "vacio" in datos["error"], datos
+    print("16. el chat rechaza runtime invalido y mensaje vacio: OK")
+
+    # --- 17. El grafo guardado conserva sus marcadores ---
     # Se guarda el grafo, no la corrida: si al guardar se sustituyera, el grafo
     # dejaria de ser reutilizable con otros datos.
     codigo, vuelto = pedir(f"/api/grafo?nombre={NOMBRE}")
     assert "{{repo}}" in vuelto["nodos"][0]["titulo"], vuelto
-    print("16. el grafo guardado sigue parametrizado: OK")
+    print("17. el grafo guardado sigue parametrizado: OK")
 finally:
     proc.terminate()
     proc.wait(timeout=10)

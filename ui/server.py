@@ -10,7 +10,7 @@ pidio.
     -> http://127.0.0.1:8765
 """
 import hmac, json, os, re, secrets, subprocess, sys, threading, time, traceback
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -327,6 +327,25 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/validar":
                 compilador.validar(cuerpo)
                 return self._responder(200, {"ok": True})
+            if self.path == "/api/chat":
+                # Un turno de conversacion con el ejecutor elegido. La sesion
+                # la guarda el CLI: aca solo viaja el id de ida y vuelta, asi
+                # que el Studio no persiste ninguna conversacion.
+                rt = cuerpo.get("runtime", "")
+                if rt not in dispatcher.BACKENDS:
+                    return self._responder(400, {"error": f"'{rt}' no puede chatear"})
+                if not (cuerpo.get("mensaje") or "").strip():
+                    return self._responder(400, {"error": "mensaje vacio"})
+                try:
+                    r = dispatcher.run_chat(
+                        rt, cuerpo["mensaje"],
+                        sesion=cuerpo.get("sesion") or None,
+                        cwd=cuerpo.get("workspace") or None,
+                        modelo=cuerpo.get("modelo") or None,
+                        timeout=int(cuerpo.get("timeout") or 600))
+                except Exception as e:
+                    return self._responder(400, {"error": str(e)[:1500]})
+                return self._responder(200, r)
             if self.path == "/api/ordenar":
                 # Solo calcula: no guarda ni compila nada. La UI aplica las
                 # coordenadas que recibe.
@@ -426,4 +445,7 @@ if __name__ == "__main__":
         print("  ejecuta agentes con shell. No lo dejes escuchando sin necesidad.")
     if not os.environ.get("ORQUESTER_TOKEN"):
         print("  (token nuevo en cada arranque; fijalo con ORQUESTER_TOKEN)")
-    HTTPServer((host, puerto), Handler).serve_forever()
+    # ThreadingHTTPServer y no HTTPServer: un turno de chat tarda entre 20 y
+    # 120 segundos, y con un solo hilo ese pedido congela el Studio entero
+    # (el canvas deja de refrescar el estado de la corrida mientras tanto).
+    ThreadingHTTPServer((host, puerto), Handler).serve_forever()
