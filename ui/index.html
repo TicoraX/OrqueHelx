@@ -93,6 +93,13 @@
                         border-radius:9px; padding:0 6px; }
   #plantillas .falta { color:#e0a0a0; border-color:#7a3b39; }
   #plantillas button { width:auto; padding:4px 9px; font-size:12px; }
+  input.falta { border-color: #c9a227; }
+  .nodo[data-estado="running"] rect { animation: pulso 1.6s ease-in-out infinite; }
+  @keyframes pulso { 50% { stroke-opacity: .45; } }
+  @media (prefers-reduced-motion: reduce) {
+    .nodo[data-estado="running"] rect { animation: none; }
+  }
+  #chatMensaje { resize:vertical; min-height:42px; max-height:140px; }
   #chatHilo { display:flex; flex-direction:column; gap:8px; max-height:46vh;
               overflow-y:auto; }
   #chatHilo .msg { padding:7px 10px; border-radius:7px; font-size:12.5px;
@@ -170,6 +177,7 @@
       <div class="fila">
         <button id="guardar">Guardar</button>
         <button id="validar">Validar</button>
+        <button id="ordenar">Ordenar</button>
       </div>
 
       <div id="bloqueParams" style="display:none;">
@@ -429,6 +437,7 @@ function pintar() {
     const est = nota ? null : estado[ids[n.id]]?.estado;
     const g = document.createElementNS(svg.namespaceURI, "g");
     g.setAttribute("class", "nodo" + (sel === n.id ? " sel" : ""));
+    g.setAttribute("data-estado", est || "");
     g.setAttribute("transform", `translate(${n.x},${n.y})`);
 
     const r = document.createElementNS(svg.namespaceURI, "rect");
@@ -572,23 +581,47 @@ const miles = n => (n || 0).toLocaleString("es-AR");
 // La conversacion la guarda el CLI, no el Studio: aca solo se recuerda el id
 // de sesion que devolvio el ultimo turno. Una sesion por ejecutor, porque el
 // id de claude no significa nada para opencode.
-let SESIONES = {}, chateando = false;
+let SESIONES = {}, TOTALES_CHAT = {}, chateando = false;
 
 function pintarChat(quien, texto, clase) {
   const d = document.createElement("div");
   d.className = "msg " + (clase || (quien === "yo" ? "yo" : "el"));
-  d.textContent = texto;                       // textContent, no innerHTML
+  if (quien === "el" && !clase) {
+    const hdr = document.createElement("div");
+    hdr.style.cssText = "display:flex; justify-content:flex-end; margin-bottom:4px;";
+    const btn = document.createElement("button");
+    btn.className = "res-btn";
+    btn.style.cssText = "width:auto; padding:2px 6px; font-size:10.5px;";
+    btn.textContent = "Copiar";
+    btn.onclick = () => {
+      navigator.clipboard.writeText(texto);
+      btn.textContent = "¡Copiado!";
+      setTimeout(() => { btn.textContent = "Copiar"; }, 1500);
+    };
+    hdr.appendChild(btn);
+    d.appendChild(hdr);
+    const cuerpo = document.createElement("div");
+    cuerpo.textContent = texto;
+    d.appendChild(cuerpo);
+  } else {
+    d.textContent = texto;                       // textContent, no innerHTML
+  }
   $("#chatHilo").appendChild(d);
   $("#chatHilo").scrollTop = $("#chatHilo").scrollHeight;
   return d;
 }
 
 function verSesion() {
-  const rt = $("#chatRuntime").value, s = SESIONES[rt];
+  const rt = $("#chatRuntime").value, s = SESIONES[rt], tot = TOTALES_CHAT[rt];
   llenarEsfuerzo("#chatEsfuerzo", rt, $("#chatEsfuerzo").value);
-  $("#chatSesion").textContent = s
+  const acum = tot && tot.turnos > 0
+    ? ` · Acumulado: ${miles(tot.tokens)} tokens` +
+      (tot.con_costo ? ` · US$ ${tot.costo_usd.toFixed(4)}` : " (por suscripción)") +
+      ` (${tot.turnos} turno${tot.turnos === 1 ? "" : "s"})`
+    : "";
+  $("#chatSesion").textContent = (s
     ? `Sesión ${s.slice(0, 12)}… — el agente recuerda los turnos anteriores.`
-    : "Sesión nueva: el próximo mensaje arranca de cero.";
+    : "Sesión nueva: el próximo mensaje arranca de cero.") + acum;
 }
 
 async function enviarChat() {
@@ -599,13 +632,20 @@ async function enviarChat() {
   chateando = true; $("#chatEnviar").disabled = true;
   pintarChat("yo", mensaje);
   $("#chatMensaje").value = "";
-  const esperando = pintarChat("el", `${rt} está trabajando…`, "el pensando");
+  $("#chatMensaje").style.height = "auto";
   const t0 = Date.now();
+  const esperando = pintarChat("el", `${rt} está trabajando… (0s)`, "el pensando");
+  const reloj = setInterval(() => {
+    const seg = Math.round((Date.now() - t0) / 1000);
+    esperando.textContent = `${rt} está trabajando… (${seg}s)`;
+  }, 1000);
+
   const { ok, datos } = await api("/api/chat", {
     runtime: rt, mensaje, sesion: SESIONES[rt] || "",
     workspace: $("#chatWorkspace").value.trim(),
     esfuerzo: $("#chatEsfuerzo").value,
   });
+  clearInterval(reloj);
   esperando.remove();
   if (!ok) {
     pintarChat("el", datos.error || "falló el turno", "msg mal");
@@ -617,6 +657,14 @@ async function enviarChat() {
     pintarChat("el", `${seg}s · ${miles(u.total)} tokens` +
       (u.costo_usd != null ? ` · US$ ${u.costo_usd.toFixed(4)}` : " · sin medidor"),
       "msg pensando");
+
+    if (!TOTALES_CHAT[rt]) TOTALES_CHAT[rt] = { tokens:0, costo_usd:0, con_costo:false, turnos:0 };
+    TOTALES_CHAT[rt].tokens += u.total || 0;
+    TOTALES_CHAT[rt].turnos += 1;
+    if (u.costo_usd != null) {
+      TOTALES_CHAT[rt].costo_usd += u.costo_usd;
+      TOTALES_CHAT[rt].con_costo = true;
+    }
     verSesion();
   }
   chateando = false; $("#chatEnviar").disabled = false;
@@ -628,7 +676,12 @@ $("#chatNuevo").onclick = () => {
   // Se olvida el id, no se borra nada del lado del CLI: la conversacion vieja
   // sigue existiendo alla y se podria retomar con su id.
   delete SESIONES[$("#chatRuntime").value];
+  delete TOTALES_CHAT[$("#chatRuntime").value];
   $("#chatHilo").innerHTML = ""; verSesion();
+};
+$("#chatMensaje").oninput = function() {
+  this.style.height = "auto";
+  this.style.height = Math.min(this.scrollHeight, 140) + "px";
 };
 $("#chatMensaje").onkeydown = e => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviarChat(); }
@@ -661,18 +714,26 @@ function refrescarEditor() {
 let VALORES = {};
 
 async function refrescarParams() {
-  const { datos } = await api("/api/parametros", grafo);
+  const { datos } = await api("/api/parametros", { ...grafo, valores: VALORES });
   const ps = datos.parametros || [];
+  const faltan = new Set(datos.faltan || []);
   $("#bloqueParams").style.display = ps.length ? "block" : "none";
   if (!ps.length) return;
   const caja = $("#params");
   const previos = new Set([...caja.querySelectorAll("input")].map(i => i.dataset.p));
-  if (ps.length === previos.size && ps.every(p => previos.has(p))) return;
+  if (ps.length === previos.size && ps.every(p => previos.has(p))) {
+    for (const i of caja.querySelectorAll("input"))
+      i.classList.toggle("falta", faltan.has(i.dataset.p));
+    return;
+  }
   caja.innerHTML = ps.map(p =>
     `<div><label>${esc(p)}</label>
-       <input data-p="${esc(p)}" value="${esc(VALORES[p] || "")}"></div>`).join("");
+       <input data-p="${esc(p)}" class="${faltan.has(p) ? "falta" : ""}" value="${esc(VALORES[p] || "")}"></div>`).join("");
   for (const i of caja.querySelectorAll("input"))
-    i.oninput = e => { VALORES[e.target.dataset.p] = e.target.value; };
+    i.oninput = e => {
+      VALORES[e.target.dataset.p] = e.target.value;
+      refrescarParams();
+    };
 }
 
 async function listarGrafos() {
@@ -807,6 +868,30 @@ svg.onwheel = e => {
 // Atajos de teclado seguros
 document.addEventListener("keydown", e => {
   if (/^(INPUT|TEXTAREA|SELECT)$/i.test(e.target.tagName)) return;
+
+  // Encuadrar lienzo (F)
+  if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault();
+    encuadrar();
+    return;
+  }
+
+  // Duplicar nodo seleccionado (Ctrl+D o Cmd+D)
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") {
+    if (sel) {
+      e.preventDefault();
+      const n = buscar(sel);
+      if (n) {
+        anotar();
+        const nuevo = { ...n, id: nuevoId(), x: n.x + 30, y: n.y + 30 };
+        grafo.nodos.push(nuevo);
+        sel = nuevo.id;
+        refrescarEditor();
+        pintar();
+      }
+      return;
+    }
+  }
 
   // Deshacer (Ctrl+Z o Cmd+Z)
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
@@ -997,6 +1082,13 @@ $("#guardar").onclick = async () => {
   await listarGrafos();
   avisar(`Guardado como '${grafo.board}' en ui/grafos/.`, "ok");
 };
+$("#ordenar").onclick = async () => {
+  const { ok, datos } = await api("/api/ordenar", grafo);
+  if (!ok) return avisar(datos.error, "error");
+  anotar();                                   // que Ctrl+Z lo deshaga
+  for (const n of grafo.nodos) Object.assign(n, datos.posiciones[n.id]);
+  pintar(); encuadrar();
+};
 $("#compilar").onclick = async () => {
   const { ok, datos } = await api("/api/compilar", { ...grafo, valores: VALORES });
   if (!ok) return avisar(datos.error, "error");
@@ -1054,13 +1146,38 @@ async function cargarConsumo() {
     `<div class="linea"><span class="et">${et}</span><span class="val">${val}</span></div>`;
   const costo = t.con_costo
     ? `US$ ${t.costo_usd.toFixed(4)}` : "—";
+
+  let barraHtml = "";
+  const pres = parseFloat(grafo.presupuesto_usd);
+  if (pres && pres > 0) {
+    const costoActual = t.con_costo ? t.costo_usd : 0;
+    const pct = (costoActual / pres) * 100;
+    const col = pct > 100 ? "var(--failed)" : (pct >= 75 ? "var(--ready)" : "var(--acento)");
+    const anchoBarra = Math.min(pct, 100);
+    barraHtml = `
+      <div style="margin-top:8px; padding-top:6px; border-top:1px solid var(--linea);">
+        <div class="linea">
+          <span class="et">tope de gasto</span>
+          <span class="val">${t.con_costo ? `US$ ${costoActual.toFixed(4)}` : "—"} / US$ ${pres.toFixed(2)} (${pct.toFixed(0)}%)</span>
+        </div>
+        <div style="background:#141720; border:1px solid var(--linea); border-radius:4px; height:8px; overflow:hidden; margin:4px 0 6px;">
+          <div style="background:${col}; width:${anchoBarra}%; height:100%; transition:width .3s;"></div>
+        </div>
+        <div class="nota" style="border-top:none; padding-top:0;">
+          El corte es entre nodos: lo que ya corre termina y cierra su card.
+          ${t.sin_costo ? `<br>${t.sin_costo} nodo(s) corrieron por suscripción y no informan medidor: no suman a la barra.` : ""}
+        </div>
+      </div>`;
+  }
+
   $("#consumo").innerHTML =
     fila("tokens", miles(t.total)) +
     fila("entrada / salida", `${miles(t.entrada)} / ${miles(t.salida)}`) +
     (t.cache_lectura ? fila("desde cache", miles(t.cache_lectura)) : "") +
     fila("equivalente API", costo) +
     fila("intentos", t.intentos) +
-    (t.sin_costo
+    barraHtml +
+    (t.sin_costo && !(pres && pres > 0)
       ? `<div class="nota">${t.sin_costo} nodo(s) corrieron por suscripción y no
          informan medidor: no entran en el equivalente API.</div>` : "");
 }
