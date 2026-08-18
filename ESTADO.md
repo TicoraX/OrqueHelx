@@ -3,13 +3,13 @@
 > Generado por `contexto/estado.py`. **No editar a mano**: se sobrescribe.
 > Un traspaso escrito a mano queda viejo y nadie se entera.
 
-**Fase:** producto en uso
+**Fase:** con pendientes
 
 ## Dónde está el código
 
-- Commit `502b1cb` — feat: notas y reglas en el grafo, plantillas de cinco nodos, panel desplegable
+- Commit `c437097` — chore: regenerar ESTADO.md
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 0
+- Árbol limpio: **no** · sin pushear: 0
 
 ## Runtime prestado
 
@@ -21,7 +21,7 @@
 ## Verificación
 
 - `ARQUITECTURA.md` §10: **58 afirmaciones**, 1 pendiente(s)
-- 14 tests: api_rbac, auth_studio, capacidades, compilador, concurrencia_reintentos, consumo, contract, dag_heterogeneo, dag_rombo, dos_dispatchers, mcp_export, pin_hermes, rebanada_vertical, ui_expansion
+- 15 tests: api_rbac, auth_studio, capacidades, compilador, concurrencia_reintentos, consumo, contract, dag_heterogeneo, dag_rombo, disposicion, dos_dispatchers, mcp_export, pin_hermes, rebanada_vertical, ui_expansion
 
 ## Decisiones tomadas (no re-litigar sin motivo nuevo)
 
@@ -35,7 +35,7 @@
 
 ## Bloqueos
 
-- ninguno
+- hay cambios sin commitear
 
 ## Qué sigue
 

@@ -63,7 +63,7 @@ try:
     grafo = {"board": "x", "nodos": [{"id": "a", "titulo": "t", "runtime": "opencode"}]}
     rutas_post = ["/api/validar", "/api/compilar", "/api/correr", "/api/grafo",
                   "/api/mcp", "/api/parametros", "/api/parar",
-                  "/api/plantilla", "/api/grafo/borrar"]
+                  "/api/plantilla", "/api/grafo/borrar", "/api/ordenar"]
     for ruta in rutas_post:
         codigo, _ = pedir(ruta, cuerpo=grafo)
         assert codigo == 404, f"{ruta} respondio {codigo} sin token"

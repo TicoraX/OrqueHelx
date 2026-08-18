@@ -19,6 +19,7 @@ for sub in ("hermes-agent", "dispatcher", "compiler", "mcp_exporter"):
 
 import hermes_cli.kanban_db as k
 import compile as compilador
+import disposicion
 import loop as dispatcher
 import exportar as mcp
 import capacidades
@@ -326,11 +327,24 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/validar":
                 compilador.validar(cuerpo)
                 return self._responder(200, {"ok": True})
+            if self.path == "/api/ordenar":
+                # Solo calcula: no guarda ni compila nada. La UI aplica las
+                # coordenadas que recibe.
+                compilador.validar(cuerpo, capacidades=False)
+                return self._responder(200, {"posiciones": disposicion.ordenar(cuerpo)})
             if self.path == "/api/parametros":
                 # Los marcadores los detecta el exportador MCP, no una segunda
                 # regex en el navegador: si se duplica, se desincroniza y el
                 # Studio compila con un `{{marcador}}` que llega literal al disco.
-                return self._responder(200, {"parametros": mcp.parametros(cuerpo)})
+                # `faltan` sale del mismo lugar que los parametros: si la UI
+                # los contara por su cuenta, marcaria en ambar uno distinto del
+                # que rechaza el compilador.
+                todos = mcp.parametros(cuerpo)
+                valores = cuerpo.get("valores") or {}
+                return self._responder(200, {
+                    "parametros": todos,
+                    "faltan": [x for x in todos if not str(valores.get(x, "")).strip()],
+                })
             if self.path == "/api/compilar":
                 # Un grafo con marcadores no se compila crudo: `sustituir` exige
                 # que esten todos y falla con el nombre del que falta.

@@ -196,12 +196,27 @@ try:
     assert codigo == 404, "borrar algo que no existe deberia ser 404"
     print("13. borrar un grafo propio: OK")
 
-    # --- 14. El grafo guardado conserva sus marcadores ---
+    # --- 14. Acomodar el grafo y detectar los parametros sin valor ---
+    codigo, datos = pedir("/api/ordenar", GRAFO)
+    assert codigo == 200 and set(datos["posiciones"]) == {"a"}, datos
+    codigo, datos = pedir("/api/ordenar", {"nodos": [], "aristas": []})
+    assert codigo == 400, "acomodar un grafo invalido deberia fallar antes"
+    print("14. /api/ordenar devuelve coordenadas y rechaza grafos invalidos: OK")
+
+    codigo, datos = pedir("/api/parametros", GRAFO)
+    assert datos["faltan"] == ["repo"], datos
+    codigo, datos = pedir("/api/parametros", {**GRAFO, "valores": {"repo": "  "}})
+    assert datos["faltan"] == ["repo"], f"un valor en blanco cuenta como puesto: {datos}"
+    codigo, datos = pedir("/api/parametros", {**GRAFO, "valores": {"repo": "C:/x"}})
+    assert datos["faltan"] == [], datos
+    print("15. los parametros sin valor se listan aparte (y en blanco no cuenta): OK")
+
+    # --- 16. El grafo guardado conserva sus marcadores ---
     # Se guarda el grafo, no la corrida: si al guardar se sustituyera, el grafo
     # dejaria de ser reutilizable con otros datos.
     codigo, vuelto = pedir(f"/api/grafo?nombre={NOMBRE}")
     assert "{{repo}}" in vuelto["nodos"][0]["titulo"], vuelto
-    print("14. el grafo guardado sigue parametrizado: OK")
+    print("16. el grafo guardado sigue parametrizado: OK")
 finally:
     proc.terminate()
     proc.wait(timeout=10)
