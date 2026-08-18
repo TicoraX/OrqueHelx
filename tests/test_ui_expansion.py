@@ -218,12 +218,27 @@ try:
     assert codigo == 400 and "vacio" in datos["error"], datos
     print("16. el chat rechaza runtime invalido y mensaje vacio: OK")
 
-    # --- 17. El grafo guardado conserva sus marcadores ---
+    # --- 17. El tope que se informa es el que se APLICO ---
+    # Editar el campo con la corrida en marcha no cambia el techo de esa
+    # corrida: la barra mostraba un tope que nadie estaba respetando.
+    codigo, datos = pedir(f"/api/consumo?board={BOARD}")
+    assert datos["tope_usd"] is None, f"informa un tope sin haber arrancado: {datos}"
+    codigo, datos = pedir("/api/correr", {"board": BOARD, "presupuesto_usd": "0.5"})
+    assert codigo == 200, datos
+    codigo, datos = pedir(f"/api/consumo?board={BOARD}")
+    assert datos["tope_usd"] == 0.5, f"no recuerda el tope de la corrida: {datos}"
+    codigo, datos = pedir("/api/correr", {"board": BOARD, "presupuesto_usd": "-1"})
+    assert codigo == 400, "acepto un presupuesto negativo"
+    codigo, datos = pedir(f"/api/consumo?board={BOARD}")
+    assert datos["tope_usd"] == 0.5, "un arranque rechazado piso el tope vigente"
+    print("17. el consumo informa el tope con el que se arranco: OK")
+
+    # --- 18. El grafo guardado conserva sus marcadores ---
     # Se guarda el grafo, no la corrida: si al guardar se sustituyera, el grafo
     # dejaria de ser reutilizable con otros datos.
     codigo, vuelto = pedir(f"/api/grafo?nombre={NOMBRE}")
     assert "{{repo}}" in vuelto["nodos"][0]["titulo"], vuelto
-    print("17. el grafo guardado sigue parametrizado: OK")
+    print("18. el grafo guardado sigue parametrizado: OK")
 finally:
     proc.terminate()
     proc.wait(timeout=10)

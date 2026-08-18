@@ -136,8 +136,11 @@ def revisar(estado: Contexto) -> Contexto:
         # parámetros, elegir workspace, parar una corrida, zoom/paneo, deshacer,
         # resultado completo y gasto por nodo. Servidor en
         # `tests/test_ui_expansion.py`; lo del lienzo, con Playwright.
-        "UI: el panel lateral ya no entra en una pantalla — la traza queda "
-        "abajo de todo justo cuando se la mira (mover Estado/Traza arriba, o pestañas)",
+        # El Studio está completo para uso local: plantillas, chat, esfuerzo,
+        # tope de gasto, auto-layout y atajos. Lo que queda es producto, no UI.
+        "chat que DISEÑA el grafo (hoy el chat ejecuta; la otra mitad de la "
+        "bifurcación es que el agente escriba el grafo en el lienzo)",
+        "presupuesto por NODO además del global (hoy el tope es del flujo entero)",
         "conectar el Studio a la API multiusuario (hoy le habla directo al motor)",
         "medición empírica del cumplimiento del output_schema (diferida a propósito)",
     ]

@@ -3,13 +3,13 @@
 > Generado por `contexto/estado.py`. **No editar a mano**: se sobrescribe.
 > Un traspaso escrito a mano queda viejo y nadie se entera.
 
-**Fase:** producto en uso
+**Fase:** con pendientes
 
 ## Dónde está el código
 
-- Commit `160f565` — feat(ui): ordenar, atajos, ambar en parametros, pulso y barra de gasto
+- Commit `8e086f8` — chore: regenerar ESTADO.md
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 0
+- Árbol limpio: **no** · sin pushear: 0
 
 ## Runtime prestado
 
@@ -35,13 +35,14 @@
 
 ## Bloqueos
 
-- ninguno
+- hay cambios sin commitear
 
 ## Qué sigue
 
 - `docker compose up -d db` si vas a usar multiusuario
 - §10 tiene 1 afirmación(es) pendiente(s)
-- UI: el panel lateral ya no entra en una pantalla — la traza queda abajo de todo justo cuando se la mira (mover Estado/Traza arriba, o pestañas)
+- chat que DISEÑA el grafo (hoy el chat ejecuta; la otra mitad de la bifurcación es que el agente escriba el grafo en el lienzo)
+- presupuesto por NODO además del global (hoy el tope es del flujo entero)
 - conectar el Studio a la API multiusuario (hoy le habla directo al motor)
 - medición empírica del cumplimiento del output_schema (diferida a propósito)
 

@@ -65,6 +65,12 @@ _corriendo: dict[str, threading.Thread] = {}
 # LEVANTAR trabajo nuevo, y lo que ya arranco termina y se cierra bien.
 _parar: set[str] = set()
 
+# board -> tope de gasto con el que se arranco. El Studio tiene que mostrar el
+# que se esta APLICANDO, no el que hay tipeado en el campo: editar el campo con
+# una corrida en marcha no cambia el tope de esa corrida, y la barra mostraba
+# un techo que nadie estaba respetando.
+_topes: dict[str, float] = {}
+
 # Token de acceso. Esto ejecuta agentes con shell: sin autenticacion, exponer el
 # puerto es entregar una terminal. Se genera uno por arranque salvo que se fije
 # `ORQUESTER_TOKEN` (util para dejarlo estable entre reinicios).
@@ -176,6 +182,9 @@ def _consumo(board: str) -> dict:
         conn = k.connect(board=board)
     except Exception as e:
         return {"error": str(e)}
+    # El tope de la corrida, si hubo una. Se devuelve aunque ya haya terminado:
+    # despues de correr, lo que importa es contra que techo se gasto.
+    tope = _topes.get(board)
     total = {"entrada": 0, "salida": 0, "total": 0, "cache_lectura": 0,
              "costo_usd": 0.0, "intentos": 0, "con_costo": 0, "sin_costo": 0}
     por_nodo = {}
@@ -203,7 +212,8 @@ def _consumo(board: str) -> dict:
                 total["sin_costo"] += 1
         if acum:
             por_nodo[t.id] = acum
-    return {"total": total, "por_nodo": por_nodo}
+    return {"total": total, "por_nodo": por_nodo, "tope_usd": tope,
+            "corriendo": board in _corriendo}
 
 
 def _quedan_de_hermes(conn) -> bool:
@@ -234,6 +244,7 @@ def _arrancar(board: str, tope_usd: float = None) -> dict:
             traceback.print_exc()          # que no tumbe el loop del carril propio
 
     _parar.discard(board)          # un arranque anterior pudo dejarlo marcado
+    _topes[board] = tope_usd       # None = esta corrida va sin tope
 
     def _correr():
         try:

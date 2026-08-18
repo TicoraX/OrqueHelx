@@ -1148,7 +1148,11 @@ async function cargarConsumo() {
     ? `US$ ${t.costo_usd.toFixed(4)}` : "—";
 
   let barraHtml = "";
-  const pres = parseFloat(grafo.presupuesto_usd);
+  // El tope que MANDA es el que se aplico al arrancar, no el que hay tipeado:
+  // editar el campo con la corrida en marcha no cambia el techo de esa corrida.
+  // Sin corrida todavia, se muestra el del campo como previsualizacion.
+  const aplicado = datos.tope_usd;
+  const pres = aplicado != null ? aplicado : parseFloat(grafo.presupuesto_usd);
   if (pres && pres > 0) {
     const costoActual = t.con_costo ? t.costo_usd : 0;
     const pct = (costoActual / pres) * 100;
@@ -1157,7 +1161,7 @@ async function cargarConsumo() {
     barraHtml = `
       <div style="margin-top:8px; padding-top:6px; border-top:1px solid var(--linea);">
         <div class="linea">
-          <span class="et">tope de gasto</span>
+          <span class="et">tope de gasto${aplicado == null ? " (sin arrancar)" : ""}</span>
           <span class="val">${t.con_costo ? `US$ ${costoActual.toFixed(4)}` : "—"} / US$ ${pres.toFixed(2)} (${pct.toFixed(0)}%)</span>
         </div>
         <div style="background:#141720; border:1px solid var(--linea); border-radius:4px; height:8px; overflow:hidden; margin:4px 0 6px;">
