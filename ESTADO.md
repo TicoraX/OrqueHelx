@@ -7,9 +7,9 @@
 
 ## Dónde está el código
 
-- Commit `0ff6139` — feat(studio): exportador python headless, simulador analitico DAG y comandos slash de copilot en chat
+- Commit `0ca5f76` — feat(studio): inspector seguro de secretos y credenciales, y generador de reportes de auditoria markdown
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 5
+- Árbol limpio: sí · sin pushear: 7
 
 ## Runtime prestado
 
@@ -47,7 +47,7 @@
 
 ## Bloqueos
 
-- 5 commit(s) sin pushear
+- 7 commit(s) sin pushear
 
 ## Qué sigue
 
