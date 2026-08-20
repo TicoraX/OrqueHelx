@@ -15,15 +15,18 @@ const slugificar = (s: string) =>
 export class AuthController {
   constructor(private readonly auth: AuthService, private readonly audit: Auditoria) {}
 
+  // `req.ip` es la clave del freno de fuerza bruta (ver `AuthService.frenar`).
   @Publico() @Post('registro')
-  async registro(@Body() b: any) {
-    const u = await this.auth.registrar(b?.email, b?.password, b?.nombre);
+  async registro(@Req() req: any, @Body() b: any) {
+    const u = await this.auth.registrar(b?.email, b?.password, b?.nombre, req.ip);
     await this.audit.registrar('auth.registro', { actorId: u.id });
     return u;
   }
 
   @Publico() @Post('login')
-  login(@Body() b: any) { return this.auth.login(b?.email, b?.password); }
+  login(@Req() req: any, @Body() b: any) {
+    return this.auth.login(b?.email, b?.password, req.ip);
+  }
 
   @Post('logout')
   async logout(@Headers('authorization') cab: string) {
