@@ -7,9 +7,9 @@
 
 ## Dónde está el código
 
-- Commit `e3a3e38` — fix(contexto): "sin pushear" se mide contra el upstream de la rama, no contra master
+- Commit `6a05740` — feat(compiler): linter estatico de grafos DAG con deteccion de aristas redundantes, nodos aislados y riesgos
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: **no** · sin pushear: 0
+- Árbol limpio: sí · sin pushear: 1
 
 ## Runtime prestado
 
@@ -47,11 +47,10 @@
 
 ## Bloqueos
 
-- hay cambios sin commitear
+- 1 commit(s) sin pushear
 
 ## Qué sigue
 
-- 15 commit(s) pusheados y sin mergear a master (rama de trabajo)
 - §10 tiene 1 afirmación(es) pendiente(s)
 - conectar el Studio a la API multiusuario (hoy le habla directo al motor)
 - medición empírica del cumplimiento del output_schema (diferida a propósito)
