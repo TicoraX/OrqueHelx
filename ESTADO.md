@@ -7,9 +7,9 @@
 
 ## Dónde está el código
 
-- Commit `6a05740` — feat(compiler): linter estatico de grafos DAG con deteccion de aristas redundantes, nodos aislados y riesgos
+- Commit `b2e9e10` — feat(studio): trazabilidad de impacto y linaje de nodos en el DAG
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 1
+- Árbol limpio: sí · sin pushear: 3
 
 ## Runtime prestado
 
@@ -47,7 +47,7 @@
 
 ## Bloqueos
 
-- 1 commit(s) sin pushear
+- 3 commit(s) sin pushear
 
 ## Qué sigue
 
