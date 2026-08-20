@@ -491,48 +491,106 @@ def _historial() -> dict:
     return {"historial": salida}
 
 
-def _generar_grafo(descripcion: str, runtime: str = "claude-code", dry_run: bool = False) -> dict:
-    """Generar un grafo DAG estructurado y validado a partir de una descripción en lenguaje natural."""
+def _grafo_desnudo(g: dict) -> dict:
+    """El grafo sin nada que el agente no necesite ver.
+
+    Las coordenadas son del lienzo y el agente no las decide; mandarlas es pagar
+    tokens por ruido y darle la chance de devolverlas cambiadas.
+    """
+    return {
+        "board": g.get("board") or "",
+        "reglas": g.get("reglas") or "",
+        "nodos": [{c: v for c, v in n.items() if c not in ("x", "y")}
+                  for n in (g.get("nodos") or [])],
+        "aristas": g.get("aristas") or [],
+    }
+
+
+def _acomodar(obj: dict, previas: dict) -> None:
+    """Ubicar los nodos: los que ya estaban se quedan donde el usuario los dejo.
+
+    Re-acomodar todo en cada refinamiento tira el arreglo manual del lienzo, que
+    es justo lo primero que uno hace despues de generar. El boton `Ordenar`
+    sigue ahi para un re-layout completo, a pedido.
+    """
+    pos = disposicion.ordenar(obj)
+    for n in obj.get("nodos", []):
+        if n.get("id") in previas:
+            n["x"], n["y"] = previas[n["id"]]
+        else:
+            p = pos.get(n.get("id")) or {"x": n.get("x", 100), "y": n.get("y", 100)}
+            n["x"], n["y"] = p["x"], p["y"]
+
+    # Un nodo nuevo puede caer sobre uno viejo que se movio a mano, porque la
+    # topologia no sabe donde lo puso el usuario. Se lo baja hasta que no pise.
+    # ponytail: O(n^2) sobre un lienzo de decenas de nodos; con cientos haria
+    # falta un indice espacial.
+    for n in obj.get("nodos", []):
+        if n.get("id") in previas:
+            continue
+        for _ in range(50):
+            if not any(o is not n
+                       and abs(o["x"] - n["x"]) < disposicion.ANCHO
+                       and abs(o["y"] - n["y"]) < disposicion.ALTO
+                       for o in obj["nodos"]):
+                break
+            n["y"] += disposicion.ALTO + 24
+
+
+def _generar_grafo(descripcion: str, runtime: str = "claude-code", dry_run: bool = False,
+                   actual: dict = None, sesion: str = None) -> dict:
+    """Diseñar un grafo DAG con un agente, o REFINAR uno que ya existe.
+
+    Con `actual`, el pedido es un cambio sobre ese grafo y no un diseño desde
+    cero: sin esto, "agregale un nodo de tests" obligaba a describir el flujo
+    entero otra vez y pisaba el lienzo.
+
+    Se pide el grafo COMPLETO ya modificado, no un diff: un parche necesitaria
+    un formato y un aplicador propios, y el grafo entero ya pasa por `validar`,
+    que rechaza ids repetidos, aristas colgadas y ciclos. La `sesion` la guarda
+    el CLI, igual que el chat (SS10.4): por acá viaja solo el id, así que dos
+    refinamientos seguidos son una conversación y no dos desconocidos.
+    """
     desc = (descripcion or "").strip()
     if not desc:
         raise ValueError("la descripcion del flujo no puede estar vacia")
+    if actual is not None and not (actual.get("nodos") or []):
+        actual = None                      # un grafo vacio no es nada que refinar
 
     slug_base = re.sub(r'[^a-zA-Z0-9_-]', '-', desc.lower()[:25]).strip("-") or "flujo-ia"
-    slug = f"ia-{slug_base}"
+    slug = (actual or {}).get("board") or f"ia-{slug_base}"
+    previas = {n["id"]: (n.get("x", 100), n.get("y", 100))
+               for n in ((actual or {}).get("nodos") or []) if n.get("id")}
 
-    def _plantilla(motivo: str) -> dict:
-        """El grafo de ejemplo. Es el fallback, y lo dice: `_degradado` viaja
-        hasta la UI para que no anuncie como diseño de un agente algo que
-        salio de una plantilla fija de tres nodos."""
+    def _degradado(motivo: str) -> dict:
+        """Sin agente no se inventa un diseño. Refinando se devuelve el grafo
+        TAL CUAL estaba: pisarlo con una plantilla de tres nodos por no poder
+        hablar con nadie seria perder el trabajo del usuario."""
+        if actual is not None:
+            return {"grafo": actual, "degradado": True, "sesion": sesion,
+                    "motivo": f"el grafo quedo sin cambios: {motivo}"}
         g = {
             "board": slug,
             "reglas": "No modificar archivos fuera del alcance. Responder en formato estructurado.",
             "nodos": [
-                {"id": "analisis", "titulo": f"Analizar requerimiento: {desc}", "runtime": "claude-code", "x": 100, "y": 100},
-                {"id": "ejecucion", "titulo": f"Ejecutar y validar: {desc}", "runtime": "opencode", "x": 300, "y": 100},
-                {"id": "sintesis", "titulo": "Sintetizar resultados y emitir veredicto final", "runtime": "antigravity", "x": 200, "y": 250},
+                {"id": "analisis", "titulo": f"Analizar requerimiento: {desc}", "runtime": "claude-code"},
+                {"id": "ejecucion", "titulo": f"Ejecutar y validar: {desc}", "runtime": "opencode"},
+                {"id": "sintesis", "titulo": "Sintetizar resultados y emitir veredicto final", "runtime": "antigravity"},
             ],
             "aristas": [["analisis", "ejecucion"], ["ejecucion", "sintesis"]],
-            "_degradado": True, "_motivo": motivo,
         }
         compilador.validar(g, capacidades=False)
-        pos = disposicion.ordenar(g)
-        for n in g["nodos"]:
-            if n["id"] in pos:
-                n["x"], n["y"] = pos[n["id"]]["x"], pos[n["id"]]["y"]
-        return g
+        _acomodar(g, {})
+        return {"grafo": g, "degradado": True, "motivo": motivo, "sesion": sesion}
 
     if dry_run:
-        return _plantilla("dry_run: no se invoco ningun agente")
+        return _degradado("dry_run: no se invoco ningun agente")
 
     rt_elegido = _runtime_para_chatear(runtime)
     if not rt_elegido:
-        return _plantilla("no hay ningun ejecutor instalado en esta maquina")
+        return _degradado("no hay ningun ejecutor instalado en esta maquina")
 
-    prompt = (
-        "Eres el arquitecto de flujos de ORQUESTER. Diseña un grafo DAG de tareas óptimo para el siguiente requerimiento:\n\n"
-        f"Requerimiento: {desc}\n\n"
-        "Debes responder UNICAMENTE con un objeto JSON válido (sin explicaciones, sin comentarios, sin markdown de envoltorio excepto ```json si es necesario).\n"
+    ESTRUCTURA = (
         "Estructura obligatoria:\n"
         "{\n"
         f'  "board": "{slug}",\n'
@@ -543,19 +601,40 @@ def _generar_grafo(descripcion: str, runtime: str = "claude-code", dry_run: bool
         '  "aristas": [["id_padre", "id_hijo"]]\n'
         "}\n"
         "Reglas:\n"
-        "1. Los identificadores de nodos deben ser alfanuméricos cortos (ej. n1, n2, auditor, tester).\n"
-        "2. Debe ser un DAG acíclico válido (sin ciclos, sin auto-referencias).\n"
-        "3. Distribuye el trabajo entre los runtimes disponibles (claude-code, opencode, antigravity, hermes).\n"
-        "4. Incluye entre 2 y 5 nodos según la complejidad requerida.\n"
+        "1. Los identificadores de nodos deben ser alfanumericos cortos (ej. n1, n2, auditor, tester).\n"
+        "2. Debe ser un DAG aciclico valido (sin ciclos, sin auto-referencias).\n"
+        "3. Distribui el trabajo entre los runtimes disponibles (claude-code, opencode, antigravity, hermes).\n"
     )
+    if actual is not None:
+        prompt = (
+            "Sos el arquitecto de flujos de ORQUESTER. Este es el grafo DAG actual:\n\n"
+            f"{json.dumps(_grafo_desnudo(actual), ensure_ascii=False, indent=2)}\n\n"
+            f"Cambio pedido: {desc}\n\n"
+            "Devolve el grafo COMPLETO ya modificado, UNICAMENTE como objeto JSON "
+            "(sin explicaciones ni prosa alrededor).\n"
+            + ESTRUCTURA +
+            "4. CONSERVA el `id` exacto de los nodos que no cambian: es lo que "
+            "permite no re-dibujar el lienzo entero.\n"
+            "5. No toques los nodos que el cambio pedido no menciona.\n"
+        )
+    else:
+        prompt = (
+            "Sos el arquitecto de flujos de ORQUESTER. Diseña un grafo DAG de tareas "
+            "optimo para el siguiente requerimiento:\n\n"
+            f"Requerimiento: {desc}\n\n"
+            "Responde UNICAMENTE con un objeto JSON valido (sin explicaciones, sin "
+            "comentarios, sin markdown de envoltorio excepto ```json si es necesario).\n"
+            + ESTRUCTURA +
+            "4. Incluye entre 2 y 5 nodos segun la complejidad requerida.\n"
+        )
 
     try:
         # `texto`, no `respuesta`: es la clave que devuelve `chat_backend`.
         # Con la clave mal, `resp` quedaba vacia, `json.loads("")` tiraba, y el
         # `except` de abajo devolvia SIEMPRE la plantilla de tres nodos. La
         # feature "generar grafo con IA" nunca invoco a un agente de verdad.
-        resp = (dispatcher.run_chat(rt_elegido, prompt, timeout=120)
-                .get("texto") or "").strip()
+        r = dispatcher.run_chat(rt_elegido, prompt, sesion=sesion, timeout=120)
+        resp = (r.get("texto") or "").strip()
         if "```json" in resp:
             resp = resp.split("```json", 1)[1].split("```", 1)[0].strip()
         elif "```" in resp:
@@ -566,17 +645,14 @@ def _generar_grafo(descripcion: str, runtime: str = "claude-code", dry_run: bool
             raise ValueError("Estructura de grafo incompleta")
         obj["board"] = obj.get("board") or slug
         compilador.validar(obj, capacidades=False)
-        pos = disposicion.ordenar(obj)
-        for n in obj.get("nodos", []):
-            if n.get("id") in pos:
-                n["x"] = pos[n["id"]]["x"]
-                n["y"] = pos[n["id"]]["y"]
-            else:
-                n["x"] = n.get("x", 100)
-                n["y"] = n.get("y", 100)
-        return obj
+        _acomodar(obj, previas)
+        return {"grafo": obj, "degradado": False, "motivo": "",
+                # Si el CLI no informa sesion se conserva la que habia: perder el
+                # id a mitad de la charla arranca una conversacion nueva sin
+                # avisar, y el agente se olvida del grafo del que venimos hablando.
+                "sesion": r.get("sesion") or sesion}
     except Exception as e:
-        return _plantilla(f"{rt_elegido} no devolvio un grafo usable: "
+        return _degradado(f"{rt_elegido} no devolvio un grafo usable: "
                           f"{type(e).__name__}: {str(e)[:200]}")
 
 
@@ -1127,8 +1203,12 @@ class Handler(BaseHTTPRequestHandler):
                 rt = cuerpo.get("runtime") or "claude-code"
                 dry = bool(cuerpo.get("dry_run"))
                 try:
-                    g = _generar_grafo(desc, runtime=rt, dry_run=dry)
-                    return self._responder(200, {"ok": True, "grafo": g})
+                    # Con `actual`, el pedido REFINA ese grafo en vez de diseñar
+                    # uno nuevo, y `sesion` encadena los refinamientos.
+                    res = _generar_grafo(desc, runtime=rt, dry_run=dry,
+                                         actual=cuerpo.get("actual") or None,
+                                         sesion=cuerpo.get("sesion") or None)
+                    return self._responder(200, {"ok": True, **res})
                 except ValueError as e:
                     return self._responder(400, {"error": str(e)})
                 except Exception as e:

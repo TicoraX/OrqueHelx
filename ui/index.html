@@ -189,7 +189,11 @@
         <div style="display:flex; gap:6px;">
           <input id="promptGenIa" placeholder="Ej: 3 nodos para auditar seguridad..." style="margin:0; font-size:12px;">
           <button id="btnGenIa" class="primario" style="width:auto; white-space:nowrap; padding:4px 10px; font-size:12px;">Crear</button>
+          <!-- Refinar solo aparece con un grafo en el lienzo: sin nada que
+               cambiar el boton no significa nada. -->
+          <button id="btnRefinarIa" style="display:none; width:auto; white-space:nowrap; padding:4px 10px; font-size:12px;">Refinar</button>
         </div>
+        <div id="pistaRefinar" style="display:none; font-size:10.5px; color:var(--tenue); margin-top:4px;"></div>
       </div>
 
       <div id="bloqueParams" style="display:none;">
@@ -478,6 +482,12 @@ const verVista = () => vista &&
 const vistaActual = () => vista ||
   { x:0, y:0, w:svg.clientWidth, h:svg.clientHeight };
 
+// La sesión del diseñador con IA. La guarda el CLI; acá viaja solo el id, igual
+// que en el chat. Se tira al abrir otro grafo: la conversación era sobre ESE
+// flujo. Va acá arriba y no junto a sus botones porque `pintar` la lee, y
+// `pintar` corre mucho antes: con el `let` más abajo es zona muerta temporal.
+let SESION_IA = null;
+
 // --- Deshacer ------------------------------------------------------------
 let pila = [];
 const anotar = () => {
@@ -490,6 +500,23 @@ const buscar = id => grafo.nodos.find(n => n.id === id);
 function avisar(msg, tipo="error") {
   const a = $("#aviso");
   a.textContent = msg; a.className = tipo; a.style.display = msg ? "block" : "none";
+}
+
+// Un grafo es un .json de `ui/grafos/` y el lienzo no siempre lo escribió él:
+// se puede editar a mano, generarlo con un script o recibirlo del diseñador con
+// IA. Un nodo sin coordenadas producía `d="Mundefined,NaN"` en la arista y un
+// `translate(undefined,undefined)` en el nodo: invisible y sin decir nada.
+// Vive acá y no pegado a `abrirGrafo` porque hay DOS caminos por los que entra
+// un grafo ajeno, y poner la guarda en uno solo es como llegamos a esto.
+function ubicarSinCoordenadas(nodos) {
+  let n_sin = 0;
+  for (const n of nodos || []) {
+    if (typeof n.x !== "number" || typeof n.y !== "number") {
+      n.x = 40; n.y = 40 + n_sin++ * (ALTO + 24);
+    }
+  }
+  if (n_sin) avisar(`${n_sin} nodo(s) sin coordenadas: apilados a la izquierda, usá Ordenar.`, "tibio");
+  return n_sin;
 }
 
 function envolver(texto, ancho, maxLineas) {
@@ -587,6 +614,7 @@ function pintar() {
     gn.appendChild(g);
   }
   $("#resumen").textContent = resumir();
+  verBotonRefinar();          // un solo punto: `pintar` corre en cada cambio
 }
 
 function seguirNodo(g, n) {
@@ -1017,9 +1045,11 @@ async function listarGrafos() {
 }
 function abrirGrafo(datos, nombre) {
   grafo = { nodos: [], aristas: [], ...datos, board: nombre };
+  ubicarSinCoordenadas(grafo.nodos);
   // El board viejo no tiene por que ser el de este grafo: los task_id de la
   // corrida anterior no significan nada aca y pintarian estados ajenos.
   ids = {}; estado = {}; sel = null; VALORES = {}; pila = [];
+  SESION_IA = null;           // la conversacion era sobre el flujo anterior
   $("#board").value = grafo.board;
   $("#reglas").value = grafo.reglas || "";
   $("#presupuesto").value = grafo.presupuesto_usd || "";
@@ -1765,30 +1795,87 @@ $("#btnGenerarReporte").onclick = async () => {
   mostrarModoPreview();
 };
 
-$("#btnGenIa").onclick = async () => {
-  const prompt = ($("#promptGenIa").value || "").trim();
-  if (!prompt) return avisar("Escribí una descripción para el flujo.", "error");
-  $("#btnGenIa").disabled = true;
-  $("#btnGenIa").textContent = "✨ Creando…";
-  avisar("Diseñando flujo con IA...", "ok");
-  const { ok, datos } = await api("/api/generar-grafo", { descripcion: prompt });
-  $("#btnGenIa").disabled = false;
-  $("#btnGenIa").textContent = "Crear";
-  if (!ok || !datos.grafo) return avisar(datos.error || "No se pudo generar el grafo", "error");
-  anotar();
-  const degradado = datos.grafo._degradado, motivo = datos.grafo._motivo || "";
-  // Las marcas son del transporte, no del grafo: si se guardan, viajan al .json
-  // y después al compilador.
-  delete datos.grafo._degradado; delete datos.grafo._motivo;
-  abrirGrafo(datos.grafo, datos.grafo.board || "flujo-ia");
-  const { ok: okOrd, datos: datosOrd } = await api("/api/ordenar", grafo);
-  if (okOrd && datosOrd.posiciones) {
-    for (const n of grafo.nodos) Object.assign(n, datosOrd.posiciones[n.id]);
-    pintar(); encuadrar();
+function verBotonRefinar() {
+  const hay = (grafo.nodos || []).length > 0;
+  $("#btnRefinarIa").style.display = hay ? "" : "none";
+  $("#pistaRefinar").style.display = hay ? "" : "none";
+  if (hay) {
+    $("#pistaRefinar").textContent = SESION_IA
+      ? "Refinar continúa la conversación anterior sobre este flujo."
+      : "Refinar cambia el grafo actual en vez de empezar de cero.";
   }
-  if (degradado) avisar(`Plantilla de ${grafo.nodos.length} nodos, no diseño de un agente: ${motivo}`, "tibio");
-  else avisar(`Grafo '${grafo.board}' generado con IA (${grafo.nodos.length} nodos).`, "ok");
-};
+}
+
+// Aplica un grafo que vino del diseñador. `pisar` distingue crear de refinar:
+// refinando NO se llama a `abrirGrafo`, que resetea ids, estado y la pila de
+// deshacer — perder el deshacer justo cuando el agente te cambió algo es lo
+// contrario de lo que uno quiere.
+function aplicarGrafoIa(nuevo, pisar) {
+  if (pisar) {
+    abrirGrafo(nuevo, nuevo.board || "flujo-ia");
+    return;
+  }
+  const antes = new Set(grafo.nodos.map(n => n.id));
+  ubicarSinCoordenadas(nuevo.nodos);
+  grafo.nodos = nuevo.nodos;
+  grafo.aristas = nuevo.aristas || [];
+  if (nuevo.reglas !== undefined) grafo.reglas = nuevo.reglas;
+  // Si el nodo seleccionado dejó de existir, el editor quedaría mostrando un
+  // fantasma editable.
+  if (sel && !grafo.nodos.some(n => n.id === sel)) sel = null;
+  pintar(); refrescarEditor();
+  return { nuevos: grafo.nodos.filter(n => !antes.has(n.id)).length,
+           idos: [...antes].filter(i => !grafo.nodos.some(n => n.id === i)).length };
+}
+
+async function pedirDisenoIa(refinar) {
+  const boton = $(refinar ? "#btnRefinarIa" : "#btnGenIa");
+  const etiqueta = boton.textContent;
+  const prompt = ($("#promptGenIa").value || "").trim();
+  if (!prompt) {
+    return avisar(refinar ? "Escribí qué querés cambiar del flujo."
+                          : "Escribí una descripción para el flujo.", "error");
+  }
+  boton.disabled = true;
+  boton.textContent = refinar ? "✨ Refinando…" : "✨ Creando…";
+  avisar(refinar ? "Pidiéndole el cambio al agente..." : "Diseñando flujo con IA...", "ok");
+  const { ok, datos } = await api("/api/generar-grafo", {
+    descripcion: prompt,
+    ...(refinar ? { actual: { board: grafo.board, reglas: grafo.reglas,
+                              nodos: grafo.nodos, aristas: grafo.aristas },
+                    sesion: SESION_IA || "" } : {}),
+  });
+  boton.disabled = false;
+  boton.textContent = etiqueta;
+  if (!ok || !datos.grafo) return avisar(datos.error || "No se pudo generar el grafo", "error");
+
+  anotar();                                    // deshacer alcanza el refinamiento
+  const delta = aplicarGrafoIa(datos.grafo, !refinar);
+  SESION_IA = datos.sesion || SESION_IA;
+  verBotonRefinar();
+
+  if (!refinar) {
+    const { ok: okOrd, datos: datosOrd } = await api("/api/ordenar", grafo);
+    if (okOrd && datosOrd.posiciones) {
+      for (const n of grafo.nodos) Object.assign(n, datosOrd.posiciones[n.id]);
+      pintar(); encuadrar();
+    }
+  }
+
+  if (datos.degradado) {
+    avisar(`Sin diseño de un agente: ${datos.motivo}`, "tibio");
+  } else if (refinar) {
+    const partes = [];
+    if (delta.nuevos) partes.push(`+${delta.nuevos} nodo(s)`);
+    if (delta.idos) partes.push(`-${delta.idos} nodo(s)`);
+    avisar(`Flujo refinado${partes.length ? ": " + partes.join(", ") : " (sin cambios en la cantidad de nodos)"}.`, "ok");
+  } else {
+    avisar(`Grafo '${grafo.board}' generado con IA (${grafo.nodos.length} nodos).`, "ok");
+  }
+}
+
+$("#btnGenIa").onclick = () => pedirDisenoIa(false);
+$("#btnRefinarIa").onclick = () => pedirDisenoIa(true);
 
 $("#btnReintentarNodo").onclick = async () => {
   const tid = ids[sel];

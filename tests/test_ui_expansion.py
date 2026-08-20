@@ -299,7 +299,27 @@ try:
     assert codigo == 200 and "grafo" in datos_gen, datos_gen
     assert len(datos_gen["grafo"]["nodos"]) >= 2, datos_gen
     assert len(datos_gen["grafo"]["aristas"]) >= 1, datos_gen
+    # `degradado` viaja AL LADO del grafo, no adentro: metido adentro viajaba al
+    # .json guardado y de ahi al compilador.
+    assert datos_gen["degradado"] is True and "dry_run" in datos_gen["motivo"], datos_gen
+    assert "_degradado" not in datos_gen["grafo"], datos_gen["grafo"]
     print("24. /api/generar-grafo genera DAG validado y ordenado: OK")
+
+    # --- 24b. Refinar sin agente NO pisa el grafo ---
+    # Es la diferencia que importa: crear sin agente da una plantilla, pero
+    # refinar sin agente tiene que devolver el grafo tal cual estaba. Pisarlo
+    # seria perder el trabajo del usuario por no poder hablar con nadie.
+    mio = {"board": "refina-test", "aristas": [],
+           "nodos": [{"id": "unico", "titulo": "lo mio", "runtime": "hermes",
+                      "x": 77, "y": 99}]}
+    codigo, datos_ref = pedir("/api/generar-grafo", {
+        "descripcion": "agregale un nodo de tests",
+        "actual": mio, "dry_run": True,
+    })
+    assert codigo == 200, datos_ref
+    assert datos_ref["degradado"] is True and "sin cambios" in datos_ref["motivo"], datos_ref
+    assert datos_ref["grafo"]["nodos"] == mio["nodos"], datos_ref["grafo"]
+    print("24b. refinar sin agente devuelve el grafo intacto: OK")
 
     # --- 25. /api/reintentar-nodo desbloquea una card fallida ---
     conn = k.connect(board=BOARD)
