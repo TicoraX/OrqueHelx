@@ -550,6 +550,30 @@ try:
     assert "arista_redundante" in codigos_hallazgos, datos_lint
     assert "esfuerzo_sin_tope" in codigos_hallazgos, datos_lint
     print("41. /api/analizar-grafo detecta nodos aislados, aristas redundantes y riesgos: OK")
+
+    # --- 42. /api/trazabilidad-grafo computa upstreams, downstreams e impacto relativo ---
+    grafo_rombo = {
+        "board": "rombo-trace",
+        "nodos": [
+            {"id": "a", "titulo": "Inicio", "runtime": "hermes"},
+            {"id": "b", "titulo": "Rama B", "runtime": "opencode"},
+            {"id": "c", "titulo": "Rama C", "runtime": "claude-code"},
+            {"id": "d", "titulo": "Fin", "runtime": "antigravity"}
+        ],
+        "aristas": [["a", "b"], ["a", "c"], ["b", "d"], ["c", "d"]]
+    }
+    codigo, trace_b = pedir("/api/trazabilidad-grafo", {"nodo": "b", "grafo": grafo_rombo})
+    assert codigo == 200 and trace_b.get("ok"), trace_b
+    assert trace_b["ancestros"] == ["a"], trace_b
+    assert trace_b["descendientes"] == ["d"], trace_b
+    assert trace_b["total_impactados"] == 1, trace_b
+
+    codigo, trace_a = pedir("/api/trazabilidad-grafo", {"nodo": "a", "grafo": grafo_rombo})
+    assert codigo == 200 and trace_a.get("ok"), trace_a
+    assert trace_a["ancestros"] == [], trace_a
+    assert trace_a["descendientes"] == ["b", "c", "d"], trace_a
+    assert trace_a["impacto_pct"] == 100.0, trace_a
+    print("42. /api/trazabilidad-grafo computa upstreams, downstreams e impacto de bloqueo: OK")
 finally:
     proc.terminate()
     proc.wait(timeout=10)

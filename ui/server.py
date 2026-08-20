@@ -1262,6 +1262,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self._responder(200, {"ok": True, "hallazgos": compilador.analizar(cuerpo)})
                 except Exception as e:
                     return self._responder(400, {"error": f"error analizando grafo: {e}"})
+            if self.path == "/api/trazabilidad-grafo":
+                nid = cuerpo.get("nodo") or ""
+                g = cuerpo.get("grafo") or {}
+                try:
+                    return self._responder(200, compilador.trazabilidad(g, nid))
+                except Exception as e:
+                    return self._responder(400, {"error": f"error en trazabilidad: {e}"})
             if self.path == "/api/snapshot":
                 b = cuerpo.get("board") or "orquester"
                 g = cuerpo.get("grafo") or {}

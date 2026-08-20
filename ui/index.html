@@ -298,6 +298,13 @@
         <div><label>Workspace <span class="tenue">— dónde corre el nodo</span></label>
           <input id="workspace" placeholder="(scratch: se borra al terminar)"></div>
         </div>
+        <div id="boxTrazabilidadNodo" style="display:none; background:#141720; border:1px solid var(--linea); border-radius:5px; padding:6px 8px; font-size:11px; margin-top:4px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <b>Linaje & Impacto:</b>
+            <span id="nodoImpactoBadge" style="color:var(--acento); font-weight:bold;">0%</span>
+          </div>
+          <div id="nodoLinajeTxt" style="color:var(--tenue); font-size:10.5px; margin-top:3px;"></div>
+        </div>
         <div id="boxReintentarNodo" style="display:none; margin-top:4px;">
           <button id="btnReintentarNodo" class="res-btn" style="width:100%; border-color:#8e5229; color:#f0a868; font-weight:600; padding:6px;">🔁 Reintentar este nodo</button>
         </div>
@@ -1009,6 +1016,20 @@ function refrescarEditor() {
       document.querySelectorAll("#herramientasBox input").forEach(cb => {
         cb.checked = herr.includes(cb.value);
       });
+
+      // Trazabilidad y linaje en vivo
+      api("/api/trazabilidad-grafo", { nodo: sel, grafo: grafo }).then(({ ok, datos }) => {
+        const box = $("#boxTrazabilidadNodo");
+        if (ok && datos && sel === n.id) {
+          box.style.display = "block";
+          $("#nodoImpactoBadge").textContent = `${datos.impacto_pct}% impacto`;
+          $("#nodoLinajeTxt").textContent = `Ancestros: ${datos.ancestros.length} · Downstreams bloqueados: ${datos.descendientes.length}`;
+        } else if (box) {
+          box.style.display = "none";
+        }
+      }).catch(() => {});
+    } else {
+      $("#boxTrazabilidadNodo").style.display = "none";
     }
   }
 }

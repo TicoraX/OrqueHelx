@@ -339,3 +339,51 @@ def analizar(grafo: dict) -> list[dict]:
 
     return hallazgos
 
+
+def trazabilidad(grafo: dict, nodo_id: str) -> dict:
+    """Calcula ancestros, descendientes e impacto de un nodo en el DAG."""
+    nodos = [n for n in (grafo.get("nodos") or []) if not es_nota(n)]
+    ids = {n["id"] for n in nodos}
+    if nodo_id not in ids:
+        raise ErrorDeGrafo(f"nodo '{nodo_id}' no encontrado en el grafo")
+
+    aristas = [(p, h) for p, h in (grafo.get("aristas") or []) if p in ids and h in ids]
+    padres = {i: set() for i in ids}
+    hijos = {i: set() for i in ids}
+    for p, h in aristas:
+        padres[h].add(p)
+        hijos[p].add(h)
+
+    def _recorrer_ancestros(nid, visitados=None):
+        if visitados is None:
+            visitados = set()
+        for p in padres.get(nid, set()):
+            if p not in visitados:
+                visitados.add(p)
+                _recorrer_ancestros(p, visitados)
+        return visitados
+
+    def _recorrer_descendientes(nid, visitados=None):
+        if visitados is None:
+            visitados = set()
+        for h in hijos.get(nid, set()):
+            if h not in visitados:
+                visitados.add(h)
+                _recorrer_descendientes(h, visitados)
+        return visitados
+
+    ancestros = sorted(list(_recorrer_ancestros(nodo_id)))
+    descendientes = sorted(list(_recorrer_descendientes(nodo_id)))
+    total_ejecutables = len(nodos)
+    impacto_pct = round((len(descendientes) / max(1, total_ejecutables - 1)) * 100, 1) if total_ejecutables > 1 else 0.0
+
+    return {
+        "ok": True,
+        "nodo": nodo_id,
+        "ancestros": ancestros,
+        "descendientes": descendientes,
+        "padres_directos": sorted(list(padres.get(nodo_id, set()))),
+        "hijos_directos": sorted(list(hijos.get(nodo_id, set()))),
+        "total_impactados": len(descendientes),
+        "impacto_pct": impacto_pct,
+    }
