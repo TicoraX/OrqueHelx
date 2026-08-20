@@ -247,3 +247,95 @@ def compilar(grafo: dict, *, board: str = None) -> dict[str, str]:
             # SS4: traducir el error del kanban a algo que el canvas pueda pintar.
             raise ErrorDeGrafo(f"nodo '{nodo['id']}': {e}") from e
     return ids
+
+
+def analizar(grafo: dict) -> list[dict]:
+    """Linter estático de grafos DAG: detecta antipatrones, aristas redundantes y riesgos."""
+    hallazgos = []
+    nodos = [n for n in (grafo.get("nodos") or []) if not es_nota(n)]
+    if not nodos:
+        return hallazgos
+
+    ids = {n["id"] for n in nodos}
+    aristas = [(p, h) for p, h in (grafo.get("aristas") or []) if p in ids and h in ids]
+
+    padres = {i: set() for i in ids}
+    hijos = {i: set() for i in ids}
+    for p, h in aristas:
+        padres[h].add(p)
+        hijos[p].add(h)
+
+    # 1. Nodos aislados en flujos multipaso
+    if len(nodos) > 1:
+        for n in nodos:
+            nid = n["id"]
+            if not padres[nid] and not hijos[nid]:
+                hallazgos.append({
+                    "tipo": "aviso",
+                    "codigo": "nodo_aislado",
+                    "nodo": nid,
+                    "mensaje": f"El nodo '{nid}' está aislado: no tiene dependencias ni dependientes.",
+                })
+
+    # 2. Fan-in alto (más de 4 dependencias directas)
+    for nid, ps in padres.items():
+        if len(ps) > 4:
+            hallazgos.append({
+                "tipo": "aviso",
+                "codigo": "fan_in_alto",
+                "nodo": nid,
+                "mensaje": f"El nodo '{nid}' espera {len(ps)} dependencias directas concurrentes.",
+            })
+
+    # 3. Redundancia transitiva en aristas
+    def _alcanzable_indirecto(origen, destino, visitados=None):
+        if visitados is None:
+            visitados = set()
+        visitados.add(origen)
+        for inter in hijos.get(origen, set()):
+            if inter == destino:
+                continue
+            if inter not in visitados:
+                if destino in hijos.get(inter, set()) or _alcanzable_indirecto(inter, destino, visitados):
+                    return True
+        return False
+
+    for p, h in aristas:
+        if _alcanzable_indirecto(p, h):
+            hallazgos.append({
+                "tipo": "optimizacion",
+                "codigo": "arista_redundante",
+                "arista": [p, h],
+                "mensaje": f"La arista '{p} -> {h}' es redundante porque existe un camino indirecto alternativo.",
+            })
+
+    # 4. Esfuerzo alto sin tope individual
+    for n in nodos:
+        nid = n["id"]
+        esf = n.get("esfuerzo")
+        pres = n.get("presupuesto_usd")
+        if esf in ("high", "xhigh", "max", "ultra") and not pres:
+            hallazgos.append({
+                "tipo": "consejo",
+                "codigo": "esfuerzo_sin_tope",
+                "nodo": nid,
+                "mensaje": f"El nodo '{nid}' usa esfuerzo '{esf}' sin tope de gasto individual configurado.",
+            })
+
+    # 5. Runtimes no instalados en el entorno
+    try:
+        ausentes = faltantes({n.get("runtime", "hermes") for n in nodos})
+        for n in nodos:
+            rt = n.get("runtime", "hermes")
+            if rt in ausentes:
+                hallazgos.append({
+                    "tipo": "advertencia",
+                    "codigo": "runtime_no_disponible",
+                    "nodo": n["id"],
+                    "mensaje": f"El runtime '{rt}' del nodo '{n['id']}' no está instalado en este entorno.",
+                })
+    except Exception:
+        pass
+
+    return hallazgos
+

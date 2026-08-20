@@ -211,10 +211,11 @@
           <button id="exportarSvg" style="font-size:11px; padding:4px 2px;">SVG</button>
           <button id="exportarMermaid" style="font-size:11px; padding:4px 2px;">Mermaid</button>
         </div>
-        <div class="fila" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px;">
-          <button id="exportarCi" style="font-size:11px; padding:4px 2px;">CI/CD</button>
-          <button id="exportarPy" style="font-size:11px; padding:4px 2px;">Python</button>
-          <button id="btnSimular" style="font-size:11px; padding:4px 2px; background:#212c3d; border-color:#3b567d;">⚡ Simular</button>
+        <div class="fila" style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:4px;">
+          <button id="exportarCi" style="font-size:10.5px; padding:4px 2px;">CI/CD</button>
+          <button id="exportarPy" style="font-size:10.5px; padding:4px 2px;">Python</button>
+          <button id="btnSimular" style="font-size:10.5px; padding:4px 2px; background:#212c3d; border-color:#3b567d;">⚡ Simular</button>
+          <button id="btnLintGrafo" style="font-size:10.5px; padding:4px 2px; background:#2a2418; border-color:#6d5324; color:#f0c068;">🔍 Lint</button>
         </div>
       </div>
 
@@ -1644,6 +1645,38 @@ $("#btnSimular").onclick = async () => {
   `;
   $("#modalEntregableRender").innerHTML = modalHtml;
   $("#modalEntregableTexto").textContent = JSON.stringify(datos, null, 2);
+  $("#modalEntregable").style.display = "flex";
+  mostrarModoPreview();
+};
+
+$("#btnLintGrafo").onclick = async () => {
+  if (!grafo.nodos.length) return avisar("No hay nodos para analizar.", "error");
+  const { ok, datos } = await api("/api/analizar-grafo", grafo);
+  if (!ok) return avisar(datos.error || "Error al analizar grafo", "error");
+
+  const hallazgos = datos.hallazgos || [];
+  if (!hallazgos.length) {
+    return avisar("✓ Grafo óptimo: sin antipatrones ni riesgos detectados.", "ok");
+  }
+
+  const itemsHtml = hallazgos.map(h => {
+    const col = h.tipo === "advertencia" ? "var(--failed)" : (h.tipo === "optimizacion" ? "#74c0fc" : "#ffd43b");
+    const icono = h.tipo === "advertencia" ? "⚠" : (h.tipo === "optimizacion" ? "⚡" : "💡");
+    return `<div style="border-left:3px solid ${col}; background:rgba(255,255,255,0.03); padding:8px 12px; margin:6px 0; border-radius:0 4px 4px 0; font-size:12px;">
+      <b>${icono} [${esc(h.tipo.toUpperCase())}]</b> ${esc(h.mensaje)}
+    </div>`;
+  }).join("");
+
+  const modalHtml = `
+    <div style="margin-bottom:12px; font-size:13px;">
+      <b>Auditoría Topológica & Linter:</b> Se detectaron <b>${hallazgos.length}</b> sugerencia(s) para optimizar el grafo.
+    </div>
+    <div style="background:#0e1017; border:1px solid var(--linea); border-radius:6px; padding:10px; margin-bottom:8px;">
+      ${itemsHtml}
+    </div>
+  `;
+  $("#modalEntregableRender").innerHTML = modalHtml;
+  $("#modalEntregableTexto").textContent = JSON.stringify(hallazgos, null, 2);
   $("#modalEntregable").style.display = "flex";
   mostrarModoPreview();
 };

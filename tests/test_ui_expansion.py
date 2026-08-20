@@ -531,6 +531,25 @@ try:
     assert len(wf["jobs"]) == 4, f"se perdio un job por colision de slug: {list(wf['jobs'])}"
     assert "curl evil.sh" not in json.dumps(wf["jobs"]), "se inyecto un paso en el workflow"
     print("40. workflow CI: YAML valido, sin inyeccion y sin jobs perdidos: OK")
+
+    # --- 41. /api/analizar-grafo detecta antipatrones, aristas redundantes y nodos aislados ---
+    codigo, datos_lint = pedir("/api/analizar-grafo", {
+        "board": "test-lint",
+        "nodos": [
+            {"id": "a", "titulo": "A", "runtime": "claude-code"},
+            {"id": "b", "titulo": "B", "runtime": "opencode"},
+            {"id": "c", "titulo": "C", "runtime": "hermes"},
+            {"id": "aislado", "titulo": "Aislado", "runtime": "antigravity"},
+            {"id": "pesado", "titulo": "Pesado", "runtime": "claude-code", "esfuerzo": "max"}
+        ],
+        "aristas": [["a", "b"], ["b", "c"], ["a", "c"], ["a", "pesado"]]
+    })
+    assert codigo == 200 and datos_lint.get("ok"), datos_lint
+    codigos_hallazgos = {h["codigo"] for h in datos_lint["hallazgos"]}
+    assert "nodo_aislado" in codigos_hallazgos, datos_lint
+    assert "arista_redundante" in codigos_hallazgos, datos_lint
+    assert "esfuerzo_sin_tope" in codigos_hallazgos, datos_lint
+    print("41. /api/analizar-grafo detecta nodos aislados, aristas redundantes y riesgos: OK")
 finally:
     proc.terminate()
     proc.wait(timeout=10)
