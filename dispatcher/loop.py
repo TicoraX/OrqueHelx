@@ -131,8 +131,12 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600,
         # default, `heartbeat_claim` no encontraba la card, devolvia False en
         # silencio y el latido no latia. Justo lo que este hilo existe para
         # evitar. Por eso ahora se abre la MISMA base y se MIRA el retorno.
-        c = k.connect(db_path=Path(db))
+        c = None
         try:
+            # El `connect` va DENTRO del try: si falla, el nodo sigue corriendo
+            # sin red y eso tiene que decirlo el mismo aviso, no un traceback
+            # suelto en un hilo que nadie mira.
+            c = k.connect(db_path=Path(db))
             while not latido.wait(_HEARTBEAT_S):
                 if not k.heartbeat_claim(c, task_id, claimer=CLAIMER):
                     print(f"  [{task_id}] perdimos el claim: el latido no lo "
@@ -143,7 +147,8 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600,
             # corriendo y quien mire el log tiene que saber que quedo sin red.
             print(f"  [{task_id}] el latido murio: {type(e).__name__}: {e}")
         finally:
-            c.close()
+            if c is not None:
+                c.close()
 
     hilo = threading.Thread(target=_latir, daemon=True)
     hilo.start()

@@ -600,6 +600,14 @@ def _guardar_snapshot(board: str, grafo: dict, descripcion: str = "") -> dict:
     limpio = _ruta_segura(board, SNAPSHOTS, "board").stem
     snap_id = f"{limpio}_{ts}"
     f = SNAPSHOTS / f"{snap_id}.json"
+    # Dos snapshots del mismo board en el mismo segundo compartian id y el
+    # segundo pisaba al primero. Un snapshot es inmutable: si el nombre ya
+    # existe, se desempata en vez de sobreescribir.
+    n = 1
+    while f.exists():
+        n += 1
+        snap_id = f"{limpio}_{ts}-{n}"
+        f = SNAPSHOTS / f"{snap_id}.json"
     data = {
         "id": snap_id,
         "board": limpio,
@@ -1060,6 +1068,11 @@ class Handler(BaseHTTPRequestHandler):
             # handler: socket cerrado, sin respuesta, traceback en consola.
             # Verificado con `curl -d 'no-es-json'` (curl exit 52).
             largo = int(self.headers.get("Content-Length") or 0)
+            # Negativo antes que el tope: `read(-1)` lee HASTA EOF, o sea que un
+            # `Content-Length: -1` cuelga el hilo esperando un cierre que el
+            # cliente no tiene por que hacer.
+            if largo < 0:
+                return self._responder(400, {"error": "Content-Length invalido"})
             if largo > self.MAX_CUERPO:
                 return self._responder(413, {"error": f"cuerpo de mas de "
                                                       f"{self.MAX_CUERPO} bytes"})

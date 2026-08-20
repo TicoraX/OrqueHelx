@@ -44,6 +44,12 @@ c.validar({"nodos": [N("a"), NOTA("n1")]}, capacidades=False)
 # Validacion de presupuesto por nodo
 falla({"nodos": [{"id": "a", "titulo": "t", "presupuesto_usd": "-5"}]}, "invalido")
 falla({"nodos": [{"id": "a", "titulo": "t", "presupuesto_usd": "abc"}]}, "invalido")
+# `True` y `inf` pasaban: `float(True)` es 1.0 (un tope de US$1 que nadie
+# escribio) y `inf` cumple `> 0` pero no se alcanza nunca, que es un tope que
+# se cree puesto y no lo esta.
+falla({"nodos": [{"id": "a", "titulo": "t", "presupuesto_usd": True}]}, "invalido")
+falla({"nodos": [{"id": "a", "titulo": "t", "presupuesto_usd": float("inf")}]}, "invalido")
+falla({"nodos": [{"id": "a", "titulo": "t", "presupuesto_usd": float("nan")}]}, "invalido")
 c.validar({"nodos": [{"id": "a", "titulo": "t", "presupuesto_usd": "1.50"}]}, capacidades=False)
 # Validacion de herramientas por nodo
 falla({"nodos": [{"id": "a", "titulo": "t", "herramientas": ["Inexistente"]}]}, "invalidas")

@@ -17,7 +17,7 @@ Formato del grafo (el que edita la UI):
       "aristas": [["a", "b"]]
     }
 """
-import sys
+import math, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hermes-agent"))
@@ -126,14 +126,21 @@ def validar(grafo: dict, *, capacidades: bool = True) -> None:
         esf = (n.get("esfuerzo") or "").strip()
         rt = n.get("runtime", "hermes")
         if not es_nota(n) and n.get("presupuesto_usd") is not None:
+            crudo = n["presupuesto_usd"]
             try:
-                val = float(n["presupuesto_usd"])
-                if val <= 0:
+                # `bool` aparte: `float(True)` es 1.0 y pasaria como un tope de
+                # US$ 1 que nadie escribio. `math.isfinite` aparte: `inf` pasa
+                # el `> 0` y da un tope que no puede alcanzarse nunca, o sea un
+                # tope que se cree puesto y no lo esta (SS10.5).
+                if isinstance(crudo, bool):
+                    raise ValueError()
+                val = float(crudo)
+                if not math.isfinite(val) or val <= 0:
                     raise ValueError()
             except (ValueError, TypeError):
                 raise ErrorDeGrafo(
-                    f"nodo '{n['id']}': presupuesto '{n['presupuesto_usd']}' invalido "
-                    "(debe ser un numero > 0)")
+                    f"nodo '{n['id']}': presupuesto '{crudo}' invalido "
+                    "(debe ser un numero finito > 0)")
         if not es_nota(n) and n.get("herramientas") is not None:
             herr = n["herramientas"]
             validas = {"Read", "Grep", "Glob", "Bash", "Write"}

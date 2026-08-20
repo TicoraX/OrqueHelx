@@ -1598,7 +1598,7 @@ $("#btnSimular").onclick = async () => {
       ${pasosHtml}
     </div>
     <div style="font-size:11px; color:var(--tenue);">
-      Runtimes involucrados: <b>${datos.runtimes.join(", ")}</b>
+      Runtimes involucrados: <b>${datos.runtimes.map(esc).join(", ")}</b>
     </div>
   `;
   $("#modalEntregableRender").innerHTML = modalHtml;
@@ -1872,14 +1872,14 @@ async function cargarTelemetria() {
   const barritas = Object.entries(porRt).map(([rt, cant]) => {
     const w = (cant / totalNodos) * 100;
     const col = coloresRt[rt] || "#59616f";
-    return `<div style="background:${col}; width:${w}%; height:100%;" title="${rt}: ${cant} nodo(s)"></div>`;
+    return `<div style="background:${col}; width:${w}%; height:100%;" title="${esc(rt)}: ${cant} nodo(s)"></div>`;
   }).join("");
 
   const leyendasRt = Object.entries(porRt).map(([rt, cant]) => {
     const col = coloresRt[rt] || "#59616f";
     return `<span style="font-size:10.5px; display:inline-flex; align-items:center; gap:3px; margin-right:8px;">
       <i style="display:inline-block; width:7px; height:7px; border-radius:2px; background:${col};"></i>
-      ${rt} (${cant})
+      ${esc(rt)} (${cant})
     </span>`;
   }).join("");
 

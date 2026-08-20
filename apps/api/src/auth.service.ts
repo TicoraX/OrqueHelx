@@ -55,7 +55,19 @@ export class AuthService {
       for (const [k, ts] of this.fallos) {
         if (!ts.some(t => t > corte)) this.fallos.delete(k);
       }
-      if (this.fallos.size >= MAX_CLAVES) this.fallos.clear();
+      // Si tras podar sigue lleno, se desaloja UNA entrada: la que tiene el
+      // fallo mas viejo. Un `clear()` aca seria la evasion misma del freno —
+      // el atacante llena el mapa y de paso resetea su propio contador.
+      while (this.fallos.size >= MAX_CLAVES) {
+        let vieja: string | null = null;
+        let masViejo = Infinity;
+        for (const [k, ts] of this.fallos) {
+          const ultimo = ts[ts.length - 1] ?? 0;
+          if (ultimo < masViejo) { masViejo = ultimo; vieja = k; }
+        }
+        if (vieja === null) break;
+        this.fallos.delete(vieja);
+      }
     }
     const previos = this.fallos.get(clave) || [];
     this.fallos.set(clave, [...previos, Date.now()]);

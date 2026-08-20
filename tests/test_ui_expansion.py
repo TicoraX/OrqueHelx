@@ -439,7 +439,19 @@ try:
     assert crudo(b"no-es-json")[0] == 400, "un cuerpo no-JSON no respondio 400"
     assert crudo(b"[1,2,3]")[0] == 400, "acepto un cuerpo que no es un objeto"
     assert crudo(b"{}", largo="abc")[0] == 400, "un Content-Length invalido no respondio 400"
-    print("36. cuerpo malformado y Content-Length invalido: 400 con JSON: OK")
+    # Negativo aparte: `read(-1)` lee HASTA EOF, o sea que colgaba el hilo
+    # esperando un cierre que el cliente no tiene por que hacer.
+    assert crudo(b"{}", largo="-1")[0] == 400, "un Content-Length negativo no respondio 400"
+    print("36. cuerpo malformado y Content-Length invalido o negativo: 400: OK")
+
+    # --- 36b. Dos snapshots del mismo board en el mismo segundo no se pisan ---
+    # Un snapshot es inmutable; el id era `{board}_{segundos}` y el segundo
+    # sobreescribia al primero.
+    ids_snap = {pedir("/api/snapshot", {"board": "mi-board-snap", "grafo": GRAFO,
+                                        "descripcion": f"rafaga {i}"})[1]["id"]
+                for i in range(3)}
+    assert len(ids_snap) == 3, f"dos snapshots compartieron id: {ids_snap}"
+    print("36b. snapshots simultaneos del mismo board no se pisan: OK")
 
     # --- 37. El query string se decodifica ---
     # `params` se armaba con un `split("=")` a mano: un grafo llamado `mi flujo`
@@ -503,6 +515,11 @@ finally:
     proc.terminate()
     proc.wait(timeout=10)
     (RAIZ / "ui" / "grafos" / f"{NOMBRE}.json").unlink(missing_ok=True)
+    # Los snapshots de los tests 28 y 35 tambien: cada corrida dejaba uno y
+    # `/api/snapshots` los va acumulando. Se borra por el board que usan, no por
+    # id, para que valga aunque el test corte antes de leer el id.
+    for viejo in (RAIZ / "ui" / "grafos" / "snapshots").glob("mi-board-snap_*.json"):
+        viejo.unlink(missing_ok=True)
     # El board tambien: cada corrida creaba uno y nadie lo borraba. Habia 60
     # `ui-exp-*` acumulados en el kanban del usuario, y uno de ellos era el que
     # hacia pasar el test 34 por accidente.
