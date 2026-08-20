@@ -379,6 +379,19 @@ try:
     assert len(datos_sim["pasos"]) == 3, datos_sim
     assert len(datos_sim["runtimes"]) == 4, datos_sim
     print("32. /api/simular analiza topología, camino crítico y paralelismo: OK")
+
+    # --- 33. /api/secretos-status inspecciona credenciales de forma segura ---
+    codigo, datos_sec = pedir("/api/secretos-status")
+    assert codigo == 200 and "secretos" in datos_sec, datos_sec
+    assert any(s["variable"] == "ANTHROPIC_API_KEY" for s in datos_sec["secretos"]), datos_sec
+    print("33. /api/secretos-status verifica presencia segura de API keys: OK")
+
+    # --- 34. /api/reporte-corrida genera informe Markdown estructurado ---
+    codigo, datos_rep = pedir("/api/reporte-corrida?board=ui-exp-2213")
+    assert codigo == 200 and "reporte" in datos_rep, datos_rep
+    assert "# Reporte de Auditoría:" in datos_rep["reporte"], datos_rep["reporte"]
+    assert "Resumen Ejecutivo" in datos_rep["reporte"], datos_rep["reporte"]
+    print("34. /api/reporte-corrida compila reporte de auditoría Markdown: OK")
 finally:
     proc.terminate()
     proc.wait(timeout=10)

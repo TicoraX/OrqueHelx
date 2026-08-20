@@ -697,6 +697,67 @@ def _simular_flujo(grafo: dict) -> dict:
     }
 
 
+def _generar_reporte_corrida(board: str) -> dict:
+    """Generar informe completo de auditoría y ejecución de un board en Markdown."""
+    slug = (board or "orquester").strip()
+    conn = k.connect(board=slug)
+    tasks = k.list_tasks(conn)
+    tele = _telemetria(slug)
+    res = tele.get("resumen", {})
+    consumo = _consumo(slug)
+    tot = consumo.get("total", {})
+    por_nodo = consumo.get("por_nodo", {})
+
+    fecha_str = time.strftime("%Y-%m-%d %H:%M:%S")
+    filas_tabla = []
+    secciones_entregables = []
+
+    for t in tasks:
+        tid = t.id
+        titulo = t.title or "(sin titulo)"
+        rt = "hermes"
+        if t.assignee and ":" in t.assignee:
+            rt = t.assignee.split(":", 1)[1]
+        st = t.status or "todo"
+        costo_nodo = por_nodo.get(tid, {}).get("costo_usd")
+        costo_txt = f"US$ {costo_nodo:.4f}" if costo_nodo is not None else "—"
+        tokens_nodo = por_nodo.get(tid, {}).get("total", 0)
+
+        dur_txt = "—"
+        if t.started_at and t.completed_at:
+            dur_txt = f"{t.completed_at - t.started_at}s"
+
+        filas_tabla.append(f"| `{tid}` | {titulo[:35]} | `{rt}` | `{st}` | {dur_txt} | {tokens_nodo} ({costo_txt}) |")
+
+        if t.result:
+            secciones_entregables.append(f"### Nodo `{tid}`: {titulo}\n- **Estado**: `{st}` | **Runtime**: `{rt}`\n\n```\n{t.result[:800]}\n```\n")
+
+    md = [
+        f"# Reporte de Auditoría: {slug}",
+        f"*Generado automáticamente por ORQUESTER Studio el {fecha_str}*",
+        "",
+        "## 1. Resumen Ejecutivo",
+        f"- **Progreso**: {res.get('progreso_pct', 0)}% ({res.get('terminados', 0)}/{res.get('total', 0)} tareas completadas)",
+        f"- **Nodos Fallidos/Bloqueados**: {res.get('fallidos', 0)}",
+        f"- **Nodos Activos**: {res.get('activos', 0)}",
+        f"- **Consumo Total**: US$ {tot.get('costo_usd', 0.0):.4f} ({tot.get('total', 0):,} tokens en {tot.get('intentos', 0)} intentos)",
+        "",
+        "## 2. Detalle de Nodos del Flujo",
+        "| ID | Título | Runtime | Estado | Duración | Consumo |",
+        "|---|---|---|---|---|---|",
+        "\n".join(filas_tabla) if filas_tabla else "| — | Sin tareas | — | — | — | — |",
+        "",
+        "## 3. Entregables y Salidas de Agentes",
+        "\n".join(secciones_entregables) if secciones_entregables else "*No hay entregables registrados aún.*",
+    ]
+
+    return {
+        "ok": True,
+        "board": slug,
+        "reporte": "\n".join(md),
+    }
+
+
 def _quedan_de_hermes(conn) -> bool:
     """Cards que espera el dispatcher de Hermes, no el nuestro."""
     propios = {dispatcher.carril(rt) for rt in dispatcher.BACKENDS}
@@ -815,6 +876,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._responder(200, _historial())
         if ruta == "/api/doctor":
             return self._responder(200, capacidades.doctor())
+        if ruta == "/api/secretos-status":
+            return self._responder(200, capacidades.secretos_status())
+        if ruta == "/api/reporte-corrida":
+            return self._responder(200, _generar_reporte_corrida(params.get("board", "orquester")))
         if ruta == "/api/snapshots":
             return self._responder(200, _listar_snapshots(params.get("board", "")))
         if ruta == "/api/grafo":
@@ -925,6 +990,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._responder(200, _restaurar_snapshot(sid))
                 except Exception as e:
                     return self._responder(400, {"error": f"error restaurando snapshot: {e}"})
+            if self.path == "/api/reporte-corrida":
+                b = cuerpo.get("board") or "orquester"
+                try:
+                    return self._responder(200, _generar_reporte_corrida(b))
+                except Exception as e:
+                    return self._responder(400, {"error": f"error generando reporte: {e}"})
             if self.path == "/api/parametros":
                 # Los marcadores los detecta el exportador MCP, no una segunda
                 # regex en el navegador: si se duplica, se desincroniza y el

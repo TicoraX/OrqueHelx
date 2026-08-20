@@ -235,6 +235,47 @@ def doctor() -> dict:
     }
 
 
+def secretos_status() -> dict:
+    """Inspección segura de credenciales y API keys configuradas en el entorno."""
+    import os
+
+    claves = [
+        ("ANTHROPIC_API_KEY", "Anthropic", "Claude Code / Hermes"),
+        ("OPENAI_API_KEY", "OpenAI", "OpenCode / Hermes"),
+        ("DEEPSEEK_API_KEY", "DeepSeek", "OpenCode / DeepSeek-V3"),
+        ("GEMINI_API_KEY", "Google Gemini", "Antigravity"),
+        ("GROQ_API_KEY", "Groq", "Hermes Fast Inference"),
+        ("OPENROUTER_API_KEY", "OpenRouter", "OpenCode / Multi-Model"),
+        ("GITHUB_TOKEN", "GitHub", "MCP / Git Tools"),
+        ("GH_TOKEN", "GitHub CLI", "GitHub CLI auth"),
+    ]
+
+    salida = []
+    for var, proveedor, uso in claves:
+        val = os.environ.get(var, "").strip()
+        presente = bool(val)
+        enmascarado = None
+        if presente:
+            if len(val) <= 8:
+                enmascarado = "***"
+            else:
+                enmascarado = f"{val[:4]}...{val[-3:]}"
+        salida.append({
+            "variable": var,
+            "proveedor": proveedor,
+            "uso": uso,
+            "presente": presente,
+            "enmascarado": enmascarado,
+        })
+
+    return {
+        "ok": True,
+        "total_configuradas": sum(1 for c in salida if c["presente"]),
+        "total_revisadas": len(salida),
+        "secretos": salida,
+    }
+
+
 if __name__ == "__main__":
     import json
     print(json.dumps(tabla(), indent=2, ensure_ascii=False))

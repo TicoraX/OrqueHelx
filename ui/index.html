@@ -332,6 +332,7 @@
       <div>
         <label>Inspeccionar corrida histórica</label>
         <select id="selBoardHistorial"><option value="">(elegir corrida previa…)</option></select>
+        <button id="btnGenerarReporte" style="margin-top:6px; width:100%; font-size:11.5px; padding:4px 8px;">📄 Reporte de Auditoría</button>
       </div>
 
       <div id="bloqueTelemetria" style="display:none; background:#141720; border:1px solid var(--linea); border-radius:6px; padding:10px; margin-bottom:12px;">
@@ -1694,7 +1695,10 @@ $("#btnRestaurarSnapshot").onclick = async () => {
 $("#btnEjecutarDoctor").onclick = async () => {
   $("#btnEjecutarDoctor").disabled = true;
   $("#btnEjecutarDoctor").textContent = "🩺 Diagnosticando…";
-  const { ok, datos } = await api("/api/doctor");
+  const [{ ok, datos }, { ok: okSec, datos: datosSec }] = await Promise.all([
+    api("/api/doctor"),
+    api("/api/secretos-status")
+  ]);
   $("#btnEjecutarDoctor").disabled = false;
   $("#btnEjecutarDoctor").textContent = "🩺 Ejecutar Diagnóstico";
   const box = $("#resultadoDoctor");
@@ -1710,19 +1714,49 @@ $("#btnEjecutarDoctor").onclick = async () => {
     return `<div style="display:flex; justify-content:space-between; padding:2px 0;"><span>${icon} <b>${nombre}</b></span> ${ver}</div>`;
   }).join("");
 
+  const secHtml = ((datosSec && datosSec.secretos) || []).map(s => {
+    const icon = s.presente ? '<span style="color:var(--done);">✓</span>' : '<span style="color:var(--tenue);">—</span>';
+    const mask = s.enmascarado ? `<span style="color:var(--acento); font-size:10px; font-family:monospace;">${esc(s.enmascarado)}</span>` : '<span style="color:var(--tenue); font-size:10px;">no configurada</span>';
+    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:2px 0; border-bottom:1px solid rgba(255,255,255,0.03);">
+      <span>${icon} <b style="font-size:11px;">${esc(s.variable)}</b> <span style="color:var(--tenue); font-size:10px;">(${esc(s.proveedor)})</span></span>
+      ${mask}
+    </div>`;
+  }).join("");
+
   box.innerHTML = `
     <div style="margin-bottom:8px; border-bottom:1px solid var(--linea); padding-bottom:6px;">
       <b>Plataforma:</b> ${esc(plat.os)} ${esc(plat.release)} · Python ${esc(plat.python)}<br>
       <b>SQLite:</b> v${esc(plat.sqlite_version)} ${plat.wal_seguro ? '<span style="color:var(--done);">✓ WAL seguro</span>' : '<span style="color:var(--ready);">⚠ DELETE mode</span>'}
     </div>
-    <div style="margin-bottom:6px; font-weight:600; font-size:11.5px;">Binarios y Runtimes:</div>
+    <div style="margin-bottom:4px; font-weight:600; font-size:11.5px;">Binarios y Runtimes:</div>
     <div style="background:#0e1017; border:1px solid var(--linea); border-radius:4px; padding:6px 8px; margin-bottom:8px;">
       ${binHtml}
+    </div>
+    <div style="margin-bottom:4px; font-weight:600; font-size:11.5px; display:flex; justify-content:space-between;">
+      <span>Credenciales & API Keys:</span>
+      <span style="color:var(--tenue); font-weight:normal;">${datosSec?.total_configuradas || 0}/${datosSec?.total_revisadas || 0}</span>
+    </div>
+    <div style="background:#0e1017; border:1px solid var(--linea); border-radius:4px; padding:6px 8px; margin-bottom:8px;">
+      ${secHtml}
     </div>
     <div style="font-size:11px; color:var(--tenue);">
       Runtimes activos para ejecución: <b>${datos.runtimes_activos}/4</b>
     </div>
   `;
+};
+
+$("#btnGenerarReporte").onclick = async () => {
+  $("#btnGenerarReporte").disabled = true;
+  $("#btnGenerarReporte").textContent = "📄 Generando reporte…";
+  const { ok, datos } = await api(`/api/reporte-corrida?board=${encodeURIComponent(grafo.board)}`);
+  $("#btnGenerarReporte").disabled = false;
+  $("#btnGenerarReporte").textContent = "📄 Reporte de Auditoría";
+  if (!ok || !datos.reporte) return avisar("No se pudo generar el reporte.", "error");
+
+  $("#modalEntregableRender").innerHTML = renderMarkdown(datos.reporte);
+  $("#modalEntregableTexto").textContent = datos.reporte;
+  $("#modalEntregable").style.display = "flex";
+  mostrarModoPreview();
 };
 
 $("#btnGenIa").onclick = async () => {
