@@ -7,9 +7,9 @@
 
 ## Dónde está el código
 
-- Commit `b2e9e10` — feat(studio): trazabilidad de impacto y linaje de nodos en el DAG
+- Commit `8282fe0` — feat(studio): diff estructural y comparador visual de snapshots
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 3
+- Árbol limpio: sí · sin pushear: 5
 
 ## Runtime prestado
 
@@ -47,7 +47,7 @@
 
 ## Bloqueos
 
-- 3 commit(s) sin pushear
+- 5 commit(s) sin pushear
 
 ## Qué sigue
 
