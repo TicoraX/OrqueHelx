@@ -7,9 +7,9 @@
 
 ## Dónde está el código
 
-- Commit `0ca5f76` — feat(studio): inspector seguro de secretos y credenciales, y generador de reportes de auditoria markdown
+- Commit `001ac10` — chore: actualizar ESTADO.md tras inclusion de inspector de credenciales
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 7
+- Árbol limpio: **no** · sin pushear: 8
 
 ## Runtime prestado
 
@@ -47,15 +47,16 @@
 
 ## Bloqueos
 
-- 7 commit(s) sin pushear
+- hay cambios sin commitear
+- 8 commit(s) sin pushear
 
 ## Qué sigue
 
 - §10 tiene 1 afirmación(es) pendiente(s)
-- chat que DISEÑA el grafo (hoy el chat ejecuta; la otra mitad de la bifurcación es que el agente escriba el grafo en el lienzo)
-- presupuesto por NODO además del global (hoy el tope es del flujo entero)
+- que el grafo diseñado por el agente se pueda EDITAR y re-pedir en el lienzo (generarlo ya anda; hoy cada intento pisa el anterior)
 - conectar el Studio a la API multiusuario (hoy le habla directo al motor)
 - medición empírica del cumplimiento del output_schema (diferida a propósito)
+- tabla de rutas en ui/server.py: 34 endpoints en dos cadenas de `if`
 
 ## Cómo retomar
 

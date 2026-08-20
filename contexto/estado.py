@@ -174,6 +174,17 @@ def revisar(estado: Contexto) -> Contexto:
 
     if s["pendientes_10"]:
         siguiente.append(f"§10 tiene {s['pendientes_10']} afirmación(es) pendiente(s)")
+    # OJO: esta lista está escrita a mano dentro de un archivo cuyo docstring
+    # dice "Generado, no escrito: un traspaso a mano miente". Ya mintió: durante
+    # semanas anunció como pendientes dos cosas que estaban construidas.
+    #   - "chat que DISEÑA el grafo": `/api/generar-grafo` existía y llamaba a un
+    #     agente, pero leía `res["respuesta"]` y el chat devuelve `res["texto"]`,
+    #     así que caía SIEMPRE a una plantilla fija. Estaba roto, no ausente.
+    #   - "presupuesto por NODO": `compile.py` ya escribía `tenant=budget:N`,
+    #     `loop.ejecutar_una` ya hacía `min(global, nodo)` y
+    #     `test_esfuerzo_presupuesto` ya lo cubría. Estaba hecho.
+    # Antes de agregar algo acá: buscarlo en el código. Y antes de tacharlo,
+    # también.
     siguiente += [
         # La expansión del Studio está cerrada: abrir un grafo guardado, pasarle
         # parámetros, elegir workspace, parar una corrida, zoom/paneo, deshacer,
@@ -181,11 +192,11 @@ def revisar(estado: Contexto) -> Contexto:
         # `tests/test_ui_expansion.py`; lo del lienzo, con Playwright.
         # El Studio está completo para uso local: plantillas, chat, esfuerzo,
         # tope de gasto, auto-layout y atajos. Lo que queda es producto, no UI.
-        "chat que DISEÑA el grafo (hoy el chat ejecuta; la otra mitad de la "
-        "bifurcación es que el agente escriba el grafo en el lienzo)",
-        "presupuesto por NODO además del global (hoy el tope es del flujo entero)",
+        "que el grafo diseñado por el agente se pueda EDITAR y re-pedir en el "
+        "lienzo (generarlo ya anda; hoy cada intento pisa el anterior)",
         "conectar el Studio a la API multiusuario (hoy le habla directo al motor)",
         "medición empírica del cumplimiento del output_schema (diferida a propósito)",
+        "tabla de rutas en ui/server.py: 34 endpoints en dos cadenas de `if`",
     ]
     return {"bloqueos": bloqueos, "siguiente": siguiente,
             "fase": "producto en uso" if not bloqueos else "con pendientes"}

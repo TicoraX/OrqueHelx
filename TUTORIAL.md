@@ -410,14 +410,31 @@ No hay duplicación: el kanban no es nuestro (`ARQUITECTURA.md` §10.2).
 
 ## 9. Los tests
 
+Todos, en un comando, desde la raíz del repo:
+
 ```bash
-cd hermes-agent
-uv run --python 3.11 --with jsonschema python ../tests/test_contract.py
-uv run --python 3.11 --with jsonschema python ../tests/test_dag_rombo.py
-uv run --python 3.11 --with jsonschema python ../tests/test_dos_dispatchers.py
-uv run --python 3.11 --with jsonschema python ../tests/test_compilador.py
-uv run --python 3.11 --with jsonschema python ../tests/test_concurrencia_reintentos.py
-uv run --python 3.11 --with jsonschema python ../tests/test_mcp_export.py
+uv run --python 3.11 --with jsonschema --with pyyaml python tests/correr.py
+```
+
+**Las dos `--with` no son opcionales.** `jsonschema` y `pyyaml` son
+dependencias duras: sin ellas cuatro tests fallan con errores que parecen del
+código y no lo son. `tests/correr.py` lo detecta antes de correr nada y te da
+el comando; si igual corrés un test suelto con el Python del PATH, es lo que te
+va a pasar.
+
+El runner distingue **OMITIDO** de **OK**: `test_api_rbac` sale con código 0
+cuando se saltea por falta de Postgres, así que mirar solo el exit code cuenta
+como verde algo que no corrió. Para que corra de verdad:
+
+```bash
+docker compose up -d db
+cd apps/api && npm run build
+```
+
+Uno solo, si estás iterando:
+
+```bash
+uv run --python 3.11 --with jsonschema --with pyyaml python tests/test_compilador.py
 ```
 
 Los que aceptan `--e2e` además ejecutan agentes de verdad y tardan minutos:
