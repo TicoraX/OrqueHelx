@@ -7,9 +7,9 @@
 
 ## Dónde está el código
 
-- Commit `5e4cdf5` — feat(studio): telemetria en vivo, historico de boards, diseno de DAGs con IA y presupuesto por nodo
+- Commit `b008671` — feat(studio): diagnostico doctor, exportador CI/CD, snapshots de grafos y visor markdown interactivo
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 1
+- Árbol limpio: sí · sin pushear: 3
 
 ## Runtime prestado
 
@@ -47,7 +47,7 @@
 
 ## Bloqueos
 
-- 1 commit(s) sin pushear
+- 3 commit(s) sin pushear
 
 ## Qué sigue
 
