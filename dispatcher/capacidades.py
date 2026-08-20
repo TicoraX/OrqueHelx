@@ -185,6 +185,56 @@ def faltantes(runtimes) -> list[str]:
                    if rt in t and not t[rt]["disponible"]})
 
 
+def doctor() -> dict:
+    """Diagnóstico integral de salud, runtimes, SQLite y entorno de ORQUESTER."""
+    import platform, sqlite3
+
+    sqlite_ver = sqlite3.sqlite_version
+    partes = [int(p) for p in sqlite_ver.split(".") if p.isdigit()]
+    wal_seguro = tuple(partes[:2]) >= (3, 51) if len(partes) >= 2 else False
+
+    binarios = {}
+    todos_bin = {
+        "claude": ["claude", "--version"],
+        "opencode": ["opencode", "--version"],
+        "antigravity": ["agy", "--version"],
+        "hermes": ["hermes", "--version"],
+        "node": ["node", "--version"],
+        "docker": ["docker", "--version"],
+    }
+
+    for nombre, argv in todos_bin.items():
+        presente = bool(shutil.which(argv[0]))
+        version = None
+        if presente:
+            try:
+                p = subprocess.run(argv, capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL)
+                out = (p.stdout or p.stderr or "").strip()
+                version = out.splitlines()[0] if out else "disponible"
+            except Exception:
+                version = "disponible"
+        binarios[nombre] = {
+            "disponible": presente,
+            "version": version,
+            "ruta": shutil.which(argv[0]) or None,
+        }
+
+    runtimes_disponibles = sum(1 for b in ("claude", "opencode", "antigravity", "hermes") if binarios[b]["disponible"])
+
+    return {
+        "ok": runtimes_disponibles > 0,
+        "plataforma": {
+            "os": platform.system(),
+            "release": platform.release(),
+            "python": platform.python_version(),
+            "sqlite_version": sqlite_ver,
+            "wal_seguro": wal_seguro,
+        },
+        "binarios": binarios,
+        "runtimes_activos": runtimes_disponibles,
+    }
+
+
 if __name__ == "__main__":
     import json
     print(json.dumps(tabla(), indent=2, ensure_ascii=False))

@@ -27,6 +27,8 @@ import capacidades
 HTML = Path(__file__).parent / "index.html"
 GRAFOS = RAIZ / "ui" / "grafos"
 GRAFOS.mkdir(exist_ok=True)
+SNAPSHOTS = GRAFOS / "snapshots"
+SNAPSHOTS.mkdir(exist_ok=True)
 
 # Plantillas: versionadas en el repo y de SOLO LECTURA desde el Studio. Usar
 # una la copia a `ui/grafos/`. Si fueran el mismo lugar, editar una plantilla y
@@ -497,6 +499,115 @@ def _reintentar_nodo(board: str, task_id: str) -> dict:
     return {"ok": True, "task_id": task_id}
 
 
+def _guardar_snapshot(board: str, grafo: dict, descripcion: str = "") -> dict:
+    """Guardar una instantánea inmutable del diseño actual del grafo."""
+    limpio = (board or "").strip()
+    if not limpio or ".." in limpio:
+        raise ValueError(f"board invalido: {board!r}")
+    ts = int(time.time())
+    snap_id = f"{limpio}_{ts}"
+    f = SNAPSHOTS / f"{snap_id}.json"
+    data = {
+        "id": snap_id,
+        "board": limpio,
+        "timestamp": ts,
+        "descripcion": descripcion.strip() or f"Snapshot {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(ts))}",
+        "grafo": grafo,
+    }
+    f.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return {"ok": True, "id": snap_id, "snapshot": data}
+
+
+def _listar_snapshots(board: str = "") -> dict:
+    """Listar todas las instantáneas guardadas, filtradas opcionalmente por board."""
+    limpio = (board or "").strip()
+    salida = []
+    for f in sorted(SNAPSHOTS.glob("*.json"), reverse=True):
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+            if not limpio or d.get("board") == limpio:
+                salida.append({
+                    "id": d.get("id") or f.stem,
+                    "board": d.get("board"),
+                    "timestamp": d.get("timestamp"),
+                    "descripcion": d.get("descripcion"),
+                    "total_nodos": len(d.get("grafo", {}).get("nodos", [])),
+                })
+        except Exception:
+            continue
+    return {"snapshots": salida}
+
+
+def _restaurar_snapshot(snap_id: str) -> dict:
+    """Recuperar un snapshot por ID."""
+    limpio = (snap_id or "").strip()
+    if not limpio or ".." in limpio:
+        raise ValueError("ID de snapshot invalido")
+    f = (SNAPSHOTS / f"{limpio}.json").resolve()
+    if f.parent != SNAPSHOTS.resolve() or not f.is_file():
+        raise ValueError(f"No existe el snapshot {limpio}")
+    d = json.loads(f.read_text(encoding="utf-8"))
+    return {"ok": True, "snapshot": d}
+
+
+def _generar_ci_workflow(grafo: dict) -> str:
+    """Generar workflow de GitHub Actions a partir del grafo DAG."""
+    board = grafo.get("board") or "orquester-flujo"
+    nodos = grafo.get("nodos") or []
+    aristas = grafo.get("aristas") or []
+
+    padres_por_nodo = {}
+    for p, h in aristas:
+        padres_por_nodo.setdefault(h, []).append(p)
+
+    jobs_yaml = []
+    for n in nodos:
+        nid = re.sub(r'[^a-zA-Z0-9_-]', '_', n["id"])
+        titulo = (n.get("titulo") or nid).replace('"', '\\"').replace("\n", " ")
+        rt = n.get("runtime", "claude-code")
+        needs = [re.sub(r'[^a-zA-Z0-9_-]', '_', p) for p in padres_por_nodo.get(n["id"], [])]
+
+        job_lines = [
+            f"  {nid}:",
+            f"    name: \"{n['id']}: {titulo[:35]}\"",
+            "    runs-on: ubuntu-latest",
+        ]
+        if needs:
+            job_lines.append(f"    needs: [{', '.join(needs)}]")
+
+        job_lines.extend([
+            "    steps:",
+            "      - name: Checkout repository",
+            "        uses: actions/checkout@v4",
+            "      - name: Setup Python",
+            "        uses: actions/setup-python@v5",
+            "        with:",
+            "          python-version: '3.11'",
+            f"      - name: Ejecutar nodo ({rt})",
+            f"        run: |",
+            f"          echo \"==> ORQUESTER Nodo {n['id']} [{rt}]\"",
+            f"          # Goal: {titulo[:70]}",
+            f"          python -c \"print('Paso {n['id']} completado.')\"",
+        ])
+        jobs_yaml.append("\n".join(job_lines))
+
+    workflow = [
+        f"# Pipeline CI/CD generado automáticamente por ORQUESTER",
+        f"# Flujo: {board}",
+        f"name: ORQUESTER - {board}",
+        "",
+        "on:",
+        "  push:",
+        "    branches: [ main, master ]",
+        "  pull_request:",
+        "  workflow_dispatch:",
+        "",
+        "jobs:",
+        "\n".join(jobs_yaml) if jobs_yaml else "  noop:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo 'Grafo vacio'",
+    ]
+    return "\n".join(workflow)
+
+
 def _quedan_de_hermes(conn) -> bool:
     """Cards que espera el dispatcher de Hermes, no el nuestro."""
     propios = {dispatcher.carril(rt) for rt in dispatcher.BACKENDS}
@@ -613,6 +724,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._responder(200, _telemetria(params.get("board", "orquester")))
         if ruta == "/api/historial":
             return self._responder(200, _historial())
+        if ruta == "/api/doctor":
+            return self._responder(200, capacidades.doctor())
+        if ruta == "/api/snapshots":
+            return self._responder(200, _listar_snapshots(params.get("board", "")))
         if ruta == "/api/grafo":
             try:
                 f = _archivo(params.get("nombre", ""))
@@ -692,6 +807,25 @@ class Handler(BaseHTTPRequestHandler):
                     return self._responder(400, {"error": str(e)})
                 except Exception as e:
                     return self._responder(500, {"error": f"error reintentando nodo: {e}"})
+            if self.path == "/api/exportar-ci":
+                try:
+                    return self._responder(200, {"ok": True, "workflow": _generar_ci_workflow(cuerpo)})
+                except Exception as e:
+                    return self._responder(400, {"error": f"error generando workflow CI: {e}"})
+            if self.path == "/api/snapshot":
+                b = cuerpo.get("board") or "orquester"
+                g = cuerpo.get("grafo") or {}
+                desc = cuerpo.get("descripcion") or ""
+                try:
+                    return self._responder(200, _guardar_snapshot(b, g, desc))
+                except Exception as e:
+                    return self._responder(400, {"error": f"error guardando snapshot: {e}"})
+            if self.path == "/api/snapshot/restaurar":
+                sid = cuerpo.get("id") or ""
+                try:
+                    return self._responder(200, _restaurar_snapshot(sid))
+                except Exception as e:
+                    return self._responder(400, {"error": f"error restaurando snapshot: {e}"})
             if self.path == "/api/parametros":
                 # Los marcadores los detecta el exportador MCP, no una segunda
                 # regex en el navegador: si se duplica, se desincroniza y el

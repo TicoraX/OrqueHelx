@@ -310,6 +310,47 @@ try:
         assert codigo == 200 and datos_reintento.get("ok"), datos_reintento
         print("25. /api/reintentar-nodo desbloquea card sin error: OK")
     conn.close()
+
+    # --- 26. /api/doctor devuelve diagnóstico integral ---
+    codigo, datos_doc = pedir("/api/doctor")
+    assert codigo == 200 and "plataforma" in datos_doc and "binarios" in datos_doc, datos_doc
+    assert "sqlite_version" in datos_doc["plataforma"], datos_doc
+    print("26. /api/doctor diagnostica entorno y runtimes: OK")
+
+    # --- 27. /api/exportar-ci genera workflow de GitHub Actions ---
+    codigo, datos_ci = pedir("/api/exportar-ci", {
+        "board": "pipeline-ci",
+        "nodos": [
+            {"id": "test", "titulo": "Ejecutar suite de tests", "runtime": "claude-code"},
+            {"id": "deploy", "titulo": "Desplegar a produccion", "runtime": "opencode"}
+        ],
+        "aristas": [["test", "deploy"]]
+    })
+    assert codigo == 200 and "workflow" in datos_ci, datos_ci
+    assert "needs: [test]" in datos_ci["workflow"], datos_ci["workflow"]
+    print("27. /api/exportar-ci genera pipeline CI/CD con dependencias: OK")
+
+    # --- 28. /api/snapshot guarda un punto de control del diseño ---
+    codigo, datos_snap = pedir("/api/snapshot", {
+        "board": "mi-board-snap",
+        "descripcion": "Snapshot de prueba",
+        "grafo": {"board": "mi-board-snap", "nodos": [{"id": "a", "titulo": "t1"}], "aristas": []}
+    })
+    assert codigo == 200 and datos_snap.get("ok") and "id" in datos_snap, datos_snap
+    snap_id = datos_snap["id"]
+    print("28. /api/snapshot guarda punto de restauracion: OK")
+
+    # --- 29. /api/snapshots lista puntos de restauracion ---
+    codigo, datos_lista_snap = pedir("/api/snapshots?board=mi-board-snap")
+    assert codigo == 200 and "snapshots" in datos_lista_snap, datos_lista_snap
+    assert any(s["id"] == snap_id for s in datos_lista_snap["snapshots"]), datos_lista_snap
+    print("29. /api/snapshots lista instantaneas registradas: OK")
+
+    # --- 30. /api/snapshot/restaurar recupera el grafo exacto ---
+    codigo, datos_rest = pedir("/api/snapshot/restaurar", {"id": snap_id})
+    assert codigo == 200 and datos_rest.get("ok"), datos_rest
+    assert datos_rest["snapshot"]["grafo"]["board"] == "mi-board-snap", datos_rest
+    print("30. /api/snapshot/restaurar recupera diseño inmutable: OK")
 finally:
     proc.terminate()
     proc.wait(timeout=10)

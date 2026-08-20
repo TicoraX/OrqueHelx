@@ -143,6 +143,7 @@
       <button class="tab" data-tab="nodo">Nodo</button>
       <button class="tab" data-tab="obs">Traza</button>
       <button class="tab" data-tab="chat">Chat</button>
+      <button class="tab" data-tab="doctor">Doctor</button>
     </div>
   </div>
 
@@ -197,11 +198,24 @@
       </div>
 
       <div>
-        <h2>Exportación</h2>
-        <div class="fila">
-          <button id="exportar">Exportar MCP</button>
-          <button id="exportarSvg">SVG</button>
-          <button id="exportarMermaid">Mermaid</button>
+        <h2>Exportación & CI/CD</h2>
+        <div class="fila" style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:4px;">
+          <button id="exportar" style="font-size:11px; padding:4px 2px;">MCP</button>
+          <button id="exportarSvg" style="font-size:11px; padding:4px 2px;">SVG</button>
+          <button id="exportarMermaid" style="font-size:11px; padding:4px 2px;">Mermaid</button>
+          <button id="exportarCi" style="font-size:11px; padding:4px 2px;">CI/CD</button>
+        </div>
+      </div>
+
+      <div style="background:#141720; border:1px solid var(--linea); border-radius:6px; padding:8px 10px; margin-top:4px;">
+        <label style="margin:0 0 6px; font-weight:600; font-size:11.5px;">📸 Puntos de control (Snapshots)</label>
+        <div class="fila" style="gap:4px; margin-bottom:6px;">
+          <input id="descSnapshot" type="text" placeholder="Nota de la versión…" style="flex:1; font-size:11px; margin:0; padding:3px 6px;" />
+          <button id="btnGuardarSnapshot" style="white-space:nowrap; padding:3px 8px; font-size:11px;">Guardar</button>
+        </div>
+        <div style="display:flex; gap:4px; align-items:center;">
+          <select id="selSnapshots" style="flex:1; font-size:11px; margin:0; padding:3px 4px;"><option value="">(sin snapshots)</option></select>
+          <button id="btnRestaurarSnapshot" style="white-space:nowrap; font-size:11px; padding:3px 8px;">Restaurar</button>
         </div>
       </div>
 
@@ -351,6 +365,15 @@
       </div>
       <div id="sinTraza" class="ayuda">Seleccioná un nodo compilado para ver su traza y entregable.</div>
     </div>
+
+    <!-- Pestaña 5: Doctor & Preflight -->
+    <div id="vista-doctor" class="tab-vista">
+      <h2>Diagnóstico del Entorno</h2>
+      <button id="btnEjecutarDoctor" style="width:100%; margin-bottom:8px;">🩺 Ejecutar Diagnóstico</button>
+      <div id="resultadoDoctor" style="background:#141720; border:1px solid var(--linea); border-radius:6px; padding:10px; font-size:11.5px; line-height:1.5;">
+        <div class="d">Haz clic para comprobar la salud de SQLite, runtimes CLI y conectividad del entorno.</div>
+      </div>
+    </div>
   </div>
 
   <div id="panelFooter">
@@ -365,15 +388,22 @@
 
 <div id="modalEntregable" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.75); z-index:100; align-items:center; justify-content:center; padding:24px;">
   <div style="background:var(--panel); border:1px solid var(--linea); border-radius:8px; width:90vw; max-width:960px; max-height:85vh; display:flex; flex-direction:column; box-shadow:0 16px 48px rgba(0,0,0,0.6);">
-    <div style="padding:12px 16px; border-bottom:1px solid var(--linea); display:flex; justify-content:space-between; align-items:center;">
-      <b style="font-size:13px;">Entregable Completo</b>
+    <div style="padding:10px 16px; border-bottom:1px solid var(--linea); display:flex; justify-content:space-between; align-items:center;">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <b style="font-size:13px;">Entregable Completo</b>
+        <div style="display:inline-flex; border:1px solid var(--linea); border-radius:4px; overflow:hidden;">
+          <button id="btnModoPreview" style="border:none; border-radius:0; padding:2px 8px; font-size:11px; background:var(--acento); color:#fff; width:auto;">Formato</button>
+          <button id="btnModoRaw" style="border:none; border-radius:0; padding:2px 8px; font-size:11px; background:transparent; color:var(--tenue); width:auto;">Texto plano</button>
+        </div>
+      </div>
       <div style="display:flex; gap:8px;">
         <button id="modalBtnCopiar" style="width:auto; padding:3px 9px; font-size:11.5px;">Copiar todo</button>
         <button id="modalBtnCerrar" style="width:auto; padding:3px 9px; font-size:11.5px;">Cerrar (Esc)</button>
       </div>
     </div>
     <div style="padding:16px; overflow:auto; flex:1;">
-      <pre id="modalEntregableTexto" style="margin:0; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; white-space:pre-wrap; color:var(--texto); line-height:1.5;"></pre>
+      <div id="modalEntregableRender" style="font-size:12.5px; line-height:1.6; color:var(--texto);"></div>
+      <pre id="modalEntregableTexto" style="display:none; margin:0; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; white-space:pre-wrap; color:var(--texto); line-height:1.5;"></pre>
     </div>
   </div>
 </div>
@@ -660,8 +690,10 @@ async function cargarTraza() {
   const btnExpandir = $("#btnExpandirRes");
   if (btnExpandir) {
     btnExpandir.onclick = () => {
+      $("#modalEntregableRender").innerHTML = renderMarkdown(ULTIMO_RESULTADO);
       $("#modalEntregableTexto").textContent = ULTIMO_RESULTADO;
       $("#modalEntregable").style.display = "flex";
+      mostrarModoPreview();
     };
   }
 }
@@ -1425,6 +1457,56 @@ $("#exportarMermaid").onclick = async () => {
   avisar("Diagrama Mermaid copiado al portapapeles.", "ok");
 };
 
+$("#exportarCi").onclick = async () => {
+  if (!grafo.nodos.length) return avisar("No hay nodos para exportar.", "error");
+  const { ok, datos } = await api("/api/exportar-ci", grafo);
+  if (!ok) return avisar(datos.error || "No se pudo generar workflow CI/CD", "error");
+  navigator.clipboard.writeText(datos.workflow);
+  avisar("Pipeline GitHub Actions copiado al portapapeles.", "ok");
+};
+
+function renderMarkdown(md) {
+  if (!md) return '<div class="d">Sin contenido</div>';
+  let html = esc(md);
+  html = html.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (m, lang, code) => {
+    return `<pre style="background:#13161f; border:1px solid var(--linea); border-radius:6px; padding:10px; margin:8px 0; overflow:auto; font-family:ui-monospace,monospace; font-size:12px; line-height:1.4;"><code>${code}</code></pre>`;
+  });
+  html = html.replace(/^### (.*?)$/gm, '<h4 style="margin:12px 0 4px; font-size:13px; color:#fff;">$1</h4>');
+  html = html.replace(/^## (.*?)$/gm, '<h3 style="margin:16px 0 6px; font-size:14px; color:#fff; border-bottom:1px solid var(--linea); padding-bottom:3px;">$1</h3>');
+  html = html.replace(/^# (.*?)$/gm, '<h2 style="margin:20px 0 8px; font-size:16px; color:#fff; border-bottom:1px solid var(--linea); padding-bottom:4px;">$1</h2>');
+  html = html.replace(/^> \[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\n([\s\S]*?)(?=\n\n|\n[^\>]|$)/gm, (m, tipo, texto) => {
+    const col = tipo === "WARNING" || tipo === "CAUTION" ? "var(--failed)" : (tipo === "TIP" ? "var(--done)" : "var(--acento)");
+    return `<div style="border-left:3px solid ${col}; background:rgba(255,255,255,0.03); padding:8px 12px; margin:8px 0; border-radius:0 4px 4px 0;"><b>${tipo}:</b> ${texto.replace(/^> /gm, '')}</div>`;
+  });
+  html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+  html = html.replace(/\*(.*?)\*/g, '<i>$1</i>');
+  html = html.replace(/`([^`]+)`/g, '<code style="background:#1c202a; padding:2px 4px; border-radius:3px; font-size:11.5px; font-family:ui-monospace,monospace;">$1</code>');
+  html = html.replace(/^- (.*?)$/gm, '<li style="margin-left:18px; margin-bottom:3px;">$1</li>');
+  html = html.replace(/\n\n/g, '<div style="height:8px;"></div>');
+  return html;
+}
+
+function mostrarModoPreview() {
+  $("#modalEntregableRender").style.display = "block";
+  $("#modalEntregableTexto").style.display = "none";
+  $("#btnModoPreview").style.background = "var(--acento)";
+  $("#btnModoPreview").style.color = "#fff";
+  $("#btnModoRaw").style.background = "transparent";
+  $("#btnModoRaw").style.color = "var(--tenue)";
+}
+
+function mostrarModoRaw() {
+  $("#modalEntregableRender").style.display = "none";
+  $("#modalEntregableTexto").style.display = "block";
+  $("#btnModoRaw").style.background = "var(--acento)";
+  $("#btnModoRaw").style.color = "#fff";
+  $("#btnModoPreview").style.background = "transparent";
+  $("#btnModoPreview").style.color = "var(--tenue)";
+}
+
+$("#btnModoPreview").onclick = mostrarModoPreview;
+$("#btnModoRaw").onclick = mostrarModoRaw;
+
 function cerrarModalEntregable() {
   $("#modalEntregable").style.display = "none";
 }
@@ -1436,6 +1518,76 @@ $("#modalBtnCopiar").onclick = () => {
   navigator.clipboard.writeText(ULTIMO_RESULTADO);
   $("#modalBtnCopiar").textContent = "¡Copiado!";
   setTimeout(() => { $("#modalBtnCopiar").textContent = "Copiar todo"; }, 1500);
+};
+
+async function listarSnapshots() {
+  const { datos } = await api(`/api/snapshots?board=${encodeURIComponent(grafo.board)}`);
+  const s = $("#selSnapshots");
+  if (!s) return;
+  const lista = datos.snapshots || [];
+  if (!lista.length) {
+    s.innerHTML = '<option value="">(sin snapshots guardados)</option>';
+    return;
+  }
+  s.innerHTML = '<option value="">(elegir snapshot…)</option>' +
+    lista.map(snap => `<option value="${esc(snap.id)}">${esc(snap.descripcion)} (${snap.total_nodos} nodos)</option>`).join("");
+}
+
+$("#btnGuardarSnapshot").onclick = async () => {
+  const desc = ($("#descSnapshot").value || "").trim();
+  const { ok, datos } = await api("/api/snapshot", {
+    board: grafo.board,
+    grafo: grafo,
+    descripcion: desc
+  });
+  if (!ok) return avisar(datos.error || "No se pudo guardar snapshot", "error");
+  $("#descSnapshot").value = "";
+  avisar("📸 Snapshot guardado con éxito.", "ok");
+  listarSnapshots();
+};
+
+$("#btnRestaurarSnapshot").onclick = async () => {
+  const sid = $("#selSnapshots").value;
+  if (!sid) return avisar("Seleccioná un snapshot para restaurar.", "error");
+  const { ok, datos } = await api("/api/snapshot/restaurar", { id: sid });
+  if (!ok || !datos.snapshot) return avisar(datos.error || "No se pudo restaurar snapshot", "error");
+  anotar();
+  abrirGrafo(datos.snapshot.grafo, datos.snapshot.board || grafo.board);
+  avisar(`Snapshot '${datos.snapshot.descripcion}' restaurado.`, "ok");
+};
+
+$("#btnEjecutarDoctor").onclick = async () => {
+  $("#btnEjecutarDoctor").disabled = true;
+  $("#btnEjecutarDoctor").textContent = "🩺 Diagnosticando…";
+  const { ok, datos } = await api("/api/doctor");
+  $("#btnEjecutarDoctor").disabled = false;
+  $("#btnEjecutarDoctor").textContent = "🩺 Ejecutar Diagnóstico";
+  const box = $("#resultadoDoctor");
+  if (!ok || !datos) {
+    box.innerHTML = '<div class="intento mal">Error al ejecutar diagnóstico.</div>';
+    return;
+  }
+  const plat = datos.plataforma || {};
+  const bins = datos.binarios || {};
+  const binHtml = Object.entries(bins).map(([nombre, info]) => {
+    const icon = info.disponible ? '<span style="color:var(--done);">✓</span>' : '<span style="color:var(--failed);">✗</span>';
+    const ver = info.version ? `<span style="color:var(--tenue); font-size:10.5px;">(${esc(info.version)})</span>` : '';
+    return `<div style="display:flex; justify-content:space-between; padding:2px 0;"><span>${icon} <b>${nombre}</b></span> ${ver}</div>`;
+  }).join("");
+
+  box.innerHTML = `
+    <div style="margin-bottom:8px; border-bottom:1px solid var(--linea); padding-bottom:6px;">
+      <b>Plataforma:</b> ${esc(plat.os)} ${esc(plat.release)} · Python ${esc(plat.python)}<br>
+      <b>SQLite:</b> v${esc(plat.sqlite_version)} ${plat.wal_seguro ? '<span style="color:var(--done);">✓ WAL seguro</span>' : '<span style="color:var(--ready);">⚠ DELETE mode</span>'}
+    </div>
+    <div style="margin-bottom:6px; font-weight:600; font-size:11.5px;">Binarios y Runtimes:</div>
+    <div style="background:#0e1017; border:1px solid var(--linea); border-radius:4px; padding:6px 8px; margin-bottom:8px;">
+      ${binHtml}
+    </div>
+    <div style="font-size:11px; color:var(--tenue);">
+      Runtimes activos para ejecución: <b>${datos.runtimes_activos}/4</b>
+    </div>
+  `;
 };
 
 $("#btnGenIa").onclick = async () => {
@@ -1628,7 +1780,7 @@ grafo.nodos = [
   { id:"c", titulo:"Escribí la documentación",     runtime:"claude-code", x:280, y:230 },
 ];
 grafo.aristas = [["a","b"],["a","c"]];
-refrescarEditor(); pintar(); listarGrafos(); listarBoards(); cargarPlantillas(); refrescarParams();
+refrescarEditor(); pintar(); listarGrafos(); listarBoards(); listarSnapshots(); cargarPlantillas(); refrescarParams();
 verSesion();
 api("/api/capacidades").then(({ datos }) => {
   // Llega asincrono y DESPUES del primer dibujo: sin este refresco, el chat
