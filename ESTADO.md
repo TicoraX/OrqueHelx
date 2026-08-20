@@ -7,9 +7,9 @@
 
 ## Dónde está el código
 
-- Commit `001ac10` — chore: actualizar ESTADO.md tras inclusion de inspector de credenciales
+- Commit `cb4226b` — fix: hallazgos de la revision de CodeRabbit
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: **no** · sin pushear: 8
+- Árbol limpio: **no** · sin pushear: 0
 
 ## Runtime prestado
 
@@ -48,10 +48,10 @@
 ## Bloqueos
 
 - hay cambios sin commitear
-- 8 commit(s) sin pushear
 
 ## Qué sigue
 
+- 14 commit(s) pusheados y sin mergear a master (rama de trabajo)
 - §10 tiene 1 afirmación(es) pendiente(s)
 - que el grafo diseñado por el agente se pueda EDITAR y re-pedir en el lienzo (generarlo ya anda; hoy cada intento pisa el anterior)
 - conectar el Studio a la API multiusuario (hoy le habla directo al motor)
