@@ -245,6 +245,71 @@ try:
     codigo, vuelto = pedir(f"/api/grafo?nombre={NOMBRE}")
     assert "{{repo}}" in vuelto["nodos"][0]["titulo"], vuelto
     print("18. el grafo guardado sigue parametrizado: OK")
+
+    # --- 19. /api/boards lista los boards existentes de kanban_db ---
+    codigo, datos_boards = pedir("/api/boards")
+    assert codigo == 200 and "boards" in datos_boards, datos_boards
+    assert isinstance(datos_boards["boards"], list) and len(datos_boards["boards"]) > 0, datos_boards
+    print("19. /api/boards lista los boards existentes: OK")
+
+    # --- 20. /api/exportar-mermaid genera diagrama Mermaid valido ---
+    grafo_mermaid = {
+        "board": "prueba-mermaid",
+        "nodos": [{"id": "a", "titulo": "Nodo A", "runtime": "claude-code"},
+                  {"id": "b", "titulo": "Nodo B", "runtime": "hermes"}],
+        "aristas": [["a", "b"]],
+    }
+    codigo, datos_mmd = pedir("/api/exportar-mermaid", grafo_mermaid)
+    assert codigo == 200 and "mermaid" in datos_mmd, datos_mmd
+    assert "graph TD" in datos_mmd["mermaid"] and "a --> b" in datos_mmd["mermaid"], datos_mmd
+    print("20. /api/exportar-mermaid genera diagrama Mermaid: OK")
+
+    # --- 21. /api/optimizar-goal mejora el prompt preservando marcadores ---
+    codigo, datos_opt = pedir("/api/optimizar-goal", {
+        "goal": "Revisá el código de {{repo}} y reportá bugs",
+        "runtime": "claude-code",
+        "reglas": "Respondé en español.",
+        "dry_run": True
+    })
+    assert codigo == 200 and "optimizado" in datos_opt, datos_opt
+    assert "{{repo}}" in datos_opt["optimizado"], datos_opt
+    print("21. /api/optimizar-goal responde y preserva {{marcadores}}: OK")
+
+    # --- 22. /api/telemetria devuelve métricas estructuradas del board ---
+    codigo, datos_tele = pedir(f"/api/telemetria?board={BOARD}")
+    assert codigo == 200 and "resumen" in datos_tele and "consumo" in datos_tele, datos_tele
+    assert "progreso_pct" in datos_tele["resumen"] and "nodos" in datos_tele, datos_tele
+    print("22. /api/telemetria devuelve métricas en tiempo real: OK")
+
+    # --- 23. /api/historial consolida corridas previas ---
+    codigo, datos_hist = pedir("/api/historial")
+    assert codigo == 200 and "historial" in datos_hist, datos_hist
+    assert isinstance(datos_hist["historial"], list), datos_hist
+    print("23. /api/historial lista estados de ejecuciones previas: OK")
+
+    # --- 24. /api/generar-grafo produce un DAG estructurado y ordenado ---
+    codigo, datos_gen = pedir("/api/generar-grafo", {
+        "descripcion": "Auditar seguridad y correr tests en paralelo con reporte final",
+        "runtime": "claude-code",
+        "dry_run": True
+    })
+    assert codigo == 200 and "grafo" in datos_gen, datos_gen
+    assert len(datos_gen["grafo"]["nodos"]) >= 2, datos_gen
+    assert len(datos_gen["grafo"]["aristas"]) >= 1, datos_gen
+    print("24. /api/generar-grafo genera DAG validado y ordenado: OK")
+
+    # --- 25. /api/reintentar-nodo desbloquea una card fallida ---
+    conn = k.connect(board=BOARD)
+    tasks = k.list_tasks(conn)
+    if tasks:
+        tid = tasks[0].id
+        codigo, datos_reintento = pedir("/api/reintentar-nodo", {
+            "board": BOARD,
+            "task_id": tid
+        })
+        assert codigo == 200 and datos_reintento.get("ok"), datos_reintento
+        print("25. /api/reintentar-nodo desbloquea card sin error: OK")
+    conn.close()
 finally:
     proc.terminate()
     proc.wait(timeout=10)

@@ -125,6 +125,22 @@ def validar(grafo: dict, *, capacidades: bool = True) -> None:
     for n in nodos:
         esf = (n.get("esfuerzo") or "").strip()
         rt = n.get("runtime", "hermes")
+        if not es_nota(n) and n.get("presupuesto_usd") is not None:
+            try:
+                val = float(n["presupuesto_usd"])
+                if val <= 0:
+                    raise ValueError()
+            except (ValueError, TypeError):
+                raise ErrorDeGrafo(
+                    f"nodo '{n['id']}': presupuesto '{n['presupuesto_usd']}' invalido "
+                    "(debe ser un numero > 0)")
+        if not es_nota(n) and n.get("herramientas") is not None:
+            herr = n["herramientas"]
+            validas = {"Read", "Grep", "Glob", "Bash", "Write"}
+            if not isinstance(herr, (list, tuple, set)) or any(h not in validas for h in herr):
+                raise ErrorDeGrafo(
+                    f"nodo '{n['id']}': herramientas '{herr}' invalidas. "
+                    f"Validas: {sorted(validas)}")
         if not esf or es_nota(n) or rt not in ESFUERZO:
             continue
         if esf not in ESFUERZO[rt][1]:
@@ -216,7 +232,9 @@ def compilar(grafo: dict, *, board: str = None) -> dict[str, str]:
                 # el nuestro y lo pasa como --effort/--variant. Un campo, dos
                 # consumidores, igual que el modelo.
                 **({"reasoning_effort": nodo["esfuerzo"]} if nodo.get("esfuerzo") else {}),
+                **({"skills": list(nodo["herramientas"])} if nodo.get("herramientas") else {}),
                 **({"provider_override": nodo["proveedor"]} if nodo.get("proveedor") else {}),
+                **({"tenant": f"budget:{nodo['presupuesto_usd']}"} if nodo.get("presupuesto_usd") else {}),
             )
         except ValueError as e:
             # SS4: traducir el error del kanban a algo que el canvas pueda pintar.

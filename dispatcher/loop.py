@@ -120,14 +120,24 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600,
     hilo.start()
     try:
         ctx = k.build_worker_context(conn, task_id)   # summaries de los padres
+        herr = [s for s in (task.skills or []) if s in {"Read", "Grep", "Glob", "Bash", "Write"}]
+        nodo_tope = None
+        if task.tenant and str(task.tenant).startswith("budget:"):
+            try:
+                nodo_tope = float(str(task.tenant).split(":", 1)[1])
+            except (ValueError, TypeError):
+                pass
+        pres_efectivo = (min(presupuesto, nodo_tope)
+                         if (presupuesto is not None and nodo_tope is not None)
+                         else (nodo_tope if nodo_tope is not None else presupuesto))
         salida = run_backend(_runtime_de(task), ctx, timeout=timeout,
                              cwd=task.workspace_path or None,
-                             herramientas=_HERRAMIENTAS,
+                             herramientas=herr or _HERRAMIENTAS,
                              # `reasoning_effort` ya existe en la card y
                              # significa exactamente esto: no hace falta
                              # inventar campo, igual que con el modelo.
                              esfuerzo=task.reasoning_effort or None,
-                             presupuesto=presupuesto,
+                             presupuesto=pres_efectivo,
                              # `model_override` ya existe en la card y significa
                              # exactamente esto. No hace falta inventar campo.
                              modelo=task.model_override or None)

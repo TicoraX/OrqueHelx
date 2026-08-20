@@ -121,6 +121,95 @@ def _catalogo() -> dict:
     return {"plantillas": salida}
 
 
+def _generar_mermaid(grafo: dict) -> str:
+    """Exportar el grafo como diagrama Mermaid con estilos semánticos."""
+    nodos = grafo.get("nodos") or []
+    aristas = grafo.get("aristas") or []
+    board = grafo.get("board") or "flujo"
+
+    lineas = ["graph TD", f"    subgraph {re.sub(r'[^a-zA-Z0-9_]', '_', board)} [{board}]"]
+    for n in nodos:
+        nid = n["id"]
+        titulo = (n.get("titulo") or nid).replace('"', "'").replace("\n", " ")
+        if len(titulo) > 50:
+            titulo = titulo[:47] + "..."
+        if n.get("tipo") == "nota":
+            lineas.append(f'        {nid}["📝 {titulo}"]:::nota')
+        else:
+            rt = n.get("runtime", "hermes")
+            lineas.append(f'        {nid}["{titulo}<br/><i>({rt})</i>"]:::{rt.replace("-", "_")}')
+
+    for p, h in aristas:
+        lineas.append(f"        {p} --> {h}")
+    lineas.append("    end")
+    lineas.append("    classDef hermes fill:#8e9aab,stroke:#6f7b8c,color:#14161a;")
+    lineas.append("    classDef claude_code fill:#d0873f,stroke:#a66629,color:#ffffff;")
+    lineas.append("    classDef opencode fill:#4f9c8a,stroke:#347063,color:#ffffff;")
+    lineas.append("    classDef antigravity fill:#a297fc,stroke:#7b6ee0,color:#14161a;")
+    lineas.append("    classDef nota fill:#232833,stroke:#59616f,color:#e6e8ec,stroke-dasharray: 4 4;")
+    return "\n".join(lineas)
+
+
+def _optimizar_goal(goal: str, runtime: str = "claude-code", reglas: str = "", dry_run: bool = False) -> str:
+    """Optimizar un goal in-place aplicando tecnicas de prompting."""
+    goal_limpio = (goal or "").strip()
+    if not goal_limpio:
+        raise ValueError("el goal no puede estar vacio")
+
+    marcadores = re.findall(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}", goal_limpio)
+    if dry_run:
+        partes = [f"Objetivo: {goal_limpio}"]
+        if marcadores:
+            partes.append(f"Parametros requeridos: {', '.join('{{' + m + '}}' for m in marcadores)}.")
+        partes.append("Restricciones: No inventar archivos ni datos de prueba. Reportar claramente los hallazgos.")
+        partes.append("Formato de salida: Estructurado y conciso.")
+        if reglas:
+            partes.append(f"Reglas: {reglas.strip()}")
+        return "\n\n".join(partes)
+
+    t = capacidades.tabla()
+    rt_elegido = runtime if (runtime in t and t[runtime]["disponible"] and runtime in dispatcher.BACKENDS) else None
+    if not rt_elegido:
+        for candidato in ("opencode", "claude-code", "antigravity"):
+            if candidato in t and t[candidato]["disponible"]:
+                rt_elegido = candidato
+                break
+
+    if not rt_elegido:
+        partes = [f"Objetivo: {goal_limpio}"]
+        if marcadores:
+            partes.append(f"Parametros requeridos: {', '.join('{{' + m + '}}' for m in marcadores)}.")
+        partes.append("Restricciones: No inventar archivos ni datos de prueba. Reportar claramente los hallazgos.")
+        partes.append("Formato de salida: Estructurado y conciso.")
+        if reglas:
+            partes.append(f"Reglas: {reglas.strip()}")
+        return "\n\n".join(partes)
+
+    prompt = (
+        "Eres un optimizador senior de prompts para agentes de IA autonomos (ORQUESTER).\n"
+        "Optimiza el siguiente objetivo (goal) de un nodo para que el agente ejecute con maxima precision y sin alucinar.\n"
+        "Reglas obligatorias:\n"
+        "1. Manten la intencion del usuario pero hazla especifica, directa y accionable.\n"
+        "2. Delimita explicitamente el entregable esperado y su formato.\n"
+        "3. Incluye restricciones negativas (ej. no inventar datos de prueba, no modificar archivos fuera del alcance).\n"
+        "4. Si el goal original contiene variables con {{marcadores}}, DEBES mantenerlas EXACTAMENTE igual.\n"
+        "5. Devuelve UNICAMENTE el texto optimizado del goal, sin preambulos, sin comillas envolventes ni explicaciones adicionales.\n\n"
+        f"Goal original:\n{goal_limpio}\n"
+        + (f"\nReglas globales del flujo:\n{reglas.strip()}\n" if reglas else "")
+    )
+
+    try:
+        res = dispatcher.run_chat(rt_elegido, prompt, timeout=90)
+        respuesta = (res.get("respuesta") or "").strip()
+        if respuesta.startswith("```"):
+            lineas = respuesta.splitlines()
+            if len(lineas) >= 2 and lineas[-1].startswith("```"):
+                respuesta = "\n".join(lineas[1:-1]).strip()
+        return respuesta or goal_limpio
+    except Exception:
+        return goal_limpio
+
+
 def _estado(board: str) -> dict:
     """Estado de todas las cards del board, para pintar el canvas."""
     try:
@@ -214,6 +303,198 @@ def _consumo(board: str) -> dict:
             por_nodo[t.id] = acum
     return {"total": total, "por_nodo": por_nodo, "tope_usd": tope,
             "corriendo": board in _corriendo}
+
+
+def _telemetria(board: str) -> dict:
+    """Métricas y telemetría de ejecución en tiempo real para el board."""
+    try:
+        conn = k.connect(board=board)
+        tasks = k.list_tasks(conn)
+    except Exception as e:
+        return {"board": board, "error": str(e), "corriendo": board in _corriendo,
+                "resumen": {"total": 0, "terminados": 0, "fallidos": 0, "activos": 0, "listos": 0, "progreso_pct": 0.0, "estados": {}},
+                "consumo": _consumo(board), "nodos": []}
+
+    estados = {}
+    nodos_info = []
+    consumo_data = _consumo(board)
+
+    for t in tasks:
+        st = t.status or "todo"
+        estados[st] = estados.get(st, 0) + 1
+        runs = k.list_runs(conn, t.id)
+        duracion_s = 0.0
+        for r in runs:
+            if r.started_at and r.ended_at:
+                duracion_s += max(0, r.ended_at - r.started_at)
+            elif r.started_at:
+                duracion_s += max(0, time.time() - r.started_at)
+
+        rt = (t.assignee or "").split(":", 1)[1] if ":" in (t.assignee or "") else (t.assignee or "hermes")
+        nodos_info.append({
+            "id": t.id,
+            "titulo": t.title,
+            "assignee": t.assignee,
+            "runtime": rt,
+            "estado": st,
+            "intentos": len(runs),
+            "duracion_s": round(duracion_s, 2),
+            "resultado": (getattr(t, "result", None) or "")[:200] if getattr(t, "result", None) else "",
+        })
+
+    total = len(tasks)
+    terminados = estados.get("done", 0)
+    fallidos = estados.get("failed", 0) + estados.get("blocked", 0)
+    activos = estados.get("in_progress", 0) or estados.get("running", 0)
+    listos = estados.get("ready", 0)
+    progreso = round((terminados / total * 100), 1) if total > 0 else 0.0
+
+    return {
+        "board": board,
+        "corriendo": board in _corriendo,
+        "resumen": {
+            "total": total,
+            "terminados": terminados,
+            "fallidos": fallidos,
+            "activos": activos,
+            "listos": listos,
+            "progreso_pct": progreso,
+            "estados": estados,
+        },
+        "consumo": consumo_data,
+        "nodos": nodos_info,
+    }
+
+
+def _historial() -> dict:
+    """Listar boards con resumen consolidado de ejecuciones previas."""
+    try:
+        boards_raw = k.list_boards()
+    except Exception:
+        boards_raw = []
+    salida = []
+    for b in boards_raw:
+        slug = b.get("slug")
+        if not slug:
+            continue
+        try:
+            conn = k.connect(board=slug)
+            tasks = k.list_tasks(conn)
+            if not tasks:
+                continue
+            estados = {}
+            for t in tasks:
+                st = t.status or "todo"
+                estados[st] = estados.get(st, 0) + 1
+            consumo = _consumo(slug)
+            salida.append({
+                "slug": slug,
+                "nombre": b.get("display_name") or slug,
+                "total_nodos": len(tasks),
+                "estados": estados,
+                "completado": estados.get("done", 0) == len(tasks) and len(tasks) > 0,
+                "tiene_fallos": bool(estados.get("failed", 0) or estados.get("blocked", 0)),
+                "costo_usd": consumo.get("total", {}).get("costo_usd", 0.0),
+                "tokens_total": consumo.get("total", {}).get("total", 0),
+                "corriendo": slug in _corriendo,
+            })
+        except Exception:
+            continue
+    return {"historial": salida}
+
+
+def _generar_grafo(descripcion: str, runtime: str = "claude-code", dry_run: bool = False) -> dict:
+    """Generar un grafo DAG estructurado y validado a partir de una descripción en lenguaje natural."""
+    desc = (descripcion or "").strip()
+    if not desc:
+        raise ValueError("la descripcion del flujo no puede estar vacia")
+
+    slug_base = re.sub(r'[^a-zA-Z0-9_-]', '-', desc.lower()[:25]).strip("-") or "flujo-ia"
+    slug = f"ia-{slug_base}"
+
+    if dry_run:
+        grafo_ejemplo = {
+            "board": slug,
+            "reglas": "No modificar archivos fuera del alcance. Responder en formato estructurado.",
+            "nodos": [
+                {"id": "analisis", "titulo": f"Analizar requerimiento: {desc}", "runtime": "claude-code", "x": 100, "y": 100},
+                {"id": "ejecucion", "titulo": f"Ejecutar y validar: {desc}", "runtime": "opencode", "x": 300, "y": 100},
+                {"id": "sintesis", "titulo": "Sintetizar resultados y emitir veredicto final", "runtime": "antigravity", "x": 200, "y": 250},
+            ],
+            "aristas": [["analisis", "ejecucion"], ["ejecucion", "sintesis"]],
+        }
+        compilador.validar(grafo_ejemplo, capacidades=False)
+        pos = disposicion.ordenar(grafo_ejemplo)
+        for n in grafo_ejemplo["nodos"]:
+            if n["id"] in pos:
+                n["x"], n["y"] = pos[n["id"]]["x"], pos[n["id"]]["y"]
+        return grafo_ejemplo
+
+    t = capacidades.tabla()
+    rt_elegido = runtime if (runtime in t and t[runtime]["disponible"] and runtime in dispatcher.BACKENDS) else None
+    if not rt_elegido:
+        for candidato in ("opencode", "claude-code", "antigravity"):
+            if candidato in t and t[candidato]["disponible"]:
+                rt_elegido = candidato
+                break
+
+    if not rt_elegido:
+        return _generar_grafo(desc, runtime=runtime, dry_run=True)
+
+    prompt = (
+        "Eres el arquitecto de flujos de ORQUESTER. Diseña un grafo DAG de tareas óptimo para el siguiente requerimiento:\n\n"
+        f"Requerimiento: {desc}\n\n"
+        "Debes responder UNICAMENTE con un objeto JSON válido (sin explicaciones, sin comentarios, sin markdown de envoltorio excepto ```json si es necesario).\n"
+        "Estructura obligatoria:\n"
+        "{\n"
+        f'  "board": "{slug}",\n'
+        '  "reglas": "Reglas de ejecucion para todos los nodos",\n'
+        '  "nodos": [\n'
+        '    {"id": "identificador_unico", "titulo": "Prompt detallado del nodo", "runtime": "claude-code|opencode|antigravity|hermes"}\n'
+        '  ],\n'
+        '  "aristas": [["id_padre", "id_hijo"]]\n'
+        "}\n"
+        "Reglas:\n"
+        "1. Los identificadores de nodos deben ser alfanuméricos cortos (ej. n1, n2, auditor, tester).\n"
+        "2. Debe ser un DAG acíclico válido (sin ciclos, sin auto-referencias).\n"
+        "3. Distribuye el trabajo entre los runtimes disponibles (claude-code, opencode, antigravity, hermes).\n"
+        "4. Incluye entre 2 y 5 nodos según la complejidad requerida.\n"
+    )
+
+    try:
+        res = dispatcher.run_chat(rt_elegido, prompt, timeout=120)
+        resp = (res.get("respuesta") or "").strip()
+        if "```json" in resp:
+            resp = resp.split("```json", 1)[1].split("```", 1)[0].strip()
+        elif "```" in resp:
+            resp = resp.split("```", 1)[1].split("```", 1)[0].strip()
+
+        obj = json.loads(resp)
+        if not isinstance(obj, dict) or "nodos" not in obj or "aristas" not in obj:
+            raise ValueError("Estructura de grafo incompleta")
+        obj["board"] = obj.get("board") or slug
+        compilador.validar(obj, capacidades=False)
+        pos = disposicion.ordenar(obj)
+        for n in obj.get("nodos", []):
+            if n.get("id") in pos:
+                n["x"] = pos[n["id"]]["x"]
+                n["y"] = pos[n["id"]]["y"]
+            else:
+                n["x"] = n.get("x", 100)
+                n["y"] = n.get("y", 100)
+        return obj
+    except Exception:
+        return _generar_grafo(desc, runtime=runtime, dry_run=True)
+
+
+def _reintentar_nodo(board: str, task_id: str) -> dict:
+    """Reintentar un nodo fallido o bloqueado desbloqueándolo en kanban_db."""
+    conn = k.connect(board=board)
+    t = k.get_task(conn, task_id)
+    if not t:
+        raise ValueError(f"no existe la card {task_id}")
+    k.unblock_task(conn, task_id)
+    return {"ok": True, "task_id": task_id}
 
 
 def _quedan_de_hermes(conn) -> bool:
@@ -326,6 +607,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._responder(200, _catalogo())
         if ruta == "/api/grafos":
             return self._responder(200, {"grafos": sorted(p.stem for p in GRAFOS.glob("*.json"))})
+        if ruta == "/api/boards":
+            return self._responder(200, {"boards": [b.get("slug") for b in k.list_boards() if b.get("slug")]})
+        if ruta == "/api/telemetria":
+            return self._responder(200, _telemetria(params.get("board", "orquester")))
+        if ruta == "/api/historial":
+            return self._responder(200, _historial())
         if ruta == "/api/grafo":
             try:
                 f = _archivo(params.get("nombre", ""))
@@ -370,6 +657,41 @@ class Handler(BaseHTTPRequestHandler):
                 # coordenadas que recibe.
                 compilador.validar(cuerpo, capacidades=False)
                 return self._responder(200, {"posiciones": disposicion.ordenar(cuerpo)})
+            if self.path == "/api/optimizar-goal":
+                goal = cuerpo.get("goal") or ""
+                rt = cuerpo.get("runtime") or "claude-code"
+                reglas = cuerpo.get("reglas") or ""
+                try:
+                    res = _optimizar_goal(goal, runtime=rt, reglas=reglas, dry_run=bool(cuerpo.get("dry_run")))
+                    return self._responder(200, {"ok": True, "optimizado": res})
+                except ValueError as e:
+                    return self._responder(400, {"error": str(e)})
+            if self.path == "/api/exportar-mermaid":
+                try:
+                    return self._responder(200, {"ok": True, "mermaid": _generar_mermaid(cuerpo)})
+                except Exception as e:
+                    return self._responder(400, {"error": f"no se pudo generar mermaid: {e}"})
+            if self.path == "/api/generar-grafo":
+                desc = cuerpo.get("descripcion") or ""
+                rt = cuerpo.get("runtime") or "claude-code"
+                dry = bool(cuerpo.get("dry_run"))
+                try:
+                    g = _generar_grafo(desc, runtime=rt, dry_run=dry)
+                    return self._responder(200, {"ok": True, "grafo": g})
+                except ValueError as e:
+                    return self._responder(400, {"error": str(e)})
+                except Exception as e:
+                    return self._responder(500, {"error": f"error generando grafo: {e}"})
+            if self.path == "/api/reintentar-nodo":
+                board = cuerpo.get("board") or "orquester"
+                tid = cuerpo.get("task_id") or ""
+                try:
+                    res = _reintentar_nodo(board, tid)
+                    return self._responder(200, res)
+                except ValueError as e:
+                    return self._responder(400, {"error": str(e)})
+                except Exception as e:
+                    return self._responder(500, {"error": f"error reintentando nodo: {e}"})
             if self.path == "/api/parametros":
                 # Los marcadores los detecta el exportador MCP, no una segunda
                 # regex en el navegador: si se duplica, se desincroniza y el

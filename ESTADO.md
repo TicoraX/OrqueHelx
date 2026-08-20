@@ -3,20 +3,20 @@
 > Generado por `contexto/estado.py`. **No editar a mano**: se sobrescribe.
 > Un traspaso escrito a mano queda viejo y nadie se entera.
 
-**Fase:** producto en uso
+**Fase:** con pendientes
 
 ## Dónde está el código
 
-- Commit `51dada1` — fix: el chat no dejaba elegir el modelo
+- Commit `2e60965` — feat: stack.yaml para arrancar ORQUESTER desde PortMaster
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 0
+- Árbol limpio: **no** · sin pushear: 0
 
 ## Runtime prestado
 
 - Pin de Hermes: `b7f628025905` · el clon está en el pin: sí
 - CLI instalado: v0.20.1
 - Binarios: claude ✓, opencode ✓, agy ✓, hermes ✓, node ✓, docker ✓
-- Postgres del plano de control: **no**
+- Postgres del plano de control: sí
 
 ## Verificación
 
@@ -47,11 +47,10 @@
 
 ## Bloqueos
 
-- ninguno
+- hay cambios sin commitear
 
 ## Qué sigue
 
-- `docker compose up -d db` si vas a usar multiusuario
 - §10 tiene 1 afirmación(es) pendiente(s)
 - chat que DISEÑA el grafo (hoy el chat ejecuta; la otra mitad de la bifurcación es que el agente escriba el grafo en el lienzo)
 - presupuesto por NODO además del global (hoy el tope es del flujo entero)

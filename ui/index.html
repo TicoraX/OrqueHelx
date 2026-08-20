@@ -180,6 +180,14 @@
         <button id="ordenar">Ordenar</button>
       </div>
 
+      <div style="background:#141720; border:1px solid var(--linea); border-radius:6px; padding:8px 10px; margin-top:2px;">
+        <label style="margin:0 0 4px; font-weight:600; color:var(--acento);">✨ Diseñar flujo con IA</label>
+        <div style="display:flex; gap:6px;">
+          <input id="promptGenIa" placeholder="Ej: 3 nodos para auditar seguridad..." style="margin:0; font-size:12px;">
+          <button id="btnGenIa" class="primario" style="width:auto; white-space:nowrap; padding:4px 10px; font-size:12px;">Crear</button>
+        </div>
+      </div>
+
       <div id="bloqueParams" style="display:none;">
         <h2>Parámetros</h2>
         <div class="ayuda" style="margin-bottom:6px;">
@@ -190,7 +198,11 @@
 
       <div>
         <h2>Exportación</h2>
-        <button id="exportar">Exportar como MCP</button>
+        <div class="fila">
+          <button id="exportar">Exportar MCP</button>
+          <button id="exportarSvg">SVG</button>
+          <button id="exportarMermaid">Mermaid</button>
+        </div>
       </div>
 
       <div id="bloqueMcp" style="display:none;">
@@ -205,7 +217,7 @@
         <b>Shift + arrastrar</b> de un nodo a otro: dependencia.<br>
         <b>Clic</b> en flecha o <b>Del</b>: borrar.<br>
         <b>Rueda</b>: zoom. <b>Arrastrar fondo</b>: mover.<br>
-        <b>Ctrl+Z</b>: deshacer. <b>Ctrl+S</b>: guardar.
+        <b>Ctrl+D</b>: duplicar nodo. <b>Ctrl+Z</b>: deshacer. <b>Ctrl+S</b>: guardar. <b>F</b>: encuadrar.
       </div>
     </div>
 
@@ -214,7 +226,13 @@
       <h2>Nodo seleccionado</h2>
       <div id="sinNodo" class="ayuda">Hacé clic en un nodo o doble clic en el lienzo para crear uno.</div>
       <div id="editor" style="display:none; flex-direction:column; gap:8px;">
-        <div><label>Título (el goal del nodo)</label><textarea id="titulo"></textarea></div>
+        <div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <label style="margin:0;">Título (el goal del nodo)</label>
+            <button id="btnOptimizarGoal" class="res-btn tenue" style="width:auto; padding:2px 8px; font-size:11px;">✨ Optimizar</button>
+          </div>
+          <textarea id="titulo"></textarea>
+        </div>
         <div><label>Tipo</label>
           <select id="tipo">
             <option value="agente">Agente (se ejecuta)</option>
@@ -237,14 +255,31 @@
         <input id="modelo" placeholder="o escribilo a mano"></div>
         <div><label>Esfuerzo <span class="tenue" id="pistaEsfuerzo"></span></label>
           <select id="esfuerzo"><option value="">(el del CLI por defecto)</option></select></div>
+        <div id="campoPresupuestoNodo" style="display:none;">
+          <label>Tope de gasto del nodo <span class="tenue">— en US$</span></label>
+          <input id="nodoPresupuesto" placeholder="(sin tope individual)">
+        </div>
+        <div>
+          <label>Herramientas permitidas <span class="tenue">— vacío = por defecto</span></label>
+          <div id="herramientasBox" style="display:flex; flex-wrap:wrap; gap:8px; font-size:11.5px; padding:4px 0;">
+            <label style="display:flex; align-items:center; gap:4px; margin:0;"><input type="checkbox" value="Read" checked style="width:auto;"> Read</label>
+            <label style="display:flex; align-items:center; gap:4px; margin:0;"><input type="checkbox" value="Grep" checked style="width:auto;"> Grep</label>
+            <label style="display:flex; align-items:center; gap:4px; margin:0;"><input type="checkbox" value="Glob" checked style="width:auto;"> Glob</label>
+            <label style="display:flex; align-items:center; gap:4px; margin:0;"><input type="checkbox" value="Bash" checked style="width:auto;"> Bash</label>
+            <label style="display:flex; align-items:center; gap:4px; margin:0;"><input type="checkbox" value="Write" checked style="width:auto;"> Write</label>
+          </div>
+        </div>
         <div><label>Workspace <span class="tenue">— dónde corre el nodo</span></label>
           <input id="workspace" placeholder="(scratch: se borra al terminar)"></div>
+        </div>
+        <div id="boxReintentarNodo" style="display:none; margin-top:4px;">
+          <button id="btnReintentarNodo" class="res-btn" style="width:100%; border-color:#8e5229; color:#f0a868; font-weight:600; padding:6px;">🔁 Reintentar este nodo</button>
         </div>
         <button id="borrar" class="peligro">Borrar nodo</button>
       </div>
     </div>
 
-    <!-- Pestaña 3: Observabilidad (Traza y Consumo) -->
+    <!-- Pestaña 3: Chat -->
     <div id="vista-chat" class="tab-vista">
       <div class="fila">
         <select id="chatRuntime">
@@ -274,7 +309,25 @@
       </div>
     </div>
 
+    <!-- Pestaña 4: Observabilidad (Telemetría, Traza y Consumo) -->
     <div id="vista-obs" class="tab-vista">
+      <div>
+        <label>Inspeccionar corrida histórica</label>
+        <select id="selBoardHistorial"><option value="">(elegir corrida previa…)</option></select>
+      </div>
+
+      <div id="bloqueTelemetria" style="display:none; background:#141720; border:1px solid var(--linea); border-radius:6px; padding:10px; margin-bottom:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <h2 style="margin:0; font-size:12px; text-transform:uppercase; letter-spacing:0.5px; color:var(--acento);">Telemetría en Vivo</h2>
+          <span id="teleProgresoTxt" style="font-size:11px; font-weight:bold; color:var(--texto);">0%</span>
+        </div>
+        <div style="background:#1c202a; border:1px solid var(--linea); border-radius:4px; height:7px; overflow:hidden; margin-bottom:8px;">
+          <div id="teleProgresoBarra" style="background:var(--acento); width:0%; height:100%; transition:width .3s;"></div>
+        </div>
+        <div id="teleResumenStats" style="display:flex; justify-content:space-between; font-size:11px; color:var(--tenue); margin-bottom:8px;"></div>
+        <div id="teleDistribucionGrafico" style="margin-top:6px; border-top:1px solid var(--linea); padding-top:6px;"></div>
+      </div>
+
       <div>
         <h2>Leyenda de Estados</h2>
         <div class="leyenda">
@@ -309,6 +362,21 @@
     <div id="resumen"></div>
   </div>
 </aside>
+
+<div id="modalEntregable" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.75); z-index:100; align-items:center; justify-content:center; padding:24px;">
+  <div style="background:var(--panel); border:1px solid var(--linea); border-radius:8px; width:90vw; max-width:960px; max-height:85vh; display:flex; flex-direction:column; box-shadow:0 16px 48px rgba(0,0,0,0.6);">
+    <div style="padding:12px 16px; border-bottom:1px solid var(--linea); display:flex; justify-content:space-between; align-items:center;">
+      <b style="font-size:13px;">Entregable Completo</b>
+      <div style="display:flex; gap:8px;">
+        <button id="modalBtnCopiar" style="width:auto; padding:3px 9px; font-size:11.5px;">Copiar todo</button>
+        <button id="modalBtnCerrar" style="width:auto; padding:3px 9px; font-size:11.5px;">Cerrar (Esc)</button>
+      </div>
+    </div>
+    <div style="padding:16px; overflow:auto; flex:1;">
+      <pre id="modalEntregableTexto" style="margin:0; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; white-space:pre-wrap; color:var(--texto); line-height:1.5;"></pre>
+    </div>
+  </div>
+</div>
 
 <script>
 const COLOR = { todo:"#4a5160", ready:"#c9a227", running:"#3d8bcd", blocked:"#4a5160",
@@ -553,7 +621,10 @@ async function cargarTraza() {
     ? `<div class="res-wrap">
          <div class="res-hdr">
            <b>Entregable</b>
-           <button class="res-btn" id="btnCopiarRes">Copiar entregable</button>
+           <div style="display:flex; gap:6px;">
+             <button class="res-btn" id="btnExpandirRes">Expandir ⛶</button>
+             <button class="res-btn" id="btnCopiarRes">Copiar entregable</button>
+           </div>
          </div>
          <div class="res">${esc(datos.resultado)}</div>
        </div>` : "";
@@ -572,12 +643,25 @@ async function cargarTraza() {
     (intentos || "") +
     (eventos ? `<details style="margin-top:6px;"><summary style="cursor:pointer; color:var(--tenue); font-size:11px; margin-bottom:4px;">Eventos del kanban (${(datos.eventos||[]).length})</summary>${eventos}</details>` : '<div class="d">sin eventos todavía</div>');
 
+  const boxReintento = $("#boxReintentarNodo");
+  if (boxReintento) {
+    const esFallido = Boolean(datos.block_kind || datos.estado === "failed" || datos.estado === "blocked" || datos.estado === "triage");
+    boxReintento.style.display = esFallido ? "block" : "none";
+  }
+
   const btnCopiar = $("#btnCopiarRes");
   if (btnCopiar) {
     btnCopiar.onclick = () => {
       navigator.clipboard.writeText(ULTIMO_RESULTADO);
       btnCopiar.textContent = "¡Copiado!";
       setTimeout(() => { btnCopiar.textContent = "Copiar entregable"; }, 1500);
+    };
+  }
+  const btnExpandir = $("#btnExpandirRes");
+  if (btnExpandir) {
+    btnExpandir.onclick = () => {
+      $("#modalEntregableTexto").textContent = ULTIMO_RESULTADO;
+      $("#modalEntregable").style.display = "flex";
     };
   }
 }
@@ -591,6 +675,18 @@ const miles = n => (n || 0).toLocaleString("es-AR");
 let SESIONES = {}, TOTALES_CHAT = {}, chateando = false;
 // Modelo y esfuerzo POR EJECUTOR: un slug de agy no significa nada en opencode.
 let MODELO_CHAT = {}, ESFUERZO_CHAT = {};
+
+function extraerGrafoJson(txt) {
+  try {
+    const m = txt.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/) ||
+              txt.match(/(\{[\s\S]*?"nodos"\s*:\s*\[[\s\S]*?"aristas"\s*:\s*\[[\s\S]*?\})/);
+    if (m) {
+      const obj = JSON.parse(m[1]);
+      if (Array.isArray(obj.nodos) && Array.isArray(obj.aristas)) return obj;
+    }
+  } catch (_) {}
+  return null;
+}
 
 function pintarChat(quien, texto, clase) {
   const d = document.createElement("div");
@@ -612,6 +708,29 @@ function pintarChat(quien, texto, clase) {
     const cuerpo = document.createElement("div");
     cuerpo.textContent = texto;
     d.appendChild(cuerpo);
+
+    const gJson = extraerGrafoJson(texto);
+    if (gJson && gJson.nodos.length) {
+      const box = document.createElement("div");
+      box.style.cssText = "margin-top:8px; padding-top:6px; border-top:1px solid var(--linea);";
+      const btnCargar = document.createElement("button");
+      btnCargar.className = "primario";
+      btnCargar.style.cssText = "font-size:11.5px; padding:5px 9px;";
+      btnCargar.textContent = `📥 Cargar grafo en el lienzo (${gJson.nodos.length} nodo(s))`;
+      btnCargar.onclick = async () => {
+        anotar();
+        abrirGrafo(gJson, gJson.board || grafo.board || "flujo-chat");
+        const { ok, datos } = await api("/api/ordenar", grafo);
+        if (ok && datos.posiciones) {
+          for (const n of grafo.nodos) Object.assign(n, datos.posiciones[n.id]);
+          pintar(); encuadrar();
+        }
+        activarTab("diseno");
+        avisar(`Grafo '${grafo.board}' cargado desde el chat y ordenado.`, "ok");
+      };
+      box.appendChild(btnCargar);
+      d.appendChild(box);
+    }
   } else {
     d.textContent = texto;                       // textContent, no innerHTML
   }
@@ -723,6 +842,12 @@ function refrescarEditor() {
       llenarEsfuerzo("#esfuerzo", n.runtime, n.esfuerzo);
       const tope = (CAPS[n.runtime] || {}).tope_gasto_flag;
       $("#pistaEsfuerzo").textContent = tope ? "— acepta tope de gasto por nodo" : "";
+      $("#campoPresupuestoNodo").style.display = tope ? "block" : "none";
+      $("#nodoPresupuesto").value = n.presupuesto_usd || "";
+      const herr = n.herramientas || ["Read", "Grep", "Glob", "Bash"];
+      document.querySelectorAll("#herramientasBox input").forEach(cb => {
+        cb.checked = herr.includes(cb.value);
+      });
     }
   }
 }
@@ -974,13 +1099,69 @@ document.addEventListener("keydown", e => {
     return;
   }
 
-  // Deseleccionar (Escape)
-  if (e.key === "Escape" && sel) {
+  // Duplicar nodo seleccionado (Ctrl+D o Cmd+D)
+  if ((e.ctrlKey || e.metaKey) && (e.key === "d" || e.key === "D") && sel) {
     e.preventDefault();
-    sel = null;
+    const original = buscar(sel);
+    if (!original) return;
+    anotar();
+    const nuevo = JSON.parse(JSON.stringify(original));
+    nuevo.id = nuevoId();
+    nuevo.x = (original.x || 0) + 30;
+    nuevo.y = (original.y || 0) + 30;
+    grafo.nodos.push(nuevo);
+    sel = nuevo.id;
     refrescarEditor(); cargarTraza(); pintar();
+    avisar(`Nodo '${nuevo.id}' duplicado.`, "ok");
     return;
   }
+
+  // Deseleccionar o cerrar modal (Escape)
+  if (e.key === "Escape") {
+    if ($("#modalEntregable") && $("#modalEntregable").style.display === "flex") {
+      e.preventDefault();
+      $("#modalEntregable").style.display = "none";
+      return;
+    }
+    if (sel) {
+      e.preventDefault();
+      sel = null;
+      refrescarEditor(); cargarTraza(); pintar();
+      return;
+    }
+  }
+});
+
+$("#btnOptimizarGoal").onclick = async () => {
+  const n = buscar(sel);
+  if (!n) return;
+  const goal = (n.titulo || "").trim();
+  if (!goal) return avisar("El goal está vacío.", "error");
+  $("#btnOptimizarGoal").disabled = true;
+  $("#btnOptimizarGoal").textContent = "✨ Optimizando…";
+  avisar("Optimizando goal con el agente...", "ok");
+  const { ok, datos } = await api("/api/optimizar-goal", {
+    goal: goal,
+    runtime: n.runtime || "claude-code",
+    reglas: grafo.reglas || ""
+  });
+  $("#btnOptimizarGoal").disabled = false;
+  $("#btnOptimizarGoal").textContent = "✨ Optimizar";
+  if (!ok || !datos.optimizado) return avisar(datos.error || "Fallo optimizando el goal.", "error");
+  anotar();
+  n.titulo = datos.optimizado;
+  $("#titulo").value = datos.optimizado;
+  pintar();
+  avisar("Goal optimizado con éxito.", "ok");
+};
+
+document.querySelectorAll("#herramientasBox input").forEach(cb => {
+  cb.onchange = () => {
+    const n = buscar(sel);
+    if (!n) return;
+    const seleccionadas = [...document.querySelectorAll("#herramientasBox input:checked")].map(i => i.value);
+    n.herramientas = seleccionadas;
+  };
 });
 
 $("#titulo").oninput = e => {
@@ -991,6 +1172,10 @@ $("#esfuerzo").onchange = e => {
   const n = buscar(sel);
   // Vacio = sin override: el CLI usa el esfuerzo de su perfil.
   if (n) { const v = e.target.value; v ? n.esfuerzo = v : delete n.esfuerzo; pintar(); }
+};
+$("#nodoPresupuesto").oninput = e => {
+  const n = buscar(sel);
+  if (n) { const v = e.target.value.trim(); v ? n.presupuesto_usd = v : delete n.presupuesto_usd; }
 };
 $("#workspace").oninput = e => {
   const n = buscar(sel);
@@ -1198,7 +1383,184 @@ $("#btnCopiarMcp").onclick = () => {
   setTimeout(() => { $("#btnCopiarMcp").textContent = "Copiar config MCP"; }, 1500);
 };
 
+$("#exportarSvg").onclick = () => {
+  if (!grafo.nodos.length) return avisar("No hay nodos para exportar.", "error");
+  const clon = svg.cloneNode(true);
+  clon.removeAttribute("id");
+  const f = clon.querySelector("#fantasma");
+  if (f) f.remove();
+
+  const ancho = n => (n.tipo === "nota" ? A * 1.35 : A);
+  const alto  = n => (n.tipo === "nota" ? ALTO * 1.9 : ALTO);
+  const x0 = Math.min(...grafo.nodos.map(n => n.x)) - 30;
+  const y0 = Math.min(...grafo.nodos.map(n => n.y)) - 30;
+  const x1 = Math.max(...grafo.nodos.map(n => n.x + ancho(n))) + 30;
+  const y1 = Math.max(...grafo.nodos.map(n => n.y + alto(n))) + 30;
+  const w = Math.max(x1 - x0, 100);
+  const h = Math.max(y1 - y0, 100);
+  clon.setAttribute("viewBox", `${x0} ${y0} ${w} ${h}`);
+  clon.setAttribute("width", `${w}`);
+  clon.setAttribute("height", `${h}`);
+  clon.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+
+  const serializer = new XMLSerializer();
+  const svgStr = '<?xml version="1.0" standalone="no"?>\r\n' + serializer.serializeToString(clon);
+  const blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${grafo.board || "orquester-grafo"}.svg`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  avisar(`Diagrama exportado como '${a.download}'.`, "ok");
+};
+
+$("#exportarMermaid").onclick = async () => {
+  if (!grafo.nodos.length) return avisar("No hay nodos para exportar.", "error");
+  const { ok, datos } = await api("/api/exportar-mermaid", grafo);
+  if (!ok) return avisar(datos.error || "No se pudo generar Mermaid", "error");
+  navigator.clipboard.writeText(datos.mermaid);
+  avisar("Diagrama Mermaid copiado al portapapeles.", "ok");
+};
+
+function cerrarModalEntregable() {
+  $("#modalEntregable").style.display = "none";
+}
+$("#modalBtnCerrar").onclick = cerrarModalEntregable;
+$("#modalEntregable").onclick = e => {
+  if (e.target === $("#modalEntregable")) cerrarModalEntregable();
+};
+$("#modalBtnCopiar").onclick = () => {
+  navigator.clipboard.writeText(ULTIMO_RESULTADO);
+  $("#modalBtnCopiar").textContent = "¡Copiado!";
+  setTimeout(() => { $("#modalBtnCopiar").textContent = "Copiar todo"; }, 1500);
+};
+
+$("#btnGenIa").onclick = async () => {
+  const prompt = ($("#promptGenIa").value || "").trim();
+  if (!prompt) return avisar("Escribí una descripción para el flujo.", "error");
+  $("#btnGenIa").disabled = true;
+  $("#btnGenIa").textContent = "✨ Creando…";
+  avisar("Diseñando flujo con IA...", "ok");
+  const { ok, datos } = await api("/api/generar-grafo", { descripcion: prompt });
+  $("#btnGenIa").disabled = false;
+  $("#btnGenIa").textContent = "Crear";
+  if (!ok || !datos.grafo) return avisar(datos.error || "No se pudo generar el grafo", "error");
+  anotar();
+  abrirGrafo(datos.grafo, datos.grafo.board || "flujo-ia");
+  const { ok: okOrd, datos: datosOrd } = await api("/api/ordenar", grafo);
+  if (okOrd && datosOrd.posiciones) {
+    for (const n of grafo.nodos) Object.assign(n, datosOrd.posiciones[n.id]);
+    pintar(); encuadrar();
+  }
+  avisar(`Grafo '${grafo.board}' generado con IA (${grafo.nodos.length} nodos).`, "ok");
+};
+
+$("#btnReintentarNodo").onclick = async () => {
+  const tid = ids[sel];
+  if (!tid) return;
+  $("#btnReintentarNodo").disabled = true;
+  $("#btnReintentarNodo").textContent = "🔁 Reintentando…";
+  const { ok, datos } = await api("/api/reintentar-nodo", {
+    board: grafo.board,
+    task_id: tid
+  });
+  $("#btnReintentarNodo").disabled = false;
+  $("#btnReintentarNodo").textContent = "🔁 Reintentar este nodo";
+  if (!ok) return avisar(datos.error || "No se pudo reintentar el nodo", "error");
+  avisar(`Nodo '${sel}' desbloqueado para reintento.`, "ok");
+  refrescarEstado();
+  cargarTraza();
+};
+
+async function listarBoards() {
+  const { datos } = await api("/api/historial");
+  const s = $("#selBoardHistorial");
+  if (!s) return;
+  const lista = datos.historial || [];
+  s.innerHTML = '<option value="">(elegir corrida previa…)</option>' +
+    lista.map(b => {
+      const info = `${b.total_nodos} nodos` +
+        (b.completado ? " ✓ 100%" : (b.tiene_fallos ? " ✗ fallos" : "")) +
+        (b.costo_usd > 0 ? ` · US$ ${b.costo_usd.toFixed(3)}` : "");
+      return `<option value="${esc(b.slug)}">${esc(b.slug)} (${info})</option>`;
+    }).join("");
+}
+
+$("#selBoardHistorial").onchange = e => {
+  const b = e.target.value;
+  if (!b) return;
+  grafo.board = b;
+  $("#board").value = b;
+  refrescarEstado();
+  avisar(`Inspeccionando board '${b}'.`, "ok");
+};
+
 let POR_NODO = {};
+
+async function cargarTelemetria() {
+  const caja = $("#bloqueTelemetria");
+  if (!caja) return;
+  const { datos } = await api(`/api/telemetria?board=${encodeURIComponent(grafo.board)}`);
+  if (!datos || !datos.resumen || datos.resumen.total === 0) {
+    caja.style.display = "none";
+    return;
+  }
+  caja.style.display = "block";
+  const r = datos.resumen;
+  $("#teleProgresoTxt").textContent = `${r.progreso_pct}% (${r.terminados}/${r.total})`;
+  $("#teleProgresoBarra").style.width = `${r.progreso_pct}%`;
+  if (r.fallidos > 0) $("#teleProgresoBarra").style.background = "var(--failed)";
+  else if (r.activos > 0) $("#teleProgresoBarra").style.background = "var(--running)";
+  else if (r.progreso_pct === 100) $("#teleProgresoBarra").style.background = "var(--done)";
+  else $("#teleProgresoBarra").style.background = "var(--acento)";
+
+  $("#teleResumenStats").innerHTML = `
+    <span><b>${r.activos}</b> corriendo</span>
+    <span><b>${r.listos}</b> listos</span>
+    <span><b>${r.terminados}</b> hechos</span>
+    <span style="${r.fallidos ? 'color:var(--failed); font-weight:bold;' : ''}"><b>${r.fallidos}</b> fallos</span>
+  `;
+
+  // Gráfico visual SVG de distribución por ejecutor
+  const nodos = datos.nodos || [];
+  const porRt = {};
+  for (const n of nodos) {
+    porRt[n.runtime] = (porRt[n.runtime] || 0) + 1;
+  }
+  const coloresRt = {
+    "claude-code": "#d0873f",
+    "opencode": "#4f9c8a",
+    "antigravity": "#a297fc",
+    "hermes": "#8e9aab"
+  };
+  const totalNodos = nodos.length || 1;
+  const barritas = Object.entries(porRt).map(([rt, cant]) => {
+    const w = (cant / totalNodos) * 100;
+    const col = coloresRt[rt] || "#59616f";
+    return `<div style="background:${col}; width:${w}%; height:100%;" title="${rt}: ${cant} nodo(s)"></div>`;
+  }).join("");
+
+  const leyendasRt = Object.entries(porRt).map(([rt, cant]) => {
+    const col = coloresRt[rt] || "#59616f";
+    return `<span style="font-size:10.5px; display:inline-flex; align-items:center; gap:3px; margin-right:8px;">
+      <i style="display:inline-block; width:7px; height:7px; border-radius:2px; background:${col};"></i>
+      ${rt} (${cant})
+    </span>`;
+  }).join("");
+
+  $("#teleDistribucionGrafico").innerHTML = `
+    <div style="font-size:10.5px; color:var(--tenue); margin-bottom:4px;">Distribución de ejecutores:</div>
+    <div style="display:flex; height:6px; border-radius:3px; overflow:hidden; background:#1c202a; margin-bottom:6px;">
+      ${barritas}
+    </div>
+    <div style="display:flex; flex-wrap:wrap; gap:4px;">
+      ${leyendasRt}
+    </div>
+  `;
+}
 
 async function cargarConsumo() {
   const caja = $("#bloqueConsumo");
@@ -1252,6 +1614,7 @@ async function cargarConsumo() {
 }
 
 async function refrescarEstado() {
+  cargarTelemetria();
   cargarConsumo();
   if (!Object.keys(ids).length) return;
   const { datos } = await api(`/api/estado?board=${encodeURIComponent(grafo.board)}`);
@@ -1265,7 +1628,7 @@ grafo.nodos = [
   { id:"c", titulo:"Escribí la documentación",     runtime:"claude-code", x:280, y:230 },
 ];
 grafo.aristas = [["a","b"],["a","c"]];
-refrescarEditor(); pintar(); listarGrafos(); cargarPlantillas(); refrescarParams();
+refrescarEditor(); pintar(); listarGrafos(); listarBoards(); cargarPlantillas(); refrescarParams();
 verSesion();
 api("/api/capacidades").then(({ datos }) => {
   // Llega asincrono y DESPUES del primer dibujo: sin este refresco, el chat
