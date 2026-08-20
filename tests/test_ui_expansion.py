@@ -593,10 +593,31 @@ try:
     assert any(m["id"] == "a" for m in datos_diff["nodos_modificados"]), datos_diff
     assert not datos_diff["identicos"], datos_diff
     print("43. /api/snapshot/diff detecta adiciones, eliminaciones y cambios estructurales: OK")
+
+    # --- 44. /api/guardar-plantilla promociona un grafo a plantilla de catalogo ---
+    codigo, datos_pl = pedir("/api/guardar-plantilla", {
+        "nombre": "plantilla-test-promo",
+        "descripcion": "Plantilla promocionada desde test",
+        "grafo": {
+            "board": "promo-board",
+            "nodos": [
+                {"id": "t1", "titulo": "Tarea 1 en {{repo}}", "runtime": "claude-code"},
+                {"id": "t2", "titulo": "Tarea 2 en {{repo}}", "runtime": "opencode"}
+            ],
+            "aristas": [["t1", "t2"]]
+        }
+    })
+    assert codigo == 200 and datos_pl.get("ok"), datos_pl
+
+    # Verificar que /api/plantillas la lista con sus parametros
+    codigo, cat = pedir("/api/plantillas")
+    assert any(p["nombre"] == "plantilla-test-promo" for p in cat["plantillas"]), cat
+    print("44. /api/guardar-plantilla crea plantilla en catalogo con parametros: OK")
 finally:
     proc.terminate()
     proc.wait(timeout=10)
     (RAIZ / "ui" / "grafos" / f"{NOMBRE}.json").unlink(missing_ok=True)
+    (RAIZ / "plantillas" / "plantilla-test-promo.json").unlink(missing_ok=True)
     # Los snapshots de los tests 28 y 35 tambien: cada corrida dejaba uno y
     # `/api/snapshots` los va acumulando. Se borra por el board que usan, no por
     # id, para que valga aunque el test corte antes de leer el id.

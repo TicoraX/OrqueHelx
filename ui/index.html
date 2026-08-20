@@ -178,10 +178,11 @@
         </div>
       </div>
 
-      <div class="fila">
-        <button id="guardar">Guardar</button>
-        <button id="validar">Validar</button>
-        <button id="ordenar">Ordenar</button>
+      <div class="fila" style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:4px;">
+        <button id="guardar" style="font-size:11px; padding:4px 2px;">Guardar</button>
+        <button id="validar" style="font-size:11px; padding:4px 2px;">Validar</button>
+        <button id="ordenar" style="font-size:11px; padding:4px 2px;">Ordenar</button>
+        <button id="btnGuardarPlantilla" style="font-size:11px; padding:4px 2px; background:#1c2b27; border-color:#2a5e52; color:#5eead4;">Plantilla</button>
       </div>
 
       <div style="background:#141720; border:1px solid var(--linea); border-radius:6px; padding:8px 10px; margin-top:2px;">
@@ -1530,6 +1531,20 @@ $("#guardar").onclick = async () => {
   await api("/api/grafo", grafo);
   await listarGrafos();
   avisar(`Guardado como '${grafo.board}' en ui/grafos/.`, "ok");
+};
+$("#btnGuardarPlantilla").onclick = async () => {
+  if (!grafo.nodos.length) return avisar("El grafo no tiene nodos.", "error");
+  const nom = prompt("Nombre para la plantilla en el catálogo:", grafo.board || "mi-plantilla");
+  if (!nom) return;
+  const desc = prompt("Descripción breve de la plantilla:", `Plantilla ${nom}`);
+  const { ok, datos } = await api("/api/guardar-plantilla", {
+    nombre: nom.trim(),
+    descripcion: (desc || "").trim(),
+    grafo: grafo,
+  });
+  if (!ok) return avisar(datos.error || "No se pudo guardar la plantilla", "error");
+  await listarPlantillas();
+  avisar(`✓ Plantilla '${datos.nombre}' guardada en el catálogo.`, "ok");
 };
 $("#ordenar").onclick = async () => {
   const { ok, datos } = await api("/api/ordenar", grafo);

@@ -171,6 +171,26 @@ def _catalogo() -> dict:
     return {"plantillas": salida}
 
 
+def _guardar_plantilla(nombre: str, descripcion: str, grafo: dict) -> dict:
+    """Promociona un grafo válido a plantilla reutilizable en el catálogo."""
+    f = _ruta_segura(nombre, PLANTILLAS, "nombre de plantilla")
+    compilador.validar(grafo, capacidades=False)
+
+    data = {
+        "descripcion": descripcion.strip() or f"Plantilla {f.stem}",
+        "board": grafo.get("board") or f.stem,
+        "nodos": grafo.get("nodos") or [],
+        "aristas": grafo.get("aristas") or [],
+    }
+    if grafo.get("reglas"):
+        data["reglas"] = grafo["reglas"]
+    if grafo.get("presupuesto_usd"):
+        data["presupuesto_usd"] = grafo["presupuesto_usd"]
+
+    f.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return {"ok": True, "nombre": f.stem, "plantilla": data}
+
+
 def _generar_mermaid(grafo: dict) -> str:
     """Exportar el grafo como diagrama Mermaid con estilos semánticos."""
     nodos = grafo.get("nodos") or []
@@ -1382,6 +1402,14 @@ class Handler(BaseHTTPRequestHandler):
                     return self._responder(200, _generar_reporte_corrida(b))
                 except Exception as e:
                     return self._responder(400, {"error": f"error generando reporte: {e}"})
+            if self.path == "/api/guardar-plantilla":
+                nom = cuerpo.get("nombre") or ""
+                desc = cuerpo.get("descripcion") or ""
+                g = cuerpo.get("grafo") or {}
+                try:
+                    return self._responder(200, _guardar_plantilla(nom, desc, g))
+                except Exception as e:
+                    return self._responder(400, {"error": f"error guardando plantilla: {e}"})
             if self.path == "/api/parametros":
                 # Los marcadores los detecta el exportador MCP, no una segunda
                 # regex en el navegador: si se duplica, se desincroniza y el
