@@ -351,6 +351,34 @@ try:
     assert codigo == 200 and datos_rest.get("ok"), datos_rest
     assert datos_rest["snapshot"]["grafo"]["board"] == "mi-board-snap", datos_rest
     print("30. /api/snapshot/restaurar recupera diseño inmutable: OK")
+
+    # --- 31. /api/exportar-python genera script Python ejecutable ---
+    codigo, datos_py = pedir("/api/exportar-python", {
+        "board": "mi-flujo-auto",
+        "nodos": [{"id": "a", "titulo": "Tarea A", "runtime": "claude-code"}],
+        "aristas": []
+    })
+    assert codigo == 200 and "script" in datos_py, datos_py
+    assert "dispatcher.correr" in datos_py["script"] and "compilador.validar" in datos_py["script"], datos_py
+    print("31. /api/exportar-python genera script Python autónomo: OK")
+
+    # --- 32. /api/simular calcula camino crítico y paralelismo por capas ---
+    codigo, datos_sim = pedir("/api/simular", {
+        "board": "rombo-sim",
+        "nodos": [
+            {"id": "a", "titulo": "Inicio", "runtime": "hermes"},
+            {"id": "b", "titulo": "Rama 1", "runtime": "opencode"},
+            {"id": "c", "titulo": "Rama 2", "runtime": "claude-code"},
+            {"id": "d", "titulo": "Fin", "runtime": "antigravity"}
+        ],
+        "aristas": [["a", "b"], ["a", "c"], ["b", "d"], ["c", "d"]]
+    })
+    assert codigo == 200 and datos_sim.get("ok"), datos_sim
+    assert datos_sim["camino_critico_pasos"] == 3, datos_sim
+    assert datos_sim["paralelismo_maximo"] == 2, datos_sim
+    assert len(datos_sim["pasos"]) == 3, datos_sim
+    assert len(datos_sim["runtimes"]) == 4, datos_sim
+    print("32. /api/simular analiza topología, camino crítico y paralelismo: OK")
 finally:
     proc.terminate()
     proc.wait(timeout=10)

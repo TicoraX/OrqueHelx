@@ -608,6 +608,95 @@ def _generar_ci_workflow(grafo: dict) -> str:
     return "\n".join(workflow)
 
 
+def _generar_script_python(grafo: dict) -> str:
+    """Generar un script Python autónomo para ejecutar el flujo sin el Studio."""
+    board = grafo.get("board") or "orquester-script"
+    grafo_json = json.dumps(grafo, indent=2, ensure_ascii=False)
+    script = f'''#!/usr/bin/env python3
+"""Script autónomo de ejecución para el flujo ORQUESTER: {board}
+Generado automáticamente por ORQUESTER Studio.
+"""
+import json, sys
+from pathlib import Path
+
+# Añadir directorios de ORQUESTER al path
+RAIZ = Path(__file__).resolve().parent
+sys.path.insert(0, str(RAIZ / "compiler"))
+sys.path.insert(0, str(RAIZ / "dispatcher"))
+sys.path.insert(0, str(RAIZ / "hermes-agent"))
+
+import compile as compilador
+import loop as dispatcher
+import hermes_cli.kanban_db as k
+
+GRAFO = {grafo_json}
+
+def main():
+    board = GRAFO.get("board", "{board}")
+    print(f"==> Validando y compilando flujo: {{board}}...")
+    compilador.validar(GRAFO, capacidades=True)
+    ids = compilador.compilar(GRAFO, board=board)
+    print(f"==> {{len(ids)}} tareas creadas en kanban.db (board: {{board}})")
+    
+    print("==> Iniciando ejecucion con dispatcher...")
+    dispatcher.correr(board, hasta_vacio=True)
+    
+    conn = k.connect(board=board)
+    tasks = k.list_tasks(conn)
+    completadas = sum(1 for t in tasks if t.status == "done")
+    fallidas = sum(1 for t in tasks if t.status in ("failed", "blocked"))
+    gasto = dispatcher.gasto_usd(conn)
+    print(f"\\n==> Resultado final: {{completadas}}/{{len(tasks)}} completadas, {{fallidas}} fallidas.")
+    print(f"==> Consumo medido: US$ {{gasto:.4f}}")
+
+if __name__ == "__main__":
+    main()
+'''
+    return script
+
+
+def _simular_flujo(grafo: dict) -> dict:
+    """Simulación analítica del DAG: paralelismo por capa, camino crítico y runtimes."""
+    compilador.validar(grafo, capacidades=False)
+    capas = disposicion._capas(grafo)
+    por_capa: dict[int, list[dict]] = {}
+    for n in grafo.get("nodos", []):
+        if compilador.es_nota(n):
+            continue
+        c = capas.get(n["id"], 0)
+        por_capa.setdefault(c, []).append({
+            "id": n["id"],
+            "titulo": n.get("titulo", n["id"]),
+            "runtime": n.get("runtime", "hermes"),
+            "esfuerzo": n.get("esfuerzo"),
+            "presupuesto_usd": n.get("presupuesto_usd"),
+        })
+
+    pasos = []
+    max_paralelo = 0
+    runtimes_usados = set()
+    for c in sorted(por_capa.keys()):
+        grupo = por_capa[c]
+        max_paralelo = max(max_paralelo, len(grupo))
+        for item in grupo:
+            runtimes_usados.add(item["runtime"])
+        pasos.append({
+            "paso": c + 1,
+            "nodos": grupo,
+            "paralelos": len(grupo),
+        })
+
+    return {
+        "ok": True,
+        "board": grafo.get("board", "orquester"),
+        "total_nodos": len([n for n in grafo.get("nodos", []) if not compilador.es_nota(n)]),
+        "camino_critico_pasos": len(pasos),
+        "paralelismo_maximo": max_paralelo,
+        "runtimes": sorted(list(runtimes_usados)),
+        "pasos": pasos,
+    }
+
+
 def _quedan_de_hermes(conn) -> bool:
     """Cards que espera el dispatcher de Hermes, no el nuestro."""
     propios = {dispatcher.carril(rt) for rt in dispatcher.BACKENDS}
@@ -812,6 +901,16 @@ class Handler(BaseHTTPRequestHandler):
                     return self._responder(200, {"ok": True, "workflow": _generar_ci_workflow(cuerpo)})
                 except Exception as e:
                     return self._responder(400, {"error": f"error generando workflow CI: {e}"})
+            if self.path == "/api/exportar-python":
+                try:
+                    return self._responder(200, {"ok": True, "script": _generar_script_python(cuerpo)})
+                except Exception as e:
+                    return self._responder(400, {"error": f"error generando script python: {e}"})
+            if self.path == "/api/simular":
+                try:
+                    return self._responder(200, _simular_flujo(cuerpo))
+                except Exception as e:
+                    return self._responder(400, {"error": f"error simulando flujo: {e}"})
             if self.path == "/api/snapshot":
                 b = cuerpo.get("board") or "orquester"
                 g = cuerpo.get("grafo") or {}

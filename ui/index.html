@@ -198,12 +198,16 @@
       </div>
 
       <div>
-        <h2>Exportación & CI/CD</h2>
-        <div class="fila" style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:4px;">
+        <h2>Exportación & Herramientas</h2>
+        <div class="fila" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; margin-bottom:4px;">
           <button id="exportar" style="font-size:11px; padding:4px 2px;">MCP</button>
           <button id="exportarSvg" style="font-size:11px; padding:4px 2px;">SVG</button>
           <button id="exportarMermaid" style="font-size:11px; padding:4px 2px;">Mermaid</button>
+        </div>
+        <div class="fila" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px;">
           <button id="exportarCi" style="font-size:11px; padding:4px 2px;">CI/CD</button>
+          <button id="exportarPy" style="font-size:11px; padding:4px 2px;">Python</button>
+          <button id="btnSimular" style="font-size:11px; padding:4px 2px; background:#212c3d; border-color:#3b567d;">⚡ Simular</button>
         </div>
       </div>
 
@@ -792,11 +796,103 @@ async function enviarChat() {
   if (chateando) return;                       // un turno a la vez por pestaña
   const mensaje = $("#chatMensaje").value.trim();
   if (!mensaje) return;
-  const rt = $("#chatRuntime").value;
-  chateando = true; $("#chatEnviar").disabled = true;
-  pintarChat("yo", mensaje);
   $("#chatMensaje").value = "";
   $("#chatMensaje").style.height = "auto";
+  pintarChat("yo", mensaje);
+
+  // Comandos de Copilot locales en el Studio
+  if (mensaje.startsWith("/")) {
+    const partes = mensaje.slice(1).split(" ");
+    const cmd = (partes[0] || "").toLowerCase();
+    const args = partes.slice(1).join(" ");
+    if (cmd === "ayuda" || cmd === "help") {
+      pintarChat("el", "Comandos de Copilot disponibles:\n• /agregar <id> <titulo> [runtime]\n• /conectar <origen> <destino>\n• /eliminar <id>\n• /ordenar\n• /simular\n• /limpiar");
+      return;
+    }
+    if (cmd === "agregar") {
+      const match = args.match(/^(\S+)\s+(.+?)(?:\s+(claude-code|opencode|antigravity|hermes))?$/);
+      if (!match) {
+        pintarChat("el", "Uso: /agregar <id> <titulo> [claude-code|opencode|antigravity|hermes]");
+        return;
+      }
+      const [, id, tit, rt] = match;
+      if (grafo.nodos.some(n => n.id === id)) {
+        pintarChat("el", `Ya existe un nodo con id '${id}'.`);
+        return;
+      }
+      anotar();
+      grafo.nodos.push({ id, titulo: tit, runtime: rt || "claude-code", x: 100 + (grafo.nodos.length * 30), y: 100 + (grafo.nodos.length * 30) });
+      sel = id; refrescarEditor(); pintar();
+      pintarChat("el", `✓ Nodo '${id}' agregado al lienzo (${rt || "claude-code"}).`);
+      return;
+    }
+    if (cmd === "conectar") {
+      const [p, h] = args.split(/\s+/);
+      if (!p || !h) {
+        pintarChat("el", "Uso: /conectar <origen_id> <destino_id>");
+        return;
+      }
+      if (!grafo.nodos.some(n => n.id === p) || !grafo.nodos.some(n => n.id === h)) {
+        pintarChat("el", `Error: uno de los nodos ('${p}' o '${h}') no existe.`);
+        return;
+      }
+      if (grafo.aristas.some(([a, b]) => a === p && b === h)) {
+        pintarChat("el", `La conexión ${p} -> ${h} ya existe.`);
+        return;
+      }
+      anotar();
+      grafo.aristas.push([p, h]);
+      pintar();
+      pintarChat("el", `✓ Conexión creada: ${p} → ${h}.`);
+      return;
+    }
+    if (cmd === "eliminar" || cmd === "borrar") {
+      const id = args.trim();
+      if (!id || !grafo.nodos.some(n => n.id === id)) {
+        pintarChat("el", `No existe el nodo '${id}'.`);
+        return;
+      }
+      anotar();
+      grafo.nodos = grafo.nodos.filter(n => n.id !== id);
+      grafo.aristas = grafo.aristas.filter(([p, h]) => p !== id && h !== id);
+      if (sel === id) sel = null;
+      refrescarEditor(); pintar();
+      pintarChat("el", `✓ Nodo '${id}' eliminado del lienzo.`);
+      return;
+    }
+    if (cmd === "ordenar") {
+      const { ok, datos } = await api("/api/ordenar", grafo);
+      if (ok && datos.posiciones) {
+        anotar();
+        for (const n of grafo.nodos) Object.assign(n, datos.posiciones[n.id]);
+        pintar(); encuadrar();
+        pintarChat("el", "✓ Nodos auto-ordenados por capas topológicas.");
+      } else {
+        pintarChat("el", "Error al ordenar: " + (datos.error || "grafo inválido"));
+      }
+      return;
+    }
+    if (cmd === "simular") {
+      const { ok, datos } = await api("/api/simular", grafo);
+      if (ok) {
+        pintarChat("el", `Simulación: ${datos.total_nodos} nodos · ${datos.camino_critico_pasos} pasos críticos · ${datos.paralelismo_maximo} paralelismo máximo.`);
+      } else {
+        pintarChat("el", "Error en simulación: " + (datos.error || "grafo inválido"));
+      }
+      return;
+    }
+    if (cmd === "limpiar") {
+      anotar();
+      grafo.nodos = [];
+      grafo.aristas = [];
+      sel = null; refrescarEditor(); pintar();
+      pintarChat("el", "✓ Lienzo limpiado.");
+      return;
+    }
+  }
+
+  const rt = $("#chatRuntime").value;
+  chateando = true; $("#chatEnviar").disabled = true;
   const t0 = Date.now();
   const esperando = pintarChat("el", `${rt} está trabajando… (0s)`, "el pensando");
   const reloj = setInterval(() => {
@@ -1463,6 +1559,45 @@ $("#exportarCi").onclick = async () => {
   if (!ok) return avisar(datos.error || "No se pudo generar workflow CI/CD", "error");
   navigator.clipboard.writeText(datos.workflow);
   avisar("Pipeline GitHub Actions copiado al portapapeles.", "ok");
+};
+
+$("#exportarPy").onclick = async () => {
+  if (!grafo.nodos.length) return avisar("No hay nodos para exportar.", "error");
+  const { ok, datos } = await api("/api/exportar-python", grafo);
+  if (!ok) return avisar(datos.error || "No se pudo generar script Python", "error");
+  navigator.clipboard.writeText(datos.script);
+  avisar("Script Python autónomo copiado al portapapeles.", "ok");
+};
+
+$("#btnSimular").onclick = async () => {
+  if (!grafo.nodos.length) return avisar("No hay nodos para simular.", "error");
+  const { ok, datos } = await api("/api/simular", grafo);
+  if (!ok) return avisar(datos.error || "Error en simulación", "error");
+
+  const pasosHtml = (datos.pasos || []).map(p => {
+    const nods = p.nodos.map(n => `<b>${esc(n.id)}</b> <span style="color:var(--tenue);">(${esc(n.runtime)})</span>`).join(", ");
+    return `<div style="padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
+      <span style="color:var(--acento); font-weight:bold;">Paso ${p.paso} (${p.paralelos} paralelo/s):</span> ${nods}
+    </div>`;
+  }).join("");
+
+  const modalHtml = `
+    <div style="margin-bottom:12px; font-size:13px;">
+      <b>Camino crítico:</b> ${datos.camino_critico_pasos} pasos secuenciales · 
+      <b>Paralelismo pico:</b> ${datos.paralelismo_maximo} nodos simultáneos · 
+      <b>Nodos ejecutables:</b> ${datos.total_nodos}
+    </div>
+    <div style="background:#0e1017; border:1px solid var(--linea); border-radius:6px; padding:10px; margin-bottom:8px; font-size:12px;">
+      ${pasosHtml}
+    </div>
+    <div style="font-size:11px; color:var(--tenue);">
+      Runtimes involucrados: <b>${datos.runtimes.join(", ")}</b>
+    </div>
+  `;
+  $("#modalEntregableRender").innerHTML = modalHtml;
+  $("#modalEntregableTexto").textContent = JSON.stringify(datos, null, 2);
+  $("#modalEntregable").style.display = "flex";
+  mostrarModoPreview();
 };
 
 function renderMarkdown(md) {
