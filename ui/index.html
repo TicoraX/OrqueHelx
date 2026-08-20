@@ -227,7 +227,8 @@
         </div>
         <div style="display:flex; gap:4px; align-items:center;">
           <select id="selSnapshots" style="flex:1; font-size:11px; margin:0; padding:3px 4px;"><option value="">(sin snapshots)</option></select>
-          <button id="btnRestaurarSnapshot" style="white-space:nowrap; font-size:11px; padding:3px 8px;">Restaurar</button>
+          <button id="btnDiffSnapshot" style="white-space:nowrap; font-size:11px; padding:3px 6px; background:#223042;">Diff</button>
+          <button id="btnRestaurarSnapshot" style="white-space:nowrap; font-size:11px; padding:3px 6px;">Restaurar</button>
         </div>
       </div>
 
@@ -1781,6 +1782,52 @@ $("#btnGuardarSnapshot").onclick = async () => {
   $("#descSnapshot").value = "";
   avisar("📸 Snapshot guardado con éxito.", "ok");
   listarSnapshots();
+};
+
+$("#btnDiffSnapshot").onclick = async () => {
+  const sid = $("#selSnapshots").value;
+  if (!sid) return avisar("Seleccioná un snapshot para comparar con el lienzo.", "error");
+  const { ok, datos } = await api("/api/snapshot/diff", { id: sid, grafo_actual: grafo });
+  if (!ok) return avisar(datos.error || "No se pudo calcular el diff", "error");
+
+  let htmlCambios = "";
+  if (datos.identicos) {
+    htmlCambios = '<div style="color:var(--done); padding:8px 0;">✓ El snapshot y el lienzo actual son idénticos.</div>';
+  } else {
+    if (datos.nodos_agregados && datos.nodos_agregados.length) {
+      htmlCambios += `<div style="margin:4px 0; color:var(--done);"><b>+ Nodos agregados:</b> ${datos.nodos_agregados.map(esc).join(", ")}</div>`;
+    }
+    if (datos.nodos_eliminados && datos.nodos_eliminados.length) {
+      htmlCambios += `<div style="margin:4px 0; color:var(--failed);"><b>- Nodos eliminados:</b> ${datos.nodos_eliminados.map(esc).join(", ")}</div>`;
+    }
+    if (datos.nodos_modificados && datos.nodos_modificados.length) {
+      const mods = datos.nodos_modificados.map(m => {
+        const det = Object.entries(m.cambios).map(([k, v]) => `${esc(k)}: ${esc(v.antes)} → <b>${esc(v.despues)}</b>`).join(", ");
+        return `<li><b>${esc(m.id)}</b> (${det})</li>`;
+      }).join("");
+      htmlCambios += `<div style="margin:4px 0; color:#ffd43b;"><b>~ Nodos modificados:</b><ul style="margin:4px 0 4px 18px;">${mods}</ul></div>`;
+    }
+    if (datos.aristas_agregadas && datos.aristas_agregadas.length) {
+      htmlCambios += `<div style="margin:4px 0; color:var(--done);"><b>+ Aristas nuevas:</b> ${datos.aristas_agregadas.map(([p, h]) => `${esc(p)}→${esc(h)}`).join(", ")}</div>`;
+    }
+    if (datos.aristas_eliminadas && datos.aristas_eliminadas.length) {
+      htmlCambios += `<div style="margin:4px 0; color:var(--failed);"><b>- Aristas eliminadas:</b> ${datos.aristas_eliminadas.map(([p, h]) => `${esc(p)}→${esc(h)}`).join(", ")}</div>`;
+    }
+  }
+
+  const modalHtml = `
+    <div style="margin-bottom:12px; font-size:13px;">
+      <b>Comparación de Snapshot:</b> <i>${esc(datos.base.descripcion)}</i> vs <i>${esc(datos.comparado.descripcion)}</i><br>
+      <span style="color:var(--tenue); font-size:11.5px;">Resumen: ${esc(datos.resumen)}</span>
+    </div>
+    <div style="background:#0e1017; border:1px solid var(--linea); border-radius:6px; padding:10px; margin-bottom:8px; font-size:12px;">
+      ${htmlCambios}
+    </div>
+  `;
+  $("#modalEntregableRender").innerHTML = modalHtml;
+  $("#modalEntregableTexto").textContent = JSON.stringify(datos, null, 2);
+  $("#modalEntregable").style.display = "flex";
+  mostrarModoPreview();
 };
 
 $("#btnRestaurarSnapshot").onclick = async () => {

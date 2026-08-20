@@ -574,6 +574,25 @@ try:
     assert trace_a["descendientes"] == ["b", "c", "d"], trace_a
     assert trace_a["impacto_pct"] == 100.0, trace_a
     print("42. /api/trazabilidad-grafo computa upstreams, downstreams e impacto de bloqueo: OK")
+
+    # --- 43. /api/snapshot/diff compara diferencias estructurales entre grafos ---
+    grafo_modificado = {
+        "board": "mi-board-snap",
+        "nodos": [
+            {"id": "a", "titulo": "A Modificado", "runtime": "opencode"},
+            {"id": "c", "titulo": "C Nuevo", "runtime": "claude-code"}
+        ],
+        "aristas": [["a", "c"]]
+    }
+    codigo, datos_diff = pedir("/api/snapshot/diff", {
+        "id": snap_id,
+        "grafo_actual": grafo_modificado
+    })
+    assert codigo == 200 and datos_diff.get("ok"), datos_diff
+    assert "c" in datos_diff["nodos_agregados"], datos_diff
+    assert any(m["id"] == "a" for m in datos_diff["nodos_modificados"]), datos_diff
+    assert not datos_diff["identicos"], datos_diff
+    print("43. /api/snapshot/diff detecta adiciones, eliminaciones y cambios estructurales: OK")
 finally:
     proc.terminate()
     proc.wait(timeout=10)

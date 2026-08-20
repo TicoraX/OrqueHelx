@@ -742,6 +742,91 @@ def _restaurar_snapshot(snap_id: str) -> dict:
     return {"ok": True, "snapshot": json.loads(f.read_text(encoding="utf-8"))}
 
 
+def _diff_grafos(g1: dict, g2: dict) -> dict:
+    """Calcula la diferencia estructural entre dos grafos DAG."""
+    nodos1 = {n["id"]: n for n in g1.get("nodos", []) if not compilador.es_nota(n)}
+    nodos2 = {n["id"]: n for n in g2.get("nodos", []) if not compilador.es_nota(n)}
+
+    ids1 = set(nodos1.keys())
+    ids2 = set(nodos2.keys())
+
+    agregados = sorted(list(ids2 - ids1))
+    eliminados = sorted(list(ids1 - ids2))
+    comunes = sorted(list(ids1 & ids2))
+
+    modificados = []
+    for nid in comunes:
+        n1 = nodos1[nid]
+        n2 = nodos2[nid]
+        cambios = {}
+        for campo in ("titulo", "runtime", "modelo", "esfuerzo", "presupuesto_usd", "workspace"):
+            v1 = n1.get(campo)
+            v2 = n2.get(campo)
+            if v1 != v2:
+                cambios[campo] = {"antes": v1, "despues": v2}
+
+        h1 = sorted(list(n1.get("herramientas") or []))
+        h2 = sorted(list(n2.get("herramientas") or []))
+        if h1 != h2:
+            cambios["herramientas"] = {"antes": h1, "despues": h2}
+
+        if cambios:
+            modificados.append({
+                "id": nid,
+                "cambios": cambios,
+            })
+
+    def _aristas_set(g):
+        return {tuple(a[:2]) for a in g.get("aristas", []) if len(a) >= 2}
+
+    ar1 = _aristas_set(g1)
+    ar2 = _aristas_set(g2)
+
+    aristas_agregadas = [list(a) for a in sorted(list(ar2 - ar1))]
+    aristas_eliminadas = [list(a) for a in sorted(list(ar1 - ar2))]
+
+    partes_resumen = []
+    if agregados:
+        partes_resumen.append(f"+{len(agregados)} nodo(s)")
+    if eliminados:
+        partes_resumen.append(f"-{len(eliminados)} nodo(s)")
+    if modificados:
+        partes_resumen.append(f"{len(modificados)} nodo(s) modificado(s)")
+    if aristas_agregadas:
+        partes_resumen.append(f"+{len(aristas_agregadas)} arista(s)")
+    if aristas_eliminadas:
+        partes_resumen.append(f"-{len(aristas_eliminadas)} arista(s)")
+
+    return {
+        "ok": True,
+        "identicos": not (agregados or eliminados or modificados or aristas_agregadas or aristas_eliminadas),
+        "resumen": ", ".join(partes_resumen) if partes_resumen else "Sin cambios",
+        "nodos_agregados": agregados,
+        "nodos_eliminados": eliminados,
+        "nodos_modificados": modificados,
+        "aristas_agregadas": aristas_agregadas,
+        "aristas_eliminadas": aristas_eliminadas,
+    }
+
+
+def _diff_snapshots(snap_id: str, grafo_actual: dict = None, compare_id: str = None) -> dict:
+    """Comparar un snapshot con el grafo actual o con otro snapshot."""
+    snap1 = _restaurar_snapshot(snap_id)["snapshot"]
+    g1 = snap1.get("grafo", {})
+    if compare_id:
+        snap2 = _restaurar_snapshot(compare_id)["snapshot"]
+        g2 = snap2.get("grafo", {})
+        desc_comparado = snap2.get("descripcion", compare_id)
+    else:
+        g2 = grafo_actual or {}
+        desc_comparado = "Lienzo actual"
+
+    diff = _diff_grafos(g1, g2)
+    diff["base"] = {"id": snap_id, "descripcion": snap1.get("descripcion", snap_id)}
+    diff["comparado"] = {"id": compare_id, "descripcion": desc_comparado}
+    return diff
+
+
 def _generar_ci_workflow(grafo: dict) -> str:
     """Generar workflow de GitHub Actions a partir del grafo DAG.
 
@@ -1283,6 +1368,14 @@ class Handler(BaseHTTPRequestHandler):
                     return self._responder(200, _restaurar_snapshot(sid))
                 except Exception as e:
                     return self._responder(400, {"error": f"error restaurando snapshot: {e}"})
+            if self.path == "/api/snapshot/diff":
+                sid = cuerpo.get("id") or ""
+                cid = cuerpo.get("compare_id") or None
+                g = cuerpo.get("grafo_actual") or None
+                try:
+                    return self._responder(200, _diff_snapshots(sid, grafo_actual=g, compare_id=cid))
+                except Exception as e:
+                    return self._responder(400, {"error": f"error comparando snapshots: {e}"})
             if self.path == "/api/reporte-corrida":
                 b = cuerpo.get("board") or "orquester"
                 try:
