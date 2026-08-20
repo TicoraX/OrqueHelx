@@ -1160,6 +1160,86 @@ def _arrancar(board: str, tope_usd: float = None) -> dict:
     return {"ok": True}
 
 
+def _listar_workspaces() -> dict:
+    """Inspecciona los workspaces y directorios de trabajo de los boards registrados."""
+    boards = [b.get("slug") for b in k.list_boards() if b.get("slug")]
+    salida = []
+    total_bytes = 0
+    total_items = 0
+
+    for b in boards:
+        try:
+            ws_root = k.workspaces_root(board=b)
+            if not ws_root.exists():
+                continue
+            items = []
+            board_bytes = 0
+            for p in ws_root.iterdir():
+                if p.is_dir():
+                    tam = sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+                    items.append({
+                        "id": p.name,
+                        "ruta": str(p),
+                        "tamano_bytes": tam,
+                        "tamano_humano": f"{tam / 1024:.1f} KB" if tam < 1024 * 1024 else f"{tam / (1024 * 1024):.2f} MB",
+                    })
+                    board_bytes += tam
+            if items:
+                salida.append({
+                    "board": b,
+                    "raiz": str(ws_root),
+                    "total_workspaces": len(items),
+                    "tamano_bytes": board_bytes,
+                    "tamano_humano": f"{board_bytes / 1024:.1f} KB" if board_bytes < 1024 * 1024 else f"{board_bytes / (1024 * 1024):.2f} MB",
+                    "workspaces": items,
+                })
+                total_bytes += board_bytes
+                total_items += len(items)
+        except Exception:
+            continue
+
+    return {
+        "ok": True,
+        "total_boards": len(salida),
+        "total_workspaces": total_items,
+        "tamano_total_bytes": total_bytes,
+        "tamano_total_humano": f"{total_bytes / 1024:.1f} KB" if total_bytes < 1024 * 1024 else f"{total_bytes / (1024 * 1024):.2f} MB",
+        "boards": salida,
+    }
+
+
+def _limpiar_workspaces(board: str = None, task_id: str = None) -> dict:
+    """Limpia los workspaces scratch de un board o tarea específica de forma segura."""
+    import shutil
+    eliminados = 0
+    bytes_liberados = 0
+
+    boards = [board] if board else [b.get("slug") for b in k.list_boards() if b.get("slug")]
+    for b in boards:
+        try:
+            ws_root = k.workspaces_root(board=b)
+            if not ws_root.exists():
+                continue
+            for p in list(ws_root.iterdir()):
+                if p.is_dir():
+                    if task_id and p.name != task_id:
+                        continue
+                    tam = sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+                    shutil.rmtree(p, ignore_errors=True)
+                    if not p.exists():
+                        eliminados += 1
+                        bytes_liberados += tam
+        except Exception:
+            continue
+
+    return {
+        "ok": True,
+        "workspaces_eliminados": eliminados,
+        "bytes_liberados": bytes_liberados,
+        "liberado_humano": f"{bytes_liberados / 1024:.1f} KB" if bytes_liberados < 1024 * 1024 else f"{bytes_liberados / (1024 * 1024):.2f} MB",
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     def _responder(self, codigo, cuerpo, tipo="application/json"):
         datos = cuerpo if isinstance(cuerpo, bytes) else json.dumps(cuerpo).encode()
@@ -1243,6 +1323,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._responder(200, _generar_reporte_corrida(params.get("board", "orquester")))
         if ruta == "/api/snapshots":
             return self._responder(200, _listar_snapshots(params.get("board", "")))
+        if ruta == "/api/workspaces":
+            return self._responder(200, _listar_workspaces())
         if ruta == "/api/grafo":
             try:
                 f = _archivo(params.get("nombre", ""))
@@ -1410,6 +1492,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self._responder(200, _guardar_plantilla(nom, desc, g))
                 except Exception as e:
                     return self._responder(400, {"error": f"error guardando plantilla: {e}"})
+            if self.path == "/api/workspaces/limpiar":
+                b = cuerpo.get("board") or None
+                tid = cuerpo.get("task_id") or None
+                try:
+                    return self._responder(200, _limpiar_workspaces(board=b, task_id=tid))
+                except Exception as e:
+                    return self._responder(400, {"error": f"error limpiando workspaces: {e}"})
             if self.path == "/api/parametros":
                 # Los marcadores los detecta el exportador MCP, no una segunda
                 # regex en el navegador: si se duplica, se desincroniza y el

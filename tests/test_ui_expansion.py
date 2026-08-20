@@ -613,6 +613,25 @@ try:
     codigo, cat = pedir("/api/plantillas")
     assert any(p["nombre"] == "plantilla-test-promo" for p in cat["plantillas"]), cat
     print("44. /api/guardar-plantilla crea plantilla en catalogo con parametros: OK")
+
+    # --- 45. /api/workspaces y /api/workspaces/limpiar gestionan scratch dirs ---
+    codigo, ws_info = pedir("/api/workspaces")
+    assert codigo == 200 and ws_info.get("ok"), ws_info
+    assert "total_workspaces" in ws_info, ws_info
+
+    # Crear workspace de prueba en el board activo
+    test_ws = k.workspaces_root(board=BOARD) / "test-scratch-task"
+    test_ws.mkdir(parents=True, exist_ok=True)
+    (test_ws / "artifact.txt").write_text("dummy payload", encoding="utf-8")
+
+    codigo, res_clean = pedir("/api/workspaces/limpiar", {
+        "board": BOARD,
+        "task_id": "test-scratch-task"
+    })
+    assert codigo == 200 and res_clean.get("ok"), res_clean
+    assert res_clean["workspaces_eliminados"] >= 1, res_clean
+    assert not test_ws.exists(), "el workspace no fue eliminado"
+    print("45. /api/workspaces y /api/workspaces/limpiar inspeccionan y purgan workspaces: OK")
 finally:
     proc.terminate()
     proc.wait(timeout=10)

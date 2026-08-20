@@ -1858,9 +1858,10 @@ $("#btnRestaurarSnapshot").onclick = async () => {
 $("#btnEjecutarDoctor").onclick = async () => {
   $("#btnEjecutarDoctor").disabled = true;
   $("#btnEjecutarDoctor").textContent = "🩺 Diagnosticando…";
-  const [{ ok, datos }, { ok: okSec, datos: datosSec }] = await Promise.all([
+  const [{ ok, datos }, { ok: okSec, datos: datosSec }, { ok: okWs, datos: datosWs }] = await Promise.all([
     api("/api/doctor"),
-    api("/api/secretos-status")
+    api("/api/secretos-status"),
+    api("/api/workspaces")
   ]);
   $("#btnEjecutarDoctor").disabled = false;
   $("#btnEjecutarDoctor").textContent = "🩺 Ejecutar Diagnóstico";
@@ -1886,6 +1887,9 @@ $("#btnEjecutarDoctor").onclick = async () => {
     </div>`;
   }).join("");
 
+  const totalWs = datosWs?.total_workspaces || 0;
+  const tamWs = datosWs?.tamano_total_humano || "0 KB";
+
   box.innerHTML = `
     <div style="margin-bottom:8px; border-bottom:1px solid var(--linea); padding-bottom:6px;">
       <b>Plataforma:</b> ${esc(plat.os)} ${esc(plat.release)} · Python ${esc(plat.python)}<br>
@@ -1902,10 +1906,33 @@ $("#btnEjecutarDoctor").onclick = async () => {
     <div style="background:#0e1017; border:1px solid var(--linea); border-radius:4px; padding:6px 8px; margin-bottom:8px;">
       ${secHtml}
     </div>
+    <div style="margin-bottom:4px; font-weight:600; font-size:11.5px; display:flex; justify-content:space-between; align-items:center;">
+      <span>Workspaces Scratch:</span>
+      <span style="color:var(--tenue); font-weight:normal;">${totalWs} (${tamWs})</span>
+    </div>
+    <div style="background:#0e1017; border:1px solid var(--linea); border-radius:4px; padding:6px 8px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+      <span style="font-size:11px; color:var(--tenue);">${totalWs ? `${totalWs} carpetas temporales` : 'Sin residuos temporales'}</span>
+      <button id="btnLimpiarWs" style="font-size:10px; padding:2px 8px; ${totalWs ? 'background:#3b2024; color:#fca5a5;' : 'display:none;'}">🧹 Limpiar</button>
+    </div>
     <div style="font-size:11px; color:var(--tenue);">
       Runtimes activos para ejecución: <b>${datos.runtimes_activos}/4</b>
     </div>
   `;
+
+  const btnLimpiar = $("#btnLimpiarWs");
+  if (btnLimpiar) {
+    btnLimpiar.onclick = async () => {
+      btnLimpiar.disabled = true;
+      btnLimpiar.textContent = "Limpiando…";
+      const { ok: okL, datos: datosL } = await api("/api/workspaces/limpiar", {});
+      if (okL) {
+        avisar(`✓ ${datosL.workspaces_eliminados} workspaces eliminados (${datosL.liberado_humano} liberados).`, "ok");
+        $("#btnEjecutarDoctor").click();
+      } else {
+        avisar(datosL?.error || "Error al limpiar workspaces", "error");
+      }
+    };
+  }
 };
 
 $("#btnGenerarReporte").onclick = async () => {
