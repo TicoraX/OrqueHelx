@@ -47,6 +47,9 @@
            display:none; border:1px solid; }
   #aviso.error { background:#3a1d1d; border-color:#7a3b39; }
   #aviso.ok    { background:#1b3324; border-color:#2f6b41; }
+  /* Ambar: salio algo, pero no lo que se pidio. Un fallback pintado de verde
+     hace que una feature muerta se vea viva; paso exactamente eso. */
+  #aviso.tibio { background:#3a3018; border-color:#7a6534; }
   .leyenda { display:flex; flex-wrap:wrap; gap:8px; font-size:11.5px; color:var(--tenue); }
   .leyenda i { width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:3px; }
   .ayuda { font-size:11.5px; color:var(--tenue); line-height:1.45; }
@@ -1281,7 +1284,10 @@ $("#btnOptimizarGoal").onclick = async () => {
   n.titulo = datos.optimizado;
   $("#titulo").value = datos.optimizado;
   pintar();
-  avisar("Goal optimizado con éxito.", "ok");
+  // Si degradó, ningún agente tocó esto: lo ordenó una plantilla. Decirlo, en
+  // vez de anunciar éxito sobre un fallback.
+  if (datos.degradado) avisar("Goal ordenado sin agente: " + datos.motivo, "tibio");
+  else avisar("Goal optimizado con éxito.", "ok");
 };
 
 document.querySelectorAll("#herramientasBox input").forEach(cb => {
@@ -1770,13 +1776,18 @@ $("#btnGenIa").onclick = async () => {
   $("#btnGenIa").textContent = "Crear";
   if (!ok || !datos.grafo) return avisar(datos.error || "No se pudo generar el grafo", "error");
   anotar();
+  const degradado = datos.grafo._degradado, motivo = datos.grafo._motivo || "";
+  // Las marcas son del transporte, no del grafo: si se guardan, viajan al .json
+  // y después al compilador.
+  delete datos.grafo._degradado; delete datos.grafo._motivo;
   abrirGrafo(datos.grafo, datos.grafo.board || "flujo-ia");
   const { ok: okOrd, datos: datosOrd } = await api("/api/ordenar", grafo);
   if (okOrd && datosOrd.posiciones) {
     for (const n of grafo.nodos) Object.assign(n, datosOrd.posiciones[n.id]);
     pintar(); encuadrar();
   }
-  avisar(`Grafo '${grafo.board}' generado con IA (${grafo.nodos.length} nodos).`, "ok");
+  if (degradado) avisar(`Plantilla de ${grafo.nodos.length} nodos, no diseño de un agente: ${motivo}`, "tibio");
+  else avisar(`Grafo '${grafo.board}' generado con IA (${grafo.nodos.length} nodos).`, "ok");
 };
 
 $("#btnReintentarNodo").onclick = async () => {

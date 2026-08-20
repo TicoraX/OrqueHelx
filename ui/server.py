@@ -12,6 +12,7 @@ pidio.
 import hmac, json, os, re, secrets, subprocess, sys, threading, time, traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qsl
 
 RAIZ = Path(__file__).resolve().parent.parent
 for sub in ("hermes-agent", "dispatcher", "compiler", "mcp_exporter"):
@@ -37,25 +38,47 @@ SNAPSHOTS.mkdir(exist_ok=True)
 PLANTILLAS = RAIZ / "plantillas"
 
 
-def _archivo(nombre: str) -> Path:
-    """La ruta del grafo `nombre`, garantizada dentro de GRAFOS.
+def _ruta_segura(nombre: str, carpeta: Path, que: str = "nombre") -> Path:
+    """La ruta `<carpeta>/<nombre>.json`, garantizada dentro de `carpeta`.
 
     El nombre lo elige quien manda el pedido y terminaba en un `Path` sin
     filtrar: con `board: "../../x"` se escribia un .json en cualquier lado del
     disco, y se leia cualquier .json existente. Verificado explotandolo.
+
+    Filtrar solo `..` NO alcanza, y por eso esto vive en un lugar solo: una
+    ruta ABSOLUTA no tiene `..` y se escapa igual, porque unir una carpeta con
+    una ruta absoluta devuelve la absoluta y descarta la carpeta. El snapshot
+    se guardaba con ese unico filtro y escribia donde le pidieran; tambien
+    verificado explotandolo.
     """
     limpio = (nombre or "").strip()
     if not limpio or set(limpio) <= {"."}:
-        raise ValueError("nombre de grafo vacio")
+        raise ValueError(f"{que} vacio")
     if ".." in limpio or not re.fullmatch(r"[\w .-]+", limpio, re.UNICODE):
-        raise ValueError(f"nombre de grafo invalido: {nombre!r} "
+        raise ValueError(f"{que} invalido: {nombre!r} "
                          "(solo letras, numeros, guiones y puntos)")
-    f = (GRAFOS / f"{limpio}.json").resolve()
+    f = (carpeta / f"{limpio}.json").resolve()
     # Cinturon y tiradores: aunque la validacion de arriba se afloje, el
-    # archivo TIENE que quedar dentro de la carpeta de grafos.
-    if f.parent != GRAFOS.resolve():
-        raise ValueError(f"nombre de grafo invalido: {nombre!r}")
+    # archivo TIENE que quedar dentro de la carpeta que se pidio.
+    if f.parent != carpeta.resolve():
+        raise ValueError(f"{que} invalido: {nombre!r}")
     return f
+
+
+def _archivo(nombre: str) -> Path:
+    """La ruta del grafo `nombre`, garantizada dentro de GRAFOS."""
+    return _ruta_segura(nombre, GRAFOS, "nombre de grafo")
+
+
+def _slug_yaml(s) -> str:
+    """Reducir un valor del grafo a algo que no pueda cerrar el texto generado.
+
+    Los exportadores (CI, mermaid) arman texto pegando ids y runtimes que
+    vienen del pedido. Un id con comillas y saltos de linea inyectaba pasos
+    propios en el workflow de GitHub Actions; el saneo existia para la clave
+    del job y no se usaba en el resto del mismo archivo.
+    """
+    return re.sub(r"[^a-zA-Z0-9_-]", "_", str(s))
 
 # board -> hilo del dispatcher. Un solo dispatcher por board a la vez: dos
 # reclamarian las mismas cards y, aunque `claim_task` lo resuelve sin corromper
@@ -78,17 +101,42 @@ _topes: dict[str, float] = {}
 # `ORQUESTER_TOKEN` (util para dejarlo estable entre reinicios).
 TOKEN = os.environ.get("ORQUESTER_TOKEN") or secrets.token_urlsafe(24)
 
+# Nombres aceptados en la cabecera `Host`. Un `http.server` escuchando en
+# 127.0.0.1 sin esta comprobacion es vulnerable a DNS rebinding: una pagina
+# cualquiera hace que su dominio resuelva a 127.0.0.1 y desde ese momento le
+# habla al Studio como same-origin, saltandose el navegador. El token frena lo
+# que lo exige, pero `/api/capacidades` va SIN token y publica la ruta en disco
+# de cada binario instalado.
+# Si `ORQUESTER_HOST` abre el puerto a la red, quien lo abrio sabe por que
+# nombres se llega: los declara en `ORQUESTER_HOSTS`, separados por coma.
+HOSTS_OK = {"127.0.0.1", "localhost", "::1", ""} | {
+    h.strip().lower() for h in (os.environ.get("ORQUESTER_HOSTS") or "").split(",")
+    if h.strip()
+} | ({os.environ["ORQUESTER_HOST"].lower()} if os.environ.get("ORQUESTER_HOST") else set())
+
+
+def _query(ruta_con_query: str) -> dict:
+    """Los parametros de la URL, decodificados. UNA sola vez, para todos.
+
+    `parse_qsl` y no un `split("=")` a mano: sin decodificar, un grafo llamado
+    `mi flujo` (nombre que `_archivo` acepta) llegaba como `mi%20flujo` y era
+    inabrible. Y `parse_qsl` y no `parse_qs`, que devuelve listas: un
+    `board=["x"]` termina en `k.connect` y revienta adentro.
+
+    Vive en un lugar solo porque habia DOS parsers de query — este y el de
+    `_token_ok` — y arreglar uno dejaba el otro igual de roto.
+    """
+    _, _, query = ruta_con_query.partition("?")
+    return dict(parse_qsl(query, keep_blank_values=True))
+
 
 def _token_ok(handler) -> bool:
     """Comparacion en tiempo constante: un `==` filtra el token por timing."""
-    dado = handler.headers.get("X-Orquester-Token") or ""
-    if not dado:
-        _, _, query = handler.path.partition("?")
-        for par in query.split("&"):
-            if par.startswith("token="):
-                dado = par[6:]
-                break
-    return hmac.compare_digest(dado, TOKEN)
+    dado = handler.headers.get("X-Orquester-Token") or _query(handler.path).get("token", "")
+    # En bytes, no en str: `compare_digest` sobre strings LANZA TypeError si hay
+    # un caracter no ASCII, y desde que el query se decodifica un `?token=%C3%B1`
+    # llega como `ñ`. Sin esto, cualquiera sin autenticar tira el pedido abajo.
+    return hmac.compare_digest(dado.encode("utf-8", "surrogatepass"), TOKEN.encode())
 
 
 def _catalogo() -> dict:
@@ -129,20 +177,22 @@ def _generar_mermaid(grafo: dict) -> str:
     aristas = grafo.get("aristas") or []
     board = grafo.get("board") or "flujo"
 
-    lineas = ["graph TD", f"    subgraph {re.sub(r'[^a-zA-Z0-9_]', '_', board)} [{board}]"]
+    # Mismo criterio que en el exportador de CI: el id que viene del grafo se
+    # sanea antes de entrar al diagrama, no se pega crudo.
+    lineas = ["graph TD", f"    subgraph {_slug_yaml(board)} [{_slug_yaml(board)}]"]
     for n in nodos:
-        nid = n["id"]
+        nid = _slug_yaml(n["id"])
         titulo = (n.get("titulo") or nid).replace('"', "'").replace("\n", " ")
         if len(titulo) > 50:
             titulo = titulo[:47] + "..."
         if n.get("tipo") == "nota":
             lineas.append(f'        {nid}["📝 {titulo}"]:::nota')
         else:
-            rt = n.get("runtime", "hermes")
+            rt = _slug_yaml(n.get("runtime", "hermes"))
             lineas.append(f'        {nid}["{titulo}<br/><i>({rt})</i>"]:::{rt.replace("-", "_")}')
 
     for p, h in aristas:
-        lineas.append(f"        {p} --> {h}")
+        lineas.append(f"        {_slug_yaml(p)} --> {_slug_yaml(h)}")
     lineas.append("    end")
     lineas.append("    classDef hermes fill:#8e9aab,stroke:#6f7b8c,color:#14161a;")
     lineas.append("    classDef claude_code fill:#d0873f,stroke:#a66629,color:#ffffff;")
@@ -152,40 +202,54 @@ def _generar_mermaid(grafo: dict) -> str:
     return "\n".join(lineas)
 
 
-def _optimizar_goal(goal: str, runtime: str = "claude-code", reglas: str = "", dry_run: bool = False) -> str:
-    """Optimizar un goal in-place aplicando tecnicas de prompting."""
+def _runtime_para_chatear(runtime: str) -> str | None:
+    """El runtime pedido si esta instalado, si no el primero que lo este.
+
+    Lo comparten el optimizador de goals y el generador de grafos: los dos
+    necesitan CUALQUIER ejecutor con el que hablar, no uno en particular.
+    """
+    t = capacidades.tabla()
+    if runtime in t and t[runtime]["disponible"] and runtime in dispatcher.BACKENDS:
+        return runtime
+    return next((c for c in ("opencode", "claude-code", "antigravity")
+                 if c in t and t[c]["disponible"]), None)
+
+
+def _goal_estructurado(goal: str, marcadores: list, reglas: str) -> str:
+    """El goal ordenado a mano, sin agente. Es el fallback, no el camino feliz."""
+    partes = [f"Objetivo: {goal}"]
+    if marcadores:
+        partes.append(f"Parametros requeridos: {', '.join('{{' + m + '}}' for m in marcadores)}.")
+    partes.append("Restricciones: No inventar archivos ni datos de prueba. Reportar claramente los hallazgos.")
+    partes.append("Formato de salida: Estructurado y conciso.")
+    if reglas:
+        partes.append(f"Reglas: {reglas.strip()}")
+    return "\n\n".join(partes)
+
+
+def _optimizar_goal(goal: str, runtime: str = "claude-code", reglas: str = "",
+                    dry_run: bool = False) -> dict:
+    """Optimizar un goal in-place aplicando tecnicas de prompting.
+
+    Devuelve `{"optimizado", "degradado", "motivo"}`. `degradado` NO es adorno:
+    esta funcion leia `res["respuesta"]` y el chat devuelve `res["texto"]`, asi
+    que durante toda su vida devolvio el goal sin tocar y el Studio anuncio
+    "Goal optimizado con exito". Un fallback que no se declara es una feature
+    muerta que se ve viva.
+    """
     goal_limpio = (goal or "").strip()
     if not goal_limpio:
         raise ValueError("el goal no puede estar vacio")
 
     marcadores = re.findall(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}", goal_limpio)
+    plano = lambda motivo: {"optimizado": _goal_estructurado(goal_limpio, marcadores, reglas),
+                            "degradado": True, "motivo": motivo}
     if dry_run:
-        partes = [f"Objetivo: {goal_limpio}"]
-        if marcadores:
-            partes.append(f"Parametros requeridos: {', '.join('{{' + m + '}}' for m in marcadores)}.")
-        partes.append("Restricciones: No inventar archivos ni datos de prueba. Reportar claramente los hallazgos.")
-        partes.append("Formato de salida: Estructurado y conciso.")
-        if reglas:
-            partes.append(f"Reglas: {reglas.strip()}")
-        return "\n\n".join(partes)
+        return plano("dry_run: no se invoco ningun agente")
 
-    t = capacidades.tabla()
-    rt_elegido = runtime if (runtime in t and t[runtime]["disponible"] and runtime in dispatcher.BACKENDS) else None
+    rt_elegido = _runtime_para_chatear(runtime)
     if not rt_elegido:
-        for candidato in ("opencode", "claude-code", "antigravity"):
-            if candidato in t and t[candidato]["disponible"]:
-                rt_elegido = candidato
-                break
-
-    if not rt_elegido:
-        partes = [f"Objetivo: {goal_limpio}"]
-        if marcadores:
-            partes.append(f"Parametros requeridos: {', '.join('{{' + m + '}}' for m in marcadores)}.")
-        partes.append("Restricciones: No inventar archivos ni datos de prueba. Reportar claramente los hallazgos.")
-        partes.append("Formato de salida: Estructurado y conciso.")
-        if reglas:
-            partes.append(f"Reglas: {reglas.strip()}")
-        return "\n\n".join(partes)
+        return plano("no hay ningun ejecutor instalado en esta maquina")
 
     prompt = (
         "Eres un optimizador senior de prompts para agentes de IA autonomos (ORQUESTER).\n"
@@ -201,21 +265,38 @@ def _optimizar_goal(goal: str, runtime: str = "claude-code", reglas: str = "", d
     )
 
     try:
-        res = dispatcher.run_chat(rt_elegido, prompt, timeout=90)
-        respuesta = (res.get("respuesta") or "").strip()
-        if respuesta.startswith("```"):
-            lineas = respuesta.splitlines()
-            if len(lineas) >= 2 and lineas[-1].startswith("```"):
-                respuesta = "\n".join(lineas[1:-1]).strip()
-        return respuesta or goal_limpio
-    except Exception:
-        return goal_limpio
+        # `texto`, no `respuesta`: es la clave que devuelve `chat_backend`.
+        respuesta = (dispatcher.run_chat(rt_elegido, prompt, timeout=90)
+                     .get("texto") or "").strip()
+    except Exception as e:
+        return plano(f"{rt_elegido} fallo: {type(e).__name__}: {str(e)[:200]}")
+    if respuesta.startswith("```"):
+        lineas = respuesta.splitlines()
+        if len(lineas) >= 2 and lineas[-1].startswith("```"):
+            respuesta = "\n".join(lineas[1:-1]).strip()
+    if not respuesta:
+        return plano(f"{rt_elegido} no devolvio texto")
+    return {"optimizado": respuesta, "degradado": False, "motivo": ""}
+
+
+def _conn(board: str):
+    """Conexion al board, rechazando el que no existe.
+
+    `k.connect` hace `mkdir(parents=True)` y auto-inicializa el esquema: pedirle
+    un board inventado no falla, lo CREA. Por eso los `try/except` que
+    envolvian estas llamadas no se disparaban nunca y cada nombre tipeado mal
+    dejaba una base nueva en disco, respondiendo 200 sobre un board vacio.
+    `board_exists` es la pregunta que si contesta.
+    """
+    if not k.board_exists(board):
+        raise ValueError(f"no existe el board '{board}'")
+    return k.connect(board=board)
 
 
 def _estado(board: str) -> dict:
     """Estado de todas las cards del board, para pintar el canvas."""
     try:
-        conn = k.connect(board=board)
+        conn = _conn(board)
     except Exception as e:
         return {"error": str(e), "tareas": {}}
     tareas = {}
@@ -236,7 +317,7 @@ def _traza(board: str, task_id: str) -> dict:
     un grafo mental, se lee la traza del nodo en el mismo dibujo donde se
     diseñó el flujo.
     """
-    conn = k.connect(board=board)
+    conn = _conn(board)
     t = k.get_task(conn, task_id)
     if t is None:
         return {"error": f"no existe la card {task_id}"}
@@ -270,7 +351,7 @@ def _consumo(board: str) -> dict:
     cada intento, y el total del flujo tiene que reflejarlo.
     """
     try:
-        conn = k.connect(board=board)
+        conn = _conn(board)
     except Exception as e:
         return {"error": str(e)}
     # El tope de la corrida, si hubo una. Se devuelve aunque ya haya terminado:
@@ -310,7 +391,7 @@ def _consumo(board: str) -> dict:
 def _telemetria(board: str) -> dict:
     """Métricas y telemetría de ejecución en tiempo real para el board."""
     try:
-        conn = k.connect(board=board)
+        conn = _conn(board)
         tasks = k.list_tasks(conn)
     except Exception as e:
         return {"board": board, "error": str(e), "corriendo": board in _corriendo,
@@ -344,10 +425,15 @@ def _telemetria(board: str) -> dict:
             "resultado": (getattr(t, "result", None) or "")[:200] if getattr(t, "result", None) else "",
         })
 
+    # Los estados salen de `kanban_db.VALID_STATUSES`, no de la intuicion:
+    # {triage, todo, scheduled, ready, running, blocked, review, done, archived}.
+    # Aca decia `in_progress` y `failed`, que NO existen: `activos` era siempre
+    # 0 y `fallidos` nunca contaba `triage`, que es justo donde Hermes escala un
+    # nodo que agoto sus desbloqueos. O sea, el fallo TERMINAL no se contaba.
     total = len(tasks)
     terminados = estados.get("done", 0)
-    fallidos = estados.get("failed", 0) + estados.get("blocked", 0)
-    activos = estados.get("in_progress", 0) or estados.get("running", 0)
+    fallidos = estados.get("blocked", 0) + estados.get("triage", 0)
+    activos = estados.get("running", 0)
     listos = estados.get("ready", 0)
     progreso = round((terminados / total * 100), 1) if total > 0 else 0.0
 
@@ -395,7 +481,7 @@ def _historial() -> dict:
                 "total_nodos": len(tasks),
                 "estados": estados,
                 "completado": estados.get("done", 0) == len(tasks) and len(tasks) > 0,
-                "tiene_fallos": bool(estados.get("failed", 0) or estados.get("blocked", 0)),
+                "tiene_fallos": bool(estados.get("blocked", 0) or estados.get("triage", 0)),
                 "costo_usd": consumo.get("total", {}).get("costo_usd", 0.0),
                 "tokens_total": consumo.get("total", {}).get("total", 0),
                 "corriendo": slug in _corriendo,
@@ -414,8 +500,11 @@ def _generar_grafo(descripcion: str, runtime: str = "claude-code", dry_run: bool
     slug_base = re.sub(r'[^a-zA-Z0-9_-]', '-', desc.lower()[:25]).strip("-") or "flujo-ia"
     slug = f"ia-{slug_base}"
 
-    if dry_run:
-        grafo_ejemplo = {
+    def _plantilla(motivo: str) -> dict:
+        """El grafo de ejemplo. Es el fallback, y lo dice: `_degradado` viaja
+        hasta la UI para que no anuncie como diseño de un agente algo que
+        salio de una plantilla fija de tres nodos."""
+        g = {
             "board": slug,
             "reglas": "No modificar archivos fuera del alcance. Responder en formato estructurado.",
             "nodos": [
@@ -424,24 +513,21 @@ def _generar_grafo(descripcion: str, runtime: str = "claude-code", dry_run: bool
                 {"id": "sintesis", "titulo": "Sintetizar resultados y emitir veredicto final", "runtime": "antigravity", "x": 200, "y": 250},
             ],
             "aristas": [["analisis", "ejecucion"], ["ejecucion", "sintesis"]],
+            "_degradado": True, "_motivo": motivo,
         }
-        compilador.validar(grafo_ejemplo, capacidades=False)
-        pos = disposicion.ordenar(grafo_ejemplo)
-        for n in grafo_ejemplo["nodos"]:
+        compilador.validar(g, capacidades=False)
+        pos = disposicion.ordenar(g)
+        for n in g["nodos"]:
             if n["id"] in pos:
                 n["x"], n["y"] = pos[n["id"]]["x"], pos[n["id"]]["y"]
-        return grafo_ejemplo
+        return g
 
-    t = capacidades.tabla()
-    rt_elegido = runtime if (runtime in t and t[runtime]["disponible"] and runtime in dispatcher.BACKENDS) else None
-    if not rt_elegido:
-        for candidato in ("opencode", "claude-code", "antigravity"):
-            if candidato in t and t[candidato]["disponible"]:
-                rt_elegido = candidato
-                break
+    if dry_run:
+        return _plantilla("dry_run: no se invoco ningun agente")
 
+    rt_elegido = _runtime_para_chatear(runtime)
     if not rt_elegido:
-        return _generar_grafo(desc, runtime=runtime, dry_run=True)
+        return _plantilla("no hay ningun ejecutor instalado en esta maquina")
 
     prompt = (
         "Eres el arquitecto de flujos de ORQUESTER. Diseña un grafo DAG de tareas óptimo para el siguiente requerimiento:\n\n"
@@ -464,8 +550,12 @@ def _generar_grafo(descripcion: str, runtime: str = "claude-code", dry_run: bool
     )
 
     try:
-        res = dispatcher.run_chat(rt_elegido, prompt, timeout=120)
-        resp = (res.get("respuesta") or "").strip()
+        # `texto`, no `respuesta`: es la clave que devuelve `chat_backend`.
+        # Con la clave mal, `resp` quedaba vacia, `json.loads("")` tiraba, y el
+        # `except` de abajo devolvia SIEMPRE la plantilla de tres nodos. La
+        # feature "generar grafo con IA" nunca invoco a un agente de verdad.
+        resp = (dispatcher.run_chat(rt_elegido, prompt, timeout=120)
+                .get("texto") or "").strip()
         if "```json" in resp:
             resp = resp.split("```json", 1)[1].split("```", 1)[0].strip()
         elif "```" in resp:
@@ -485,13 +575,14 @@ def _generar_grafo(descripcion: str, runtime: str = "claude-code", dry_run: bool
                 n["x"] = n.get("x", 100)
                 n["y"] = n.get("y", 100)
         return obj
-    except Exception:
-        return _generar_grafo(desc, runtime=runtime, dry_run=True)
+    except Exception as e:
+        return _plantilla(f"{rt_elegido} no devolvio un grafo usable: "
+                          f"{type(e).__name__}: {str(e)[:200]}")
 
 
 def _reintentar_nodo(board: str, task_id: str) -> dict:
     """Reintentar un nodo fallido o bloqueado desbloqueándolo en kanban_db."""
-    conn = k.connect(board=board)
+    conn = _conn(board)
     t = k.get_task(conn, task_id)
     if not t:
         raise ValueError(f"no existe la card {task_id}")
@@ -501,10 +592,12 @@ def _reintentar_nodo(board: str, task_id: str) -> dict:
 
 def _guardar_snapshot(board: str, grafo: dict, descripcion: str = "") -> dict:
     """Guardar una instantánea inmutable del diseño actual del grafo."""
-    limpio = (board or "").strip()
-    if not limpio or ".." in limpio:
-        raise ValueError(f"board invalido: {board!r}")
     ts = int(time.time())
+    # El board pasa por el MISMO filtro que un nombre de grafo. Antes solo se
+    # miraba `..`, y uno absoluto escribia el .json fuera de `snapshots/`.
+    # `limpio` sale ya filtrado, y `ts` es un int: el snap_id es seguro por
+    # construccion, sin una segunda validacion que se pueda desincronizar.
+    limpio = _ruta_segura(board, SNAPSHOTS, "board").stem
     snap_id = f"{limpio}_{ts}"
     f = SNAPSHOTS / f"{snap_id}.json"
     data = {
@@ -540,19 +633,21 @@ def _listar_snapshots(board: str = "") -> dict:
 
 def _restaurar_snapshot(snap_id: str) -> dict:
     """Recuperar un snapshot por ID."""
-    limpio = (snap_id or "").strip()
-    if not limpio or ".." in limpio:
-        raise ValueError("ID de snapshot invalido")
-    f = (SNAPSHOTS / f"{limpio}.json").resolve()
-    if f.parent != SNAPSHOTS.resolve() or not f.is_file():
-        raise ValueError(f"No existe el snapshot {limpio}")
-    d = json.loads(f.read_text(encoding="utf-8"))
-    return {"ok": True, "snapshot": d}
+    f = _ruta_segura(snap_id, SNAPSHOTS, "ID de snapshot")
+    if not f.is_file():
+        raise ValueError(f"No existe el snapshot {f.stem}")
+    return {"ok": True, "snapshot": json.loads(f.read_text(encoding="utf-8"))}
 
 
 def _generar_ci_workflow(grafo: dict) -> str:
-    """Generar workflow de GitHub Actions a partir del grafo DAG."""
-    board = grafo.get("board") or "orquester-flujo"
+    """Generar workflow de GitHub Actions a partir del grafo DAG.
+
+    TODO valor que viene del grafo se sanea antes de entrar al YAML. El `id`
+    ya se saneaba para la clave del job (`nid`) pero se usaba CRUDO tres lineas
+    mas abajo, en `name:`, en el `echo` y en el `python -c`: un id con comillas
+    y saltos de linea inyectaba pasos `- run:` propios en el workflow. Verificado.
+    """
+    board = _slug_yaml(grafo.get("board") or "orquester-flujo")
     nodos = grafo.get("nodos") or []
     aristas = grafo.get("aristas") or []
 
@@ -560,16 +655,31 @@ def _generar_ci_workflow(grafo: dict) -> str:
     for p, h in aristas:
         padres_por_nodo.setdefault(h, []).append(p)
 
+    # Un slug por nodo, calculado UNA vez y compartido con `needs`. Dos ids
+    # distintos pueden colapsar al mismo slug (`a.b` y `a-b` dan `a_b`), y eso
+    # producia dos claves YAML iguales: gana la ultima y un job desaparece sin
+    # avisar. El sufijo desempata. Y `needs` sale de la misma tabla, porque
+    # re-slugear al padre por separado tenia el mismo riesgo.
+    claves, vistos = {}, {}
+    for n in nodos:
+        base = _slug_yaml(n["id"])
+        vistos[base] = vistos.get(base, 0) + 1
+        claves[n["id"]] = base if vistos[base] == 1 else f"{base}_{vistos[base]}"
+
     jobs_yaml = []
     for n in nodos:
-        nid = re.sub(r'[^a-zA-Z0-9_-]', '_', n["id"])
-        titulo = (n.get("titulo") or nid).replace('"', '\\"').replace("\n", " ")
-        rt = n.get("runtime", "claude-code")
-        needs = [re.sub(r'[^a-zA-Z0-9_-]', '_', p) for p in padres_por_nodo.get(n["id"], [])]
+        nid = claves[n["id"]]
+        # Aplanado a una linea; el escapado del literal lo hace `json.dumps`,
+        # que es exactamente el de un escalar YAML entre comillas dobles.
+        titulo = " ".join((n.get("titulo") or nid).split())
+        rt = _slug_yaml(n.get("runtime", "claude-code"))
+        # `if p in claves`: este exportador no llama a `validar`, asi que una
+        # arista puede nombrar un nodo que no existe.
+        needs = [claves[p] for p in padres_por_nodo.get(n["id"], []) if p in claves]
 
         job_lines = [
             f"  {nid}:",
-            f"    name: \"{n['id']}: {titulo[:35]}\"",
+            f"    name: {json.dumps(f'{nid}: {titulo[:35]}')}",
             "    runs-on: ubuntu-latest",
         ]
         if needs:
@@ -585,9 +695,11 @@ def _generar_ci_workflow(grafo: dict) -> str:
             "          python-version: '3.11'",
             f"      - name: Ejecutar nodo ({rt})",
             f"        run: |",
-            f"          echo \"==> ORQUESTER Nodo {n['id']} [{rt}]\"",
+            f"          echo \"==> ORQUESTER Nodo {nid} [{rt}]\"",
+            # Comentario de shell: el titulo ya viene sin saltos de linea, que
+            # es lo unico que podria sacarlo del comentario.
             f"          # Goal: {titulo[:70]}",
-            f"          python -c \"print('Paso {n['id']} completado.')\"",
+            f"          python -c \"print('Paso {nid} completado.')\"",
         ])
         jobs_yaml.append("\n".join(job_lines))
 
@@ -609,11 +721,19 @@ def _generar_ci_workflow(grafo: dict) -> str:
 
 
 def _generar_script_python(grafo: dict) -> str:
-    """Generar un script Python autónomo para ejecutar el flujo sin el Studio."""
-    board = grafo.get("board") or "orquester-script"
+    """Generar un script Python autónomo para ejecutar el flujo sin el Studio.
+
+    El grafo viaja como JSON leido en runtime, NO interpolado en el fuente.
+    Pegarlo con un f-string rompia de dos formas: `true`/`null` de JSON no son
+    literales de Python (el script moria con `NameError`), y un `board` con
+    comillas cerraba el literal y ejecutaba lo que viniera detras. El script se
+    descarga y se corre a mano: eso era ejecucion de codigo arbitrario en la
+    maquina de quien lo corriera. `json.dumps` escapa toda comilla doble, asi
+    que dentro del `r\"\"\"...\"\"\"` no puede aparecer un cierre.
+    """
     grafo_json = json.dumps(grafo, indent=2, ensure_ascii=False)
     script = f'''#!/usr/bin/env python3
-"""Script autónomo de ejecución para el flujo ORQUESTER: {board}
+"""Script autónomo de ejecución de un flujo de ORQUESTER.
 Generado automáticamente por ORQUESTER Studio.
 """
 import json, sys
@@ -629,10 +749,12 @@ import compile as compilador
 import loop as dispatcher
 import hermes_cli.kanban_db as k
 
-GRAFO = {grafo_json}
+GRAFO = json.loads(r"""
+{grafo_json}
+""")
 
 def main():
-    board = GRAFO.get("board", "{board}")
+    board = GRAFO.get("board") or "orquester-script"
     print(f"==> Validando y compilando flujo: {{board}}...")
     compilador.validar(GRAFO, capacidades=True)
     ids = compilador.compilar(GRAFO, board=board)
@@ -644,7 +766,7 @@ def main():
     conn = k.connect(board=board)
     tasks = k.list_tasks(conn)
     completadas = sum(1 for t in tasks if t.status == "done")
-    fallidas = sum(1 for t in tasks if t.status in ("failed", "blocked"))
+    fallidas = sum(1 for t in tasks if t.status in ("blocked", "triage"))
     gasto = dispatcher.gasto_usd(conn)
     print(f"\\n==> Resultado final: {{completadas}}/{{len(tasks)}} completadas, {{fallidas}} fallidas.")
     print(f"==> Consumo medido: US$ {{gasto:.4f}}")
@@ -700,7 +822,7 @@ def _simular_flujo(grafo: dict) -> dict:
 def _generar_reporte_corrida(board: str) -> dict:
     """Generar informe completo de auditoría y ejecución de un board en Markdown."""
     slug = (board or "orquester").strip()
-    conn = k.connect(board=slug)
+    conn = _conn(slug)
     tasks = k.list_tasks(conn)
     tele = _telemetria(slug)
     res = tele.get("resumen", {})
@@ -730,7 +852,16 @@ def _generar_reporte_corrida(board: str) -> dict:
         filas_tabla.append(f"| `{tid}` | {titulo[:35]} | `{rt}` | `{st}` | {dur_txt} | {tokens_nodo} ({costo_txt}) |")
 
         if t.result:
-            secciones_entregables.append(f"### Nodo `{tid}`: {titulo}\n- **Estado**: `{st}` | **Runtime**: `{rt}`\n\n```\n{t.result[:800]}\n```\n")
+            salida_nodo = t.result[:800]
+            # Cerca mas larga que la secuencia de backticks mas larga que traiga
+            # el resultado: un entregable que contenga ``` cerraba la cerca y el
+            # resto del reporte se renderizaba como markdown en vez de como
+            # salida del agente.
+            cerca = "`" * max(3, max((len(m) for m in re.findall(r"`+", salida_nodo)),
+                                     default=0) + 1)
+            secciones_entregables.append(
+                f"### Nodo `{tid}`: {titulo}\n- **Estado**: `{st}` | **Runtime**: `{rt}`"
+                f"\n\n{cerca}\n{salida_nodo}\n{cerca}\n")
 
     md = [
         f"# Reporte de Auditoría: {slug}",
@@ -830,6 +961,14 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(datos)
 
+    def _host_ok(self) -> bool:
+        """La cabecera `Host` tiene que nombrar a esta maquina (ver HOSTS_OK)."""
+        host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]").lower()
+        if host in HOSTS_OK:
+            return True
+        self._responder(421, {"error": f"Host '{host}' no atendido aca"})
+        return False
+
     def _autorizado(self) -> bool:
         if _token_ok(self):
             return True
@@ -839,14 +978,28 @@ class Handler(BaseHTTPRequestHandler):
         return False
 
     def do_GET(self):
-        ruta, _, query = self.path.partition("?")
+        if not self._host_ok():
+            return
+        ruta, _, _ = self.path.partition("?")
         # El HTML es una cascara estatica sin datos: se sirve sin token para que
         # recargar la pagina funcione (una navegacion no puede mandar cabeceras,
         # y el token se limpia de la URL a proposito). Todo `/api/*` si exige
         # token: ahi estan los datos y la ejecucion.
         if ruta not in ("/", "/api/capacidades") and not self._autorizado():
             return
-        params = dict(p.split("=", 1) for p in query.split("&") if "=" in p)
+        params = _query(self.path)
+        # Con `try`, igual que `do_POST`. Sin el, cualquier excepcion cerraba el
+        # socket sin respuesta: un board con espacios (`_normalize_board_slug`
+        # tira ValueError), un .json corrupto en `ui/grafos/`, `list_boards()`.
+        try:
+            return self._get(ruta, params)
+        except ValueError as e:
+            return self._responder(400, {"error": str(e)})
+        except Exception as e:
+            traceback.print_exc()
+            return self._responder(500, {"error": f"{type(e).__name__}: {e}"})
+
+    def _get(self, ruta, params):
         if ruta == "/":
             return self._responder(200, HTML.read_bytes(), "text/html; charset=utf-8")
         if ruta == "/api/estado":
@@ -892,12 +1045,27 @@ class Handler(BaseHTTPRequestHandler):
             return self._responder(200, json.loads(f.read_text(encoding="utf-8")))
         return self._responder(404, {"error": "ruta desconocida"})
 
+    # 8 MB. Esto recibe grafos, no subidas: sin techo, un `Content-Length`
+    # enorme se reserva en memoria antes de que nadie mire el contenido.
+    MAX_CUERPO = 8 * 1024 * 1024
+
     def do_POST(self):
+        if not self._host_ok():
+            return
         if not self._autorizado():
             return
-        largo = int(self.headers.get("Content-Length") or 0)
-        cuerpo = json.loads(self.rfile.read(largo) or b"{}")
         try:
+            # Adentro del `try`, no afuera. Estaban afuera y un cuerpo que no
+            # fuera JSON, o un `Content-Length: abc`, tiraban la excepcion en el
+            # handler: socket cerrado, sin respuesta, traceback en consola.
+            # Verificado con `curl -d 'no-es-json'` (curl exit 52).
+            largo = int(self.headers.get("Content-Length") or 0)
+            if largo > self.MAX_CUERPO:
+                return self._responder(413, {"error": f"cuerpo de mas de "
+                                                      f"{self.MAX_CUERPO} bytes"})
+            cuerpo = json.loads(self.rfile.read(largo) or b"{}")
+            if not isinstance(cuerpo, dict):
+                return self._responder(400, {"error": "el cuerpo tiene que ser un objeto JSON"})
             if self.path == "/api/validar":
                 compilador.validar(cuerpo)
                 return self._responder(200, {"ok": True})
@@ -931,8 +1099,9 @@ class Handler(BaseHTTPRequestHandler):
                 rt = cuerpo.get("runtime") or "claude-code"
                 reglas = cuerpo.get("reglas") or ""
                 try:
-                    res = _optimizar_goal(goal, runtime=rt, reglas=reglas, dry_run=bool(cuerpo.get("dry_run")))
-                    return self._responder(200, {"ok": True, "optimizado": res})
+                    res = _optimizar_goal(goal, runtime=rt, reglas=reglas,
+                                          dry_run=bool(cuerpo.get("dry_run")))
+                    return self._responder(200, {"ok": True, **res})
                 except ValueError as e:
                     return self._responder(400, {"error": str(e)})
             if self.path == "/api/exportar-mermaid":
@@ -1045,8 +1214,13 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/plantilla":
                 # Usar una plantilla = copiarla a los grafos propios, con el
                 # nombre que elija quien la usa. La plantilla no se toca nunca.
-                origen = PLANTILLAS / f"{cuerpo.get('plantilla', '')}.json"
-                if origen.parent != PLANTILLAS or not origen.is_file():
+                # Mismo validador que los grafos y los snapshots. Aca la
+                # comparacion era `origen.parent != PLANTILLAS` SIN `.resolve()`:
+                # hoy no se escapa, pero era el tercer criterio distinto para lo
+                # mismo, y el que fallo en `_guardar_snapshot` era uno de esos.
+                origen = _ruta_segura(cuerpo.get("plantilla") or "", PLANTILLAS,
+                                      "plantilla")
+                if not origen.is_file():
                     return self._responder(404, {"error": "no existe esa plantilla"})
                 g = json.loads(origen.read_text(encoding="utf-8"))
                 g["board"] = cuerpo.get("nombre") or g.get("board") or "sin-nombre"
