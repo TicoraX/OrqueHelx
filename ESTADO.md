@@ -7,9 +7,9 @@
 
 ## Dónde está el código
 
-- Commit `b008671` — feat(studio): diagnostico doctor, exportador CI/CD, snapshots de grafos y visor markdown interactivo
+- Commit `0ff6139` — feat(studio): exportador python headless, simulador analitico DAG y comandos slash de copilot en chat
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 3
+- Árbol limpio: sí · sin pushear: 5
 
 ## Runtime prestado
 
@@ -47,7 +47,7 @@
 
 ## Bloqueos
 
-- 3 commit(s) sin pushear
+- 5 commit(s) sin pushear
 
 ## Qué sigue
 
