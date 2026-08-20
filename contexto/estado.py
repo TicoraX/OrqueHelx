@@ -213,8 +213,6 @@ def revisar(estado: Contexto) -> Contexto:
         # `tests/test_ui_expansion.py`; lo del lienzo, con Playwright.
         # El Studio está completo para uso local: plantillas, chat, esfuerzo,
         # tope de gasto, auto-layout y atajos. Lo que queda es producto, no UI.
-        "que el grafo diseñado por el agente se pueda EDITAR y re-pedir en el "
-        "lienzo (generarlo ya anda; hoy cada intento pisa el anterior)",
         "conectar el Studio a la API multiusuario (hoy le habla directo al motor)",
         "medición empírica del cumplimiento del output_schema (diferida a propósito)",
         "tabla de rutas en ui/server.py: 34 endpoints en dos cadenas de `if`",

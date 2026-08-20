@@ -7,7 +7,7 @@
 
 ## Dónde está el código
 
-- Commit `cb4226b` — fix: hallazgos de la revision de CodeRabbit
+- Commit `e3a3e38` — fix(contexto): "sin pushear" se mide contra el upstream de la rama, no contra master
 - Remoto: https://github.com/TicoraX/orquester.git
 - Árbol limpio: **no** · sin pushear: 0
 
@@ -21,7 +21,7 @@
 ## Verificación
 
 - `ARQUITECTURA.md` §10: **70 afirmaciones**, 1 pendiente(s)
-- 17 tests: api_rbac, auth_studio, capacidades, chat, compilador, concurrencia_reintentos, consumo, contract, dag_heterogeneo, dag_rombo, disposicion, dos_dispatchers, esfuerzo_presupuesto, mcp_export, pin_hermes, rebanada_vertical, ui_expansion
+- 18 tests: api_rbac, auth_studio, capacidades, chat, compilador, concurrencia_reintentos, consumo, contract, dag_heterogeneo, dag_rombo, disposicion, dos_dispatchers, esfuerzo_presupuesto, mcp_export, pin_hermes, rebanada_vertical, ui_expansion, ui_navegador
 
 ## Decisiones tomadas (no re-litigar sin motivo nuevo)
 
@@ -51,9 +51,8 @@
 
 ## Qué sigue
 
-- 14 commit(s) pusheados y sin mergear a master (rama de trabajo)
+- 15 commit(s) pusheados y sin mergear a master (rama de trabajo)
 - §10 tiene 1 afirmación(es) pendiente(s)
-- que el grafo diseñado por el agente se pueda EDITAR y re-pedir en el lienzo (generarlo ya anda; hoy cada intento pisa el anterior)
 - conectar el Studio a la API multiusuario (hoy le habla directo al motor)
 - medición empírica del cumplimiento del output_schema (diferida a propósito)
 - tabla de rutas en ui/server.py: 34 endpoints en dos cadenas de `if`

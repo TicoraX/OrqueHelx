@@ -70,7 +70,30 @@ Si lo exponés a la red, el token deja de ser una formalidad. Pensalo dos veces.
 
 ## 2. Diseñar el flujo
 
-En el canvas:
+### Que lo diseñe un agente
+
+En el panel **Diseño**, bajo *✨ Diseñar flujo con IA*:
+
+- **Crear** — describís el flujo en una línea y un agente devuelve el grafo.
+  Pisa el lienzo entero, así que es para empezar.
+- **Refinar** — aparece cuando ya hay un grafo. Describís **el cambio**, no el
+  flujo: *"agregale un nodo de lint que corra en paralelo con los tests"*. Lo
+  que ya estaba se conserva, incluidas las posiciones que hayas acomodado a
+  mano; solo se ubican los nodos nuevos. Si no te gusta, `Ctrl+Z`.
+
+Refinar **continúa la conversación**: el segundo pedido sabe de qué flujo venís
+hablando, así que "y ahora sacale el de report" funciona sin volver a explicar
+nada. La sesión la guarda el CLI (por la API viaja solo el id) y se descarta al
+abrir otro grafo.
+
+Si no hay ningún CLI de agente instalado, **Crear** cae a una plantilla de tres
+nodos y **Refinar** deja el grafo intacto — en los dos casos el aviso sale en
+ámbar diciendo por qué. Un fallback pintado de verde es una feature muerta que
+se ve viva.
+
+El botón **Ordenar** re-acomoda todo por topología cuando el lienzo quedó feo.
+
+### A mano, en el canvas
 
 | Gesto | Qué hace |
 |---|---|

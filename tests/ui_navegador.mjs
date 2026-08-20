@@ -1,0 +1,125 @@
+// Verificacion de la UI en un navegador de verdad.
+//
+// La suite de Python NO toca `ui/index.html`: los cambios de interfaz se
+// verifican aca (ARQUITECTURA/ESTADO lo tienen como decision). Hasta hoy eso
+// era una intencion sin archivo; este es el archivo.
+//
+// Lo arranca `tests/test_ui_navegador.py`, que levanta el Studio y lo omite si
+// falta playwright. Las respuestas del disenador con IA van MOCKEADAS con
+// `p.route`: lo que se prueba es el cableado de la UI, no el modelo, y una
+// suite que llama a un agente de verdad cuesta plata en cada corrida.
+//
+//   node tests/ui_navegador.mjs <url> <png-de-salida>
+
+import { chromium } from 'playwright';
+const URL = process.argv[2];
+const b = await chromium.launch();
+const p = await b.newPage();
+const errores = [];
+p.on('pageerror', e => errores.push(String(e)));
+p.on('console', m => { if (m.type() === 'error') errores.push('console: ' + m.text()); });
+await p.goto(URL, { waitUntil: 'networkidle' });
+
+const ver = async sel => p.evaluate(s => {
+  const e = document.querySelector(s);
+  return e ? getComputedStyle(e).display !== 'none' && e.offsetParent !== null : null;
+}, sel);
+
+let fallos = 0;
+const ok = (c, m) => { console.log((c ? '  OK   ' : '  FALLA ') + m); if (!c) fallos++; };
+// El panel de diseño vive en la pestaña "Diseño", y seleccionar un nodo salta a
+// la de "Nodo". Volver a Diseño es lo que hace el usuario, asi que el test hace
+// lo mismo en vez de asumir que el panel esta siempre a la vista.
+const aDiseno = () => p.click('.tab[data-tab="diseno"]');
+
+ok(errores.length === 0, `sin errores de JS al cargar${errores.length ? ': ' + errores[0] : ''}`);
+
+// 1. Con un grafo cargado, Refinar se ofrece; sin nodos, no.
+ok((await ver('#btnGenIa')) === true, 'Crear siempre visible');
+ok((await ver('#btnRefinarIa')) === true, 'con un grafo cargado, Refinar se ofrece');
+await p.evaluate(() => { grafo.nodos = []; grafo.aristas = []; pintar(); });
+ok((await ver('#btnRefinarIa')) === false, 'con el lienzo vacio, Refinar se esconde');
+
+// 2. Agrego un nodo como lo haria el usuario (doble clic en el lienzo).
+await p.dblclick('#lienzo', { position: { x: 300, y: 200 } });
+await p.waitForTimeout(300);
+const nodos = await p.evaluate(() => grafo.nodos.length);
+ok(nodos === 1, `un doble clic crea un nodo (hay ${nodos})`);
+await aDiseno();
+ok((await ver('#btnRefinarIa')) === true, 'con un nodo, Refinar vuelve a aparecer');
+ok((await p.textContent('#pistaRefinar')).includes('en vez de empezar de cero'),
+   'la pista explica que Refinar cambia el grafo actual');
+
+// 3. Refinar sin texto avisa y no llama a nadie.
+let llamadas = 0;
+await p.route('**/api/generar-grafo', r => { llamadas++; r.continue(); });
+await p.click('#btnRefinarIa');
+await p.waitForTimeout(300);
+ok(llamadas === 0, 'Refinar sin descripcion no llama al servidor');
+ok((await p.textContent('#aviso')).includes('qué querés cambiar'),
+   'y avisa que falta la descripcion');
+
+// 4. Refinar manda el grafo ACTUAL y la sesion; crear no.
+let cuerpos = [];
+await p.unroute('**/api/generar-grafo');
+await p.route('**/api/generar-grafo', async r => {
+  cuerpos.push(JSON.parse(r.request().postData()));
+  await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+    ok: true, degradado: false, motivo: '', sesion: 'ses-del-test',
+    grafo: { board: 'refinado', reglas: '', aristas: [['n_uno','n_dos']], nodos: [
+      { id: 'n_uno', titulo: 'el que ya estaba', runtime: 'opencode', x: 640, y: 420 },
+      { id: 'n_dos', titulo: 'el nuevo de tests', runtime: 'opencode', x: 640, y: 570 }]}})});
+});
+// Renombro el nodo existente para poder seguirlo.
+await p.evaluate(() => { grafo.nodos[0].id = 'n_uno'; grafo.nodos[0].x = 640; grafo.nodos[0].y = 420; pintar(); });
+await aDiseno();
+await p.fill('#promptGenIa', 'agregale un nodo de tests');
+await p.click('#btnRefinarIa');
+await p.waitForTimeout(600);
+
+const env = cuerpos[0] || {};
+ok(!!env.actual && env.actual.nodos.length === 1, 'Refinar manda el grafo actual');
+ok(env.descripcion === 'agregale un nodo de tests', 'y la descripcion');
+
+const estado = await p.evaluate(() => ({
+  ids: grafo.nodos.map(n => n.id),
+  uno: grafo.nodos.find(n => n.id === 'n_uno'),
+  dos: grafo.nodos.find(n => n.id === 'n_dos'),
+  sesion: SESION_IA,
+  aviso: document.querySelector('#aviso').textContent,
+  pista: document.querySelector('#pistaRefinar').textContent,
+  deshacer: pila.length,
+}));
+ok(JSON.stringify(estado.ids) === '["n_uno","n_dos"]', `el grafo se mezclo: ${estado.ids}`);
+ok(estado.uno.x === 640 && estado.uno.y === 420,
+   `la UI respeta la posicion que mando el servidor (${estado.uno.x},${estado.uno.y})`);
+ok(typeof estado.dos.x === 'number' && !(Math.abs(estado.dos.x-640) < 196 && Math.abs(estado.dos.y-420) < 60),
+   `el nodo nuevo quedo ubicado y sin pisar (${estado.dos.x},${estado.dos.y})`);
+ok(estado.sesion === 'ses-del-test', 'la sesion quedo guardada para el proximo refinamiento');
+ok(estado.aviso.includes('+1 nodo'), `el aviso cuenta el delta: "${estado.aviso}"`);
+ok(estado.pista.includes('continúa la conversación'), 'la pista cambia al haber sesion');
+ok(estado.deshacer > 0, 'el refinamiento quedo en la pila de deshacer');
+
+// 5. Deshacer devuelve el grafo anterior.
+await aDiseno();
+await p.keyboard.press('Control+z');
+await p.waitForTimeout(300);
+const tras = await p.evaluate(() => grafo.nodos.map(n => n.id));
+ok(JSON.stringify(tras) === '["n_uno"]', `deshacer revierte el refinamiento (${tras})`);
+
+// 6. Degradado se pinta en ambar, no en verde.
+await p.unroute('**/api/generar-grafo');
+await p.route('**/api/generar-grafo', r => r.fulfill({ status: 200, contentType: 'application/json',
+  body: JSON.stringify({ ok: true, degradado: true, motivo: 'no hay ningun ejecutor instalado',
+    sesion: null, grafo: { board: 'x', aristas: [], nodos: [{ id:'n_uno', titulo:'t', runtime:'opencode' }] }})}));
+await aDiseno();
+await p.click('#btnRefinarIa');
+await p.waitForTimeout(600);
+const cls = await p.getAttribute('#aviso', 'class');
+ok(cls === 'tibio', `la degradacion se pinta en ambar, no en verde (class="${cls}")`);
+
+ok(errores.length === 0, `sin errores de JS en toda la corrida${errores.length ? ': ' + errores[0] : ''}`);
+if (process.argv[3]) await p.screenshot({ path: process.argv[3], fullPage: false });
+await b.close();
+console.log(fallos ? `\n${fallos} FALLA(S)` : '\nTODO OK');
+process.exit(fallos ? 1 : 0);
