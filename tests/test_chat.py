@@ -126,4 +126,47 @@ assert b._sesion_de_jsonl(eventos) == "ses_abc123"
 assert b._sesion_de_jsonl("sin json aca") is None
 print("8. el sessionID de opencode se extrae de los eventos: OK")
 
+# --- 9. El Studio lee la clave que el chat DEVUELVE ---
+# `_optimizar_goal` y `_generar_grafo` leian `res["respuesta"]`, y `chat_backend`
+# devuelve `res["texto"]`. Nadie en el repo producia "respuesta". Efecto: el
+# optimizador devolvia el goal sin tocar mientras el Studio anunciaba "Goal
+# optimizado con exito", y "generar grafo con IA" caia SIEMPRE a una plantilla
+# fija de tres nodos. Dos features muertas que se veian vivas.
+#
+# El falso se interpone en `b.CHAT`, no en `run_chat`: si se mockeara `run_chat`
+# el mock elegiria la clave y el test pasaria con el bug puesto. La clave la
+# tiene que producir `chat_backend` de verdad.
+loop.chat_backend = _chat                      # deshacer el espia del punto 6
+# El falso del punto 5 contesta "ok" fijo; aca hace falta uno que devuelva algo
+# reconocible para distinguir "leyo la respuesta" de "devolvio el goal sin tocar".
+b.CHAT["claude-code"] = (
+    lambda msg, sesion, modelo: ["python", "-c", FALSO, "-p", msg],
+    _original[1],
+)
+sys.path.insert(0, str(RAIZ / "compiler"))
+sys.path.insert(0, str(RAIZ / "mcp_exporter"))
+sys.path.insert(0, str(RAIZ / "ui"))
+import capacidades
+# Y hay que fingir que el runtime esta instalado: sin esto `_optimizar_goal`
+# corta antes de llamar a nadie y el test seria un no-op silencioso que "pasa"
+# en cualquier maquina sin CLIs.
+capacidades.tabla = lambda: {"claude-code": {"disponible": True}}
+import server
+
+r = server._optimizar_goal("contá los tests de {{repo}}", runtime="claude-code")
+assert r["degradado"] is False, r
+assert r["optimizado"].startswith("recibi:"), ("no leyo lo que el chat devolvio", r)
+assert "{{repo}}" in r["optimizado"], ("perdio el marcador", r)
+print("9. el optimizador usa la respuesta del agente, no el goal sin tocar: OK")
+
+# --- 10. Y cuando degrada, lo DICE ---
+# El fallback es correcto (sin CLI hay que degradar); lo que estaba mal era
+# hacerlo en silencio y en verde. Por eso el motivo viaja hasta la UI.
+capacidades.tabla = lambda: {}
+r = server._optimizar_goal("contá los tests", runtime="claude-code")
+assert r["degradado"] is True and "ejecutor" in r["motivo"], r
+g = server._generar_grafo("un flujo cualquiera", runtime="claude-code")
+assert g["_degradado"] is True and g["_motivo"], g
+print("10. sin ejecutor, la degradacion se declara en vez de fingir exito: OK")
+
 print("\nOK: el chat conversa con sesion y con las mismas barandas.")

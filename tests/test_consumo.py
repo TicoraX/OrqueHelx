@@ -84,6 +84,11 @@ k.init_db(db_path=db)
 conn = k.connect(db_path=db)
 _connect = k.connect
 k.connect = lambda **kw: _connect(db_path=db)
+# `board_exists` va junto con `connect`: `server._conn` pregunta primero si el
+# board existe (sin eso, `connect` CREABA el board inventado y respondia 200
+# sobre una base vacia). Parchear uno y no el otro deja el test hablando de un
+# board que, para el servidor, no existe.
+k.board_exists = lambda *a, **kw: True
 
 import server                                  # importa despues del parche
 

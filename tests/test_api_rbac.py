@@ -39,7 +39,10 @@ env = {**os.environ,
        "DATABASE_URL": "postgresql://orquester:orquester-local@localhost:5433/orquester?schema=public",
        # El motor no hace falta para probar RBAC: se apunta a un puerto muerto y
        # los tests evitan las rutas que lo necesitan.
-       "ORQUESTER_ENGINE_URL": "http://127.0.0.1:1"}
+       "ORQUESTER_ENGINE_URL": "http://127.0.0.1:1",
+       # Obligatorio desde que `main.ts` se cae sin el: sin token, toda llamada
+       # al motor da 404 y el mensaje no lo explica. El valor da igual aca.
+       "ORQUESTER_TOKEN": "token-de-prueba-rbac"}
 proc = subprocess.Popen(["node", str(API / "dist" / "main.js")], env=env, cwd=str(API),
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                         text=True, encoding="utf-8", errors="replace")
@@ -161,6 +164,25 @@ try:
     cod, _ = pedir("GET", "/auth/yo", token=t_beto)
     assert cod == 401, f"la sesion cerrada no puede seguir sirviendo: {cod}"
     print("10. logout invalida el token: OK")
+
+    # --- 11. El login se frena a fuerza bruta ---
+    # Va ULTIMO a proposito: el freno cuenta por IP y bloquearia los logins
+    # legitimos de los tests de arriba.
+    # El contador vive en `AuthService`, no en `GuardiaAuth`: el guard hace
+    # `return true` por `@Publico()` antes de mirar nada, y login y registro son
+    # justamente las publicas. Un contador puesto ahi no cuenta nada.
+    codigos = [pedir("POST", "/auth/login",
+                     cuerpo={"email": ana, "password": "clave-mala-clave-mala"})[0]
+               for _ in range(14)]
+    assert 429 in codigos, f"nunca freno la fuerza bruta: {codigos}"
+    assert codigos[0] == 401, f"freno desde el primer intento: {codigos}"
+    print(f"11. tras {codigos.index(429)} intentos fallidos el login da 429: OK")
+
+    # Y una clave BUENA tampoco pasa mientras dure el freno: si pasara, el
+    # atacante solo tendria que acertar dentro de la ventana.
+    cod, _ = pedir("POST", "/auth/login", cuerpo={"email": ana, "password": CLAVE})
+    assert cod == 429, f"el freno se saltea con la clave correcta: {cod}"
+    print("12. el freno tampoco deja pasar la clave correcta: OK")
 finally:
     proc.terminate()
     try:

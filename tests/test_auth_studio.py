@@ -6,7 +6,7 @@ endpoint por fuera de la guardia.
 
     uv run --python 3.11 --with jsonschema python ..\\tests\\test_auth_studio.py
 """
-import json, os, subprocess, sys, time, urllib.error, urllib.request
+import json, os, re, subprocess, sys, time, urllib.error, urllib.request
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -49,26 +49,33 @@ try:
     assert codigo == 200, codigo
     print("1. GET / sin token responde 200 (cascara estatica): OK")
 
-    # Todo /api/* exige token. Se recorren TODAS las rutas, no una de muestra:
-    # el riesgo real es que alguien agregue un endpoint fuera de la guardia.
-    rutas_get = ["/api/estado?board=x", "/api/traza?board=x&task=t",
-                 "/api/consumo?board=x", "/api/grafos", "/api/grafo?nombre=x",
-                 # Lanza un subproceso (`agy models`): sin token, ni eso.
-                 "/api/modelos?runtime=claude-code", "/api/plantillas"]
+    # Todo /api/* exige token. Las rutas se SACAN DEL FUENTE, no de una lista a
+    # mano: la de antes decia "se recorren TODAS" y cubria 18 de 34, porque cada
+    # endpoint nuevo habia que acordarse de agregarlo. El riesgo que este test
+    # dice cubrir es exactamente ese, y una lista escrita a mano no lo cubre.
+    fuente = (RAIZ / "ui" / "server.py").read_text(encoding="utf-8")
+    rutas_get = sorted(set(re.findall(r'ruta == "(/api/[^"]*)"', fuente)))
+    rutas_post = sorted(set(re.findall(r'self\.path == "(/api/[^"]*)"', fuente)))
+    assert len(rutas_get) >= 15 and len(rutas_post) >= 15, (rutas_get, rutas_post)
+
+    # La unica excepcion deliberada: no expone nada del usuario, solo que sabe
+    # hacer este motor, y un agente la consulta antes de armar un grafo.
+    PUBLICAS = {"/api/capacidades"}
+
     for ruta in rutas_get:
+        if ruta in PUBLICAS:
+            continue
         codigo, _ = pedir(ruta)
         assert codigo == 404, f"{ruta} respondio {codigo} sin token"
-    print(f"2. las {len(rutas_get)} rutas GET de /api rechazan sin token: OK")
+    print(f"2. las {len(rutas_get) - len(PUBLICAS)} rutas GET de /api "
+          f"(sacadas del fuente) rechazan sin token: OK")
 
     grafo = {"board": "x", "nodos": [{"id": "a", "titulo": "t", "runtime": "opencode"}]}
-    rutas_post = ["/api/validar", "/api/compilar", "/api/correr", "/api/grafo",
-                  "/api/mcp", "/api/parametros", "/api/parar",
-                  "/api/plantilla", "/api/grafo/borrar", "/api/ordenar",
-                  "/api/chat"]
     for ruta in rutas_post:
         codigo, _ = pedir(ruta, cuerpo=grafo)
         assert codigo == 404, f"{ruta} respondio {codigo} sin token"
-    print(f"3. las {len(rutas_post)} rutas POST de /api rechazan sin token: OK")
+    print(f"3. las {len(rutas_post)} rutas POST de /api "
+          f"(sacadas del fuente) rechazan sin token: OK")
 
     # Un token equivocado no vale, ni siquiera uno con el prefijo correcto.
     for malo in ["", "x", TOKEN[:-1], TOKEN + "x", TOKEN.upper()]:
