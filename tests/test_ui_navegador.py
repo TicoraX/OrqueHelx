@@ -15,7 +15,7 @@ del navegador, no del producto, y `tests/correr.py` distingue OMITIDO de OK.
 
     uv run --python 3.11 --with jsonschema --with pyyaml python tests/test_ui_navegador.py
 """
-import os, shutil, socket, subprocess, sys, time
+import os, shutil, socket, subprocess, sys, tempfile, time
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -40,9 +40,25 @@ if subprocess.run(["node", "-e", "require.resolve('playwright')"],
 
 PUERTO = _libre()
 env = {**os.environ, "ORQUESTER_TOKEN": TOKEN, "PYTHONIOENCODING": "utf-8"}
+# A un archivo y no a `PIPE`: nadie lee ese pipe mientras corre el navegador, y
+# un buffer lleno cuelga al servidor. Ademas, cuando algo falla, la cola del log
+# del Studio es lo primero que uno quiere ver.
+log = tempfile.NamedTemporaryFile("w+", suffix=".log", delete=False,
+                                  encoding="utf-8", errors="replace")
 proc = subprocess.Popen([sys.executable, str(RAIZ / "ui" / "server.py"), str(PUERTO)],
-                        env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                        text=True, encoding="utf-8", errors="replace")
+                        env=env, stdout=log, stderr=subprocess.STDOUT)
+
+
+def _morir(msg):
+    log.flush()
+    cola = Path(log.name).read_text(encoding="utf-8", errors="replace").strip()
+    if cola:
+        print("--- ultimas lineas del Studio ---")
+        for linea in cola.splitlines()[-15:]:
+            print("   ", linea)
+    raise SystemExit(msg)
+
+
 try:
     for _ in range(60):                       # esperar a que escuche
         with socket.socket() as s:
@@ -51,7 +67,7 @@ try:
                 break
         time.sleep(0.3)
     else:
-        raise SystemExit("FALLA: el Studio no levanto")
+        _morir("FALLA: el Studio no levanto")
 
     r = subprocess.run(
         ["node", str(GUION), f"http://127.0.0.1:{PUERTO}/?token={TOKEN}"],
@@ -60,12 +76,22 @@ try:
     print(r.stdout.strip())
     if r.returncode != 0:
         print(r.stderr.strip()[-1500:])
-        raise SystemExit(f"FALLA: la verificacion en navegador salio {r.returncode}")
+        _morir(f"FALLA: la verificacion en navegador salio {r.returncode}")
 finally:
     proc.terminate()
     try:
         proc.wait(timeout=10)
     except subprocess.TimeoutExpired:
         proc.kill()
+    log.close()
+    # En Windows el handle del hijo tarda en soltarse despues del terminate, y
+    # un `unlink` inmediato tira PermissionError. Se reintenta un rato corto; si
+    # no sale, queda un archivo de log en %TEMP% y no le importa a nadie.
+    for _ in range(10):
+        try:
+            Path(log.name).unlink(missing_ok=True)
+            break
+        except OSError:
+            time.sleep(0.2)
 
 print("\nOK: la UI del disenador con IA anda en un navegador de verdad.")

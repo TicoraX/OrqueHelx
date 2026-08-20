@@ -1481,11 +1481,20 @@ async function api(ruta, cuerpo) {
     return { ok:false, datos:{ error:"sin token" } };
   }
   const cab = { "X-Orquester-Token": TOKEN };
-  const r = await fetch(ruta, cuerpo ? {
-    method:"POST", headers:{ ...cab, "Content-Type":"application/json" },
-    body:JSON.stringify(cuerpo)
-  } : { headers: cab });
-  return { ok:r.ok, datos: await r.json() };
+  // `api` NUNCA tira: devuelve `{ok:false}`. Si tirara, cada `await api(...)`
+  // abortaría su handler y el botón que se deshabilitó una línea antes quedaría
+  // deshabilitado para siempre, con el "…" puesto y sin decir nada. Y son
+  // dos casos reales: `fetch` rechaza si el servidor se cayó, y `r.json()` tira
+  // si la respuesta no es JSON. Acá y no en cada handler: son treinta botones.
+  try {
+    const r = await fetch(ruta, cuerpo ? {
+      method:"POST", headers:{ ...cab, "Content-Type":"application/json" },
+      body:JSON.stringify(cuerpo)
+    } : { headers: cab });
+    return { ok:r.ok, datos: await r.json() };
+  } catch (e) {
+    return { ok:false, datos:{ error:`no se pudo hablar con el Studio: ${e.message}` } };
+  }
 }
 
 $("#validar").onclick = async () => {

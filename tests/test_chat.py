@@ -198,9 +198,14 @@ b.CHAT["claude-code"] = (
         + repr(GRAFO_NUEVO) + "), 'session_id': 'ses-refina'}))"],
     _original[1],
 )
+# El nodo trae configuracion que el agente NI VE en el formato que se le pide
+# (id/titulo/runtime): modelo, presupuesto, herramientas, workspace. Refinar la
+# borraba en silencio.
 ACTUAL = {"board": "mi-flujo", "aristas": [],
           "nodos": [{"id": "build", "titulo": "compilar", "runtime": "opencode",
-                     "x": 777, "y": 888}]}
+                     "x": 777, "y": 888, "modelo": "deepseek/deepseek-chat",
+                     "presupuesto_usd": 2.5, "herramientas": ["Read", "Bash"],
+                     "workspace": "/repo/mio"}]}
 res = server._generar_grafo("agregale un nodo de tests", runtime="claude-code",
                             actual=ACTUAL, sesion="ses-previa")
 assert res["degradado"] is False, res
@@ -211,7 +216,15 @@ assert (ids["build"]["x"], ids["build"]["y"]) == (777, 888), ids["build"]
 # El nuevo, ubicado y sin pisar al viejo.
 assert not (abs(ids["tests"]["x"] - 777) < 196 and abs(ids["tests"]["y"] - 888) < 60), ids
 assert res["sesion"] == "ses-refina", res
-print("11. refinar conserva los nodos y sus posiciones, y ubica los nuevos: OK")
+# Y la configuracion por nodo sobrevive: el agente devolvio `build` con solo
+# id/titulo/runtime, y sin conservar el nodo viejo esto se perdia entero.
+assert ids["build"]["modelo"] == "deepseek/deepseek-chat", ids["build"]
+assert ids["build"]["presupuesto_usd"] == 2.5, ids["build"]
+assert ids["build"]["herramientas"] == ["Read", "Bash"], ids["build"]
+assert ids["build"]["workspace"] == "/repo/mio", ids["build"]
+# Pero lo que el agente SI cambio manda: el titulo es el que devolvio.
+assert ids["build"]["titulo"] == "compilar", ids["build"]
+print("11. refinar conserva nodos, posiciones y su configuracion, y ubica los nuevos: OK")
 
 # --- 12. Y la sesion viaja, asi que dos refinamientos son una conversacion ---
 visto_argv = {}

@@ -515,8 +515,14 @@ def _acomodar(obj: dict, previas: dict) -> None:
     """
     pos = disposicion.ordenar(obj)
     for n in obj.get("nodos", []):
-        if n.get("id") in previas:
-            n["x"], n["y"] = previas[n["id"]]
+        viejo = previas.get(n.get("id"))
+        if viejo:
+            # Lo que el agente devolvio MANDA (por eso va segundo): si cambio el
+            # titulo o el runtime, ese es el cambio pedido. Pero lo que no
+            # nombro se conserva, y ahi entran el modelo, el presupuesto, las
+            # herramientas y el workspace, que el agente ni sabe que existen.
+            n.update({c: v for c, v in viejo.items() if c not in n})
+            n["x"], n["y"] = viejo.get("x", 100), viejo.get("y", 100)
         else:
             p = pos.get(n.get("id")) or {"x": n.get("x", 100), "y": n.get("y", 100)}
             n["x"], n["y"] = p["x"], p["y"]
@@ -559,8 +565,12 @@ def _generar_grafo(descripcion: str, runtime: str = "claude-code", dry_run: bool
 
     slug_base = re.sub(r'[^a-zA-Z0-9_-]', '-', desc.lower()[:25]).strip("-") or "flujo-ia"
     slug = (actual or {}).get("board") or f"ia-{slug_base}"
-    previas = {n["id"]: (n.get("x", 100), n.get("y", 100))
-               for n in ((actual or {}).get("nodos") or []) if n.get("id")}
+    # El nodo ENTERO, no solo sus coordenadas: al refinar, el agente devuelve
+    # `id`/`titulo`/`runtime` (que es lo que le pide el formato) y omite todo lo
+    # demas. Sin conservar el nodo viejo, un refinamiento borraba en silencio el
+    # modelo, el esfuerzo, el presupuesto, las herramientas y el workspace que
+    # el usuario habia configurado nodo por nodo.
+    previas = {n["id"]: n for n in ((actual or {}).get("nodos") or []) if n.get("id")}
 
     def _degradado(motivo: str) -> dict:
         """Sin agente no se inventa un diseño. Refinando se devuelve el grafo
@@ -644,8 +654,17 @@ def _generar_grafo(descripcion: str, runtime: str = "claude-code", dry_run: bool
         if not isinstance(obj, dict) or "nodos" not in obj or "aristas" not in obj:
             raise ValueError("Estructura de grafo incompleta")
         obj["board"] = obj.get("board") or slug
+        # Antes de la mezcla: rechaza lo que devolvio el agente con un mensaje
+        # que habla de lo que el agente hizo mal (ids repetidos, aristas
+        # colgadas, un ciclo).
         compilador.validar(obj, capacidades=False)
         _acomodar(obj, previas)
+        # Y despues: la mezcla puede devolverle a un nodo un campo del grafo
+        # viejo que ya no es valido. Si el agente le cambio el runtime de
+        # `opencode` a `antigravity`, el `esfuerzo: max` que traia deja de
+        # existir. Sin esta segunda pasada se colaba y fallaba recien al
+        # compilar, lejos de donde se causo.
+        compilador.validar(obj, capacidades=False)
         return {"grafo": obj, "degradado": False, "motivo": "",
                 # Si el CLI no informa sesion se conserva la que habia: perder el
                 # id a mitad de la charla arranca una conversacion nueva sin
