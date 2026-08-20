@@ -117,6 +117,8 @@
   pre.codigo { background:#141720; border:1px solid var(--linea); border-radius:5px;
                padding:7px 9px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
                font-size:11px; max-height:180px; overflow-y:auto; color:var(--texto); white-space:pre-wrap; }
+  body.modo-zen #panel, body.modo-zen #panelDerecho { display: none !important; }
+  body.modo-zen #barraCanvasFlotante { right: 16px; }
 </style>
 
 <svg id="lienzo">
@@ -134,7 +136,15 @@
      stroke-dasharray="4 3" fill="none"></path>
 </svg>
 
-<aside>
+<div id="barraCanvasFlotante" style="position:fixed; top:12px; right:320px; z-index:20; display:flex; gap:4px; background:rgba(20,23,32,0.85); backdrop-filter:blur(8px); border:1px solid var(--linea); border-radius:6px; padding:3px 6px; box-shadow:0 4px 12px rgba(0,0,0,0.4);">
+  <button id="btnZoomIn" title="Acercar zoom" style="font-size:11px; padding:3px 7px; width:auto;">➕</button>
+  <button id="btnZoomOut" title="Alejar zoom" style="font-size:11px; padding:3px 7px; width:auto;">➖</button>
+  <button id="btnZoomReset" title="Zoom 100%" style="font-size:10.5px; padding:3px 7px; width:auto;">1:1</button>
+  <button id="btnZoomFit" title="Encuadrar todos los nodos" style="font-size:10.5px; padding:3px 7px; width:auto;">⛶ Fit</button>
+  <button id="btnModoZen" title="Modo Pantalla Completa / Focus" style="font-size:10.5px; padding:3px 7px; width:auto; background:#242838; border-color:#475069; color:#cdd6f4;">Zen</button>
+</div>
+
+<aside id="panel">
   <div class="panel-header">
     <div class="titulo">
     <h1>ORQUESTER Studio</h1>
@@ -207,16 +217,17 @@
 
       <div>
         <h2>Exportación & Herramientas</h2>
-        <div class="fila" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; margin-bottom:4px;">
-          <button id="exportar" style="font-size:11px; padding:4px 2px;">MCP</button>
-          <button id="exportarSvg" style="font-size:11px; padding:4px 2px;">SVG</button>
-          <button id="exportarMermaid" style="font-size:11px; padding:4px 2px;">Mermaid</button>
+        <div class="fila" style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:4px; margin-bottom:4px;">
+          <button id="exportar" style="font-size:10px; padding:4px 2px;">MCP</button>
+          <button id="exportarSvg" style="font-size:10px; padding:4px 2px;">SVG</button>
+          <button id="exportarMermaid" style="font-size:10px; padding:4px 2px;">Mermaid</button>
+          <button id="exportarDataset" style="font-size:10px; padding:4px 2px; background:#1b2836; border-color:#2a435d; color:#7dd3fc;">JSONL</button>
         </div>
         <div class="fila" style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:4px;">
-          <button id="exportarCi" style="font-size:10.5px; padding:4px 2px;">CI/CD</button>
-          <button id="exportarPy" style="font-size:10.5px; padding:4px 2px;">Python</button>
-          <button id="btnSimular" style="font-size:10.5px; padding:4px 2px; background:#212c3d; border-color:#3b567d;">⚡ Simular</button>
-          <button id="btnLintGrafo" style="font-size:10.5px; padding:4px 2px; background:#2a2418; border-color:#6d5324; color:#f0c068;">🔍 Lint</button>
+          <button id="exportarCi" style="font-size:10px; padding:4px 2px;">CI/CD</button>
+          <button id="exportarPy" style="font-size:10px; padding:4px 2px;">Python</button>
+          <button id="btnSimular" style="font-size:10px; padding:4px 2px; background:#212c3d; border-color:#3b567d;">⚡ Simular</button>
+          <button id="btnLintGrafo" style="font-size:10px; padding:4px 2px; background:#2a2418; border-color:#6d5324; color:#f0c068;">🔍 Lint</button>
         </div>
       </div>
 
@@ -491,6 +502,32 @@ const verVista = () => vista &&
   svg.setAttribute("viewBox", `${vista.x} ${vista.y} ${vista.w} ${vista.h}`);
 const vistaActual = () => vista ||
   { x:0, y:0, w:svg.clientWidth, h:svg.clientHeight };
+
+function zoomCentro(factor) {
+  const v = vistaActual();
+  const cx = v.x + v.w / 2;
+  const cy = v.y + v.h / 2;
+  const nw = v.w * factor;
+  const nh = v.h * factor;
+  vista = { x: cx - nw / 2, y: cy - nh / 2, w: nw, h: nh };
+  verVista();
+}
+
+$("#btnZoomIn").onclick = () => zoomCentro(1 / 1.25);
+$("#btnZoomOut").onclick = () => zoomCentro(1.25);
+$("#btnZoomReset").onclick = () => {
+  vista = null;
+  svg.removeAttribute("viewBox");
+};
+$("#btnZoomFit").onclick = () => encuadrar();
+$("#btnModoZen").onclick = () => {
+  document.body.classList.toggle("modo-zen");
+  const activo = document.body.classList.contains("modo-zen");
+  $("#btnModoZen").textContent = activo ? "Salir Zen" : "Zen";
+  $("#btnModoZen").style.background = activo ? "#3d2428" : "#242838";
+  $("#btnModoZen").style.color = activo ? "#fca5a5" : "#cdd6f4";
+  encuadrar();
+};
 
 // La sesión del diseñador con IA. La guarda el CLI; acá viaja solo el id, igual
 // que en el chat. Se tira al abrir otro grafo: la conversación era sobre ESE
@@ -1637,6 +1674,25 @@ $("#exportarMermaid").onclick = async () => {
   if (!ok) return avisar(datos.error || "No se pudo generar Mermaid", "error");
   navigator.clipboard.writeText(datos.mermaid);
   avisar("Diagrama Mermaid copiado al portapapeles.", "ok");
+};
+
+$("#exportarDataset").onclick = async () => {
+  const { ok, datos } = await api(`/api/exportar-dataset?board=${encodeURIComponent(grafo.board)}`);
+  if (!ok || !datos) return avisar("No se pudo exportar dataset", "error");
+
+  const modalHtml = `
+    <div style="margin-bottom:12px; font-size:13px;">
+      <b>Dataset JSONL de Ejecución:</b> <code>${esc(datos.board)}</code> (${datos.total_registros} registros)<br>
+      <span style="color:var(--tenue); font-size:11.5px;">Formato estructurado por línea para fine-tuning, benchmarking y análisis offline.</span>
+    </div>
+    <div style="background:#0e1017; border:1px solid var(--linea); border-radius:6px; padding:10px; margin-bottom:8px; font-size:11px; max-height:300px; overflow-y:auto; font-family:monospace; white-space:pre-wrap;">
+      ${esc(datos.jsonl || "(sin registros de ejecución aún)")}
+    </div>
+  `;
+  $("#modalEntregableRender").innerHTML = modalHtml;
+  $("#modalEntregableTexto").textContent = datos.jsonl;
+  $("#modalEntregable").style.display = "flex";
+  mostrarModoPreview();
 };
 
 $("#exportarCi").onclick = async () => {

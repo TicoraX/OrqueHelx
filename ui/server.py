@@ -1097,6 +1097,61 @@ def _generar_reporte_corrida(board: str) -> dict:
     }
 
 
+def _generar_dataset_jsonl(board: str = None) -> dict:
+    """Exportar tareas e historial de ejecución en formato JSONL para benchmarking y dataset."""
+    boards = [board.strip()] if (board and board.strip()) else [b.get("slug") for b in k.list_boards() if b.get("slug")]
+    lineas = []
+    total_registros = 0
+
+    for b in boards:
+        try:
+            conn = _conn(b)
+            tasks = k.list_tasks(conn)
+            consumo = _consumo(b)
+            por_nodo = consumo.get("por_nodo", {})
+            for t in tasks:
+                rt = "hermes"
+                if t.assignee and ":" in t.assignee:
+                    rt = t.assignee.split(":", 1)[1]
+                gasto = por_nodo.get(t.id, {}).get("total_usd", 0.0)
+                dur = None
+                if t.started_at and t.completed_at:
+                    try:
+                        dur = round(float(t.completed_at) - float(t.started_at), 2)
+                    except (ValueError, TypeError):
+                        pass
+
+                registro = {
+                    "task_id": t.id,
+                    "board": b,
+                    "title": t.title,
+                    "runtime": rt,
+                    "status": t.status,
+                    "prompt": t.description or "",
+                    "model_override": t.model_override,
+                    "reasoning_effort": t.reasoning_effort,
+                    "gasto_usd": gasto,
+                    "duracion_segundos": dur,
+                    "entregable": (t.result or "").strip(),
+                    "summary": (t.summary or "").strip(),
+                    "created_at": t.created_at,
+                    "completed_at": t.completed_at,
+                }
+                lineas.append(json.dumps(registro, ensure_ascii=False))
+                total_registros += 1
+        except Exception:
+            continue
+
+    contenido_jsonl = "\n".join(lineas)
+    return {
+        "ok": True,
+        "board": board or "todos",
+        "total_registros": total_registros,
+        "jsonl": contenido_jsonl,
+    }
+
+
+
 def _quedan_de_hermes(conn) -> bool:
     """Cards que espera el dispatcher de Hermes, no el nuestro."""
     propios = {dispatcher.carril(rt) for rt in dispatcher.BACKENDS}
@@ -1325,6 +1380,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._responder(200, _listar_snapshots(params.get("board", "")))
         if ruta == "/api/workspaces":
             return self._responder(200, _listar_workspaces())
+        if ruta == "/api/exportar-dataset":
+            return self._responder(200, _generar_dataset_jsonl(params.get("board")))
         if ruta == "/api/grafo":
             try:
                 f = _archivo(params.get("nombre", ""))
@@ -1499,6 +1556,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._responder(200, _limpiar_workspaces(board=b, task_id=tid))
                 except Exception as e:
                     return self._responder(400, {"error": f"error limpiando workspaces: {e}"})
+            if self.path == "/api/exportar-dataset":
+                b = cuerpo.get("board") or None
+                try:
+                    return self._responder(200, _generar_dataset_jsonl(b))
+                except Exception as e:
+                    return self._responder(400, {"error": f"error exportando dataset: {e}"})
             if self.path == "/api/parametros":
                 # Los marcadores los detecta el exportador MCP, no una segunda
                 # regex en el navegador: si se duplica, se desincroniza y el

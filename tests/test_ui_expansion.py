@@ -632,6 +632,13 @@ try:
     assert res_clean["workspaces_eliminados"] >= 1, res_clean
     assert not test_ws.exists(), "el workspace no fue eliminado"
     print("45. /api/workspaces y /api/workspaces/limpiar inspeccionan y purgan workspaces: OK")
+
+    # --- 46. /api/exportar-dataset genera formato JSONL para benchmark y fine-tuning ---
+    codigo, datos_ds = pedir("/api/exportar-dataset", {"board": BOARD})
+    assert codigo == 200 and datos_ds.get("ok"), datos_ds
+    assert "jsonl" in datos_ds, datos_ds
+    assert isinstance(datos_ds["total_registros"], int), datos_ds
+    print("46. /api/exportar-dataset compila dataset estructurado JSONL: OK")
 finally:
     proc.terminate()
     proc.wait(timeout=10)
