@@ -7,9 +7,9 @@
 
 ## Dónde está el código
 
-- Commit `3505b40` — feat(studio): gestor, inspector y purga de workspaces scratch
+- Commit `ecd4fb0` — feat(studio): exportador dataset jsonl, controles de zoom y modo focus zen en canvas
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 9
+- Árbol limpio: sí · sin pushear: 11
 
 ## Runtime prestado
 
@@ -47,7 +47,7 @@
 
 ## Bloqueos
 
-- 9 commit(s) sin pushear
+- 11 commit(s) sin pushear
 
 ## Qué sigue
 
