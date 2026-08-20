@@ -7,9 +7,9 @@
 
 ## Dónde está el código
 
-- Commit `2e60965` — feat: stack.yaml para arrancar ORQUESTER desde PortMaster
+- Commit `5e4cdf5` — feat(studio): telemetria en vivo, historico de boards, diseno de DAGs con IA y presupuesto por nodo
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: **no** · sin pushear: 0
+- Árbol limpio: sí · sin pushear: 1
 
 ## Runtime prestado
 
@@ -47,7 +47,7 @@
 
 ## Bloqueos
 
-- hay cambios sin commitear
+- 1 commit(s) sin pushear
 
 ## Qué sigue
 
