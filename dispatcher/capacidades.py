@@ -259,7 +259,9 @@ def secretos_status() -> dict:
             if len(val) <= 8:
                 enmascarado = "***"
             else:
-                enmascarado = f"{val[:4]}...{val[-3:]}"
+                # Solo el prefijo. Los ultimos caracteres no ayudan a saber QUE
+                # clave esta puesta y son entropia regalada a quien mire.
+                enmascarado = f"{val[:4]}..."
         salida.append({
             "variable": var,
             "proveedor": proveedor,

@@ -14,6 +14,20 @@ Las reglas de abajo salieron de la fase de verificacion, no del gusto:
 import json, os, re, shutil, subprocess, tempfile
 from pathlib import Path
 
+# SS5: jsonschema es dependencia DURA, y por eso se importa aca arriba. Estaba
+# adentro de `_validar`, y cuando faltaba el ModuleNotFoundError salia envuelto
+# en un BackendError con el nombre del CLI adelante: "opencode:
+# ModuleNotFoundError". No matchea `_PERMANENTES`, asi que el nodo se
+# reintentaba dos veces culpando a un agente que habia respondido bien.
+# Una dependencia ausente tiene que romper una vez, al arrancar, y decir la verdad.
+try:
+    import jsonschema
+except ImportError:                       # pragma: no cover - solo sin la dep
+    raise SystemExit(
+        "falta `jsonschema`, que es dependencia dura (SS5): sin ella la "
+        "validacion del contrato se saltea y los guardrails quedan inertes.\n"
+        "  uv run --python 3.11 --with jsonschema --with pyyaml python <lo que ibas a correr>")
+
 # El AgentAdapterOutput de SS5.
 CONTRATO = {
     "type": "object",
@@ -41,7 +55,22 @@ FLAGS_PROHIBIDOS = {
 
 
 class BackendError(RuntimeError):
-    """El backend no devolvio algo que cumpla el contrato."""
+    """El backend no devolvio algo que cumpla el contrato.
+
+    `permanente` dice si reintentar tiene sentido. Va ACA y no en una lista de
+    substrings del lado del dispatcher: esa lista ya se desincronizo una vez
+    (el catch paso de FileNotFoundError a OSError, el mensaje cambio, y un
+    workspace inexistente se reintentaba dos veces como transitorio), y volvia
+    a pasar con cualquier excepcion nueva del parser. Quien LEVANTA el error
+    sabe si se arregla solo; quien lee el texto, no.
+    """
+    permanente = False
+
+
+class ErrorPermanente(BackendError):
+    """No se arregla reintentando: falta un binario, un flag prohibido, un
+    runtime que no existe. Reintentar solo gasta tiempo y cuota."""
+    permanente = True
 
 
 def _texto_de_jsonl(stdout: str) -> str:
@@ -267,7 +296,7 @@ def _resolver_argv(argv: list[str]) -> list[str]:
         None,
     ) or shutil.which(argv[0])
     if ruta is None:
-        raise BackendError(f"no esta en el PATH: {argv[0]}")
+        raise ErrorPermanente(f"no esta en el PATH: {argv[0]}")
     ext = os.path.splitext(ruta)[1].lower()
     if ext in (".cmd", ".bat"):
         # Un .cmd se enruta por cmd.exe, que **parte el argumento en el primer
@@ -294,9 +323,6 @@ def _resolver_argv(argv: list[str]) -> list[str]:
 
 
 def _validar(obj: dict) -> dict:
-    # SS5: jsonschema es dependencia dura. Sin el, la validacion se saltea en
-    # silencio y los guardrails quedan inertes.
-    import jsonschema
     jsonschema.validate(obj, CONTRATO)
     return obj
 
@@ -324,9 +350,9 @@ def _flags_extra(runtime: str, esfuerzo: str = None,
     if esfuerzo:
         flag, validos = ESFUERZO.get(runtime, (None, ()))
         if not flag:
-            raise BackendError(f"{runtime} no acepta esfuerzo por invocacion")
+            raise ErrorPermanente(f"{runtime} no acepta esfuerzo por invocacion")
         if esfuerzo not in validos:
-            raise BackendError(
+            raise ErrorPermanente(
                 f"{runtime} no acepta esfuerzo '{esfuerzo}'. Validos: {list(validos)}")
         extra += [flag, esfuerzo]
     if presupuesto is not None and TOPE_GASTO.get(runtime):
@@ -401,7 +427,7 @@ def chat_backend(runtime: str, mensaje: str, *, sesion: str = None,
     `cwd`: es el mismo agente con las mismas barandas, solo que sin contrato.
     """
     if runtime not in CHAT:
-        raise BackendError(f"runtime desconocido para chat: {runtime}")
+        raise ErrorPermanente(f"runtime desconocido para chat: {runtime}")
     construir_argv, parser = CHAT[runtime]
     argv = construir_argv(mensaje, sesion, modelo)
     if herramientas and runtime == "claude-code":
@@ -436,7 +462,7 @@ def _correr(runtime: str, argv: list[str], *, timeout: int, cwd: str = None):
     """
     prohibidos = FLAGS_PROHIBIDOS.intersection(argv)
     if prohibidos:
-        raise BackendError(f"flags de bypass prohibidos: {sorted(prohibidos)}")
+        raise ErrorPermanente(f"flags de bypass prohibidos: {sorted(prohibidos)}")
     try:
         return subprocess.run(
             _resolver_argv(argv), capture_output=True, text=True, timeout=timeout,
@@ -453,7 +479,7 @@ def _correr(runtime: str, argv: list[str], *, timeout: int, cwd: str = None):
         # OSError y no solo FileNotFoundError: un `cwd` inexistente tira
         # NotADirectoryError, y sin atraparlo se escapaba del pool de hilos y
         # mataba el tick entero por un nodo mal configurado.
-        raise BackendError(f"no se pudo lanzar {runtime}: {e}") from e
+        raise ErrorPermanente(f"no se pudo lanzar {runtime}: {e}") from e
     except subprocess.TimeoutExpired as e:
         raise BackendError(f"{runtime} excedio {timeout}s") from e
 
@@ -479,7 +505,7 @@ def run_backend(runtime: str, goal: str, *, timeout: int = 600,
     uno ausente.
     """
     if runtime not in BACKENDS:
-        raise BackendError(f"runtime desconocido: {runtime}")
+        raise ErrorPermanente(f"runtime desconocido: {runtime}")
     construir_argv, parser = BACKENDS[runtime]
 
     # El goal nombra el backend y lleva el contrato en texto. Para opencode es

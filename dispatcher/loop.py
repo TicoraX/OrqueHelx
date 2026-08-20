@@ -43,13 +43,12 @@ MAX_INTENTOS = 2
 # Fallos que NO se reintentan: no se arreglan solos y reintentarlos solo gasta
 # tiempo y cuota. Van como `capability`, que es el tipo que Hermes reserva para
 # "a este worker le falta algo", en vez de `transient`.
-# Estas cadenas tienen que coincidir con lo que `backends` produce de verdad.
-# Ya se desincronizaron una vez: el catch paso de FileNotFoundError a OSError y
-# el mensaje cambio a "no se pudo lanzar", pero aca seguia "binario no
-# encontrado". Efecto: un workspace inexistente se reintentaba como transitorio
-# dos veces antes de rendirse, en vez de fallar de una.
-_PERMANENTES = ("no esta en el PATH", "no se pudo lanzar",
-                "flags de bypass prohibidos", "runtime desconocido")
+#
+# Esto era una lista de substrings del MENSAJE, y se desincronizo dos veces: el
+# catch paso de FileNotFoundError a OSError y cambio el texto, y despues un
+# `ModuleNotFoundError` de una dependencia nuestra se reintento dos veces
+# culpando al agente. Ahora lo declara `backends.ErrorPermanente`, que es quien
+# sabe: el que levanta el error sabe si se arregla solo, el que lee el texto no.
 
 # Permisos que se le conceden al agente externo. Lectura y shell: alcanza para
 # inspeccionar un repo y correr tests, y NO incluye ningun flag de bypass (esos
@@ -97,6 +96,17 @@ def gasto_usd(conn) -> float:
     return total
 
 
+def _archivo_de(conn) -> str:
+    """El archivo SQLite que ESTA conexion tiene abierto.
+
+    Se le pregunta a la conexion en vez de recibir el board por parametro: un
+    llamador puede haber abierto con `board=`, con `db_path=` (los tests) o por
+    variable de entorno, y los tres casos tienen que dar la misma base. Un
+    parametro solo acertaria en el primero.
+    """
+    return conn.execute("PRAGMA database_list").fetchone()[2]
+
+
 def ejecutar_una(conn, task_id: str, *, timeout: int = 600,
                  presupuesto: float = None) -> dict:
     """Reclamar, ejecutar y cerrar una card. Devuelve el contrato."""
@@ -105,14 +115,33 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600,
         return {"status": "skipped", "summary": "ya reclamada por otro"}
 
     latido = threading.Event()
+    # La ruta se resuelve ACA, en el hilo que ya tiene `conn`: los objetos de
+    # sqlite3 no se comparten entre hilos.
+    db = _archivo_de(conn)
 
     def _latir():
         # Sin esto, release_stale_claims nos saca la card en una invocacion
-        # larga: `agy` tardo 124.8s en la verificacion, y hay peores.
-        c = k.connect()
+        # larga: `agy` tardo 124.8s en la verificacion, y hay peores. Y es la
+        # UNICA proteccion que tiene la card: nuestro `claim_lock` es
+        # "orquester" a secas, no `host:pid`, asi que la extension por PID vivo
+        # de `release_stale_claims` nunca nos aplica.
+        #
+        # Abria con `k.connect()` a secas, que resuelve al board `default`, y
+        # cada board es su propia SQLite: en cualquier board que no fuera el
+        # default, `heartbeat_claim` no encontraba la card, devolvia False en
+        # silencio y el latido no latia. Justo lo que este hilo existe para
+        # evitar. Por eso ahora se abre la MISMA base y se MIRA el retorno.
+        c = k.connect(db_path=Path(db))
         try:
             while not latido.wait(_HEARTBEAT_S):
-                k.heartbeat_claim(c, task_id, claimer=CLAIMER)
+                if not k.heartbeat_claim(c, task_id, claimer=CLAIMER):
+                    print(f"  [{task_id}] perdimos el claim: el latido no lo "
+                          f"encuentra 'running' a nuestro nombre")
+                    return
+        except Exception as e:
+            # Que un latido roto no se lleve el hilo en silencio: el nodo sigue
+            # corriendo y quien mire el log tiene que saber que quedo sin red.
+            print(f"  [{task_id}] el latido murio: {type(e).__name__}: {e}")
         finally:
             c.close()
 
@@ -149,9 +178,8 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600,
         # fallaron, cerraron igual, y el hijo corrio sobre la basura.
         latido.set()
         msg = str(e)[:2000]
-        permanente = any(p in msg for p in _PERMANENTES)
         k.block_task(conn, task_id, reason=msg,
-                     kind="capability" if permanente else "transient")
+                     kind="capability" if e.permanente else "transient")
         return {"status": "failure", "summary": msg}
     finally:
         latido.set()
@@ -253,7 +281,10 @@ def _queda_trabajo(conn) -> bool:
     siempre. Solo cuenta lo que de verdad puede avanzar.
     """
     for t in (t for rt in BACKENDS for t in k.list_tasks(conn, assignee=carril(rt))):
-        if t.status in ("todo", "running"):
+        # `ready` cuenta: con el tope de gasto agotado, `tick` devuelve [] con
+        # cards listas, y sin contarlas aca el loop se cerraba como si el flujo
+        # hubiera terminado en vez de haberse frenado por presupuesto.
+        if t.status in ("todo", "ready", "running"):
             return True
         if t.status == "blocked" and t.block_kind == "transient" \
                 and len(k.list_runs(conn, t.id, include_active=False)) < MAX_INTENTOS:
