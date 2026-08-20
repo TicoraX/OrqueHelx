@@ -7,9 +7,9 @@
 
 ## Dónde está el código
 
-- Commit `3daaaaa` — feat(studio): guardar y promocionar grafos a plantillas del catalogo
+- Commit `3505b40` — feat(studio): gestor, inspector y purga de workspaces scratch
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 7
+- Árbol limpio: sí · sin pushear: 9
 
 ## Runtime prestado
 
@@ -47,7 +47,7 @@
 
 ## Bloqueos
 
-- 7 commit(s) sin pushear
+- 9 commit(s) sin pushear
 
 ## Qué sigue
 
