@@ -247,6 +247,14 @@ def tick(conn, *, timeout: int = 600, board: str = None,
         resto = tope_usd - gasto_usd(conn)
         if resto <= 0:
             return []
+        # Repartido entre los que van a arrancar JUNTOS, no entero a cada uno.
+        # `resto` se calcula una vez y despues el pool lanza hasta MAX_PARALELO
+        # nodos: a cada claude-code se le pasaba `--max-budget-usd resto`, o sea
+        # que tres nodos en paralelo podian gastar tres veces lo que quedaba.
+        # El gasto ya hecho no se ve hasta el tick siguiente, cuando ya se
+        # gasto. Dividir es conservador (sobra presupuesto si un nodo sale
+        # barato), y lo que sobra vuelve al reparto en el proximo tick.
+        resto = resto / min(MAX_PARALELO, len(listas))
 
     # Una conexion por hilo: los objetos de sqlite3 no se comparten entre
     # hilos, y `claim_task` ya es atomico entre conexiones (verificado en

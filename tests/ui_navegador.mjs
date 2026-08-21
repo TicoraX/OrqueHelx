@@ -12,13 +12,16 @@
 //   node tests/ui_navegador.mjs <url> <png-de-salida>
 
 import { chromium } from 'playwright';
-const URL = process.argv[2];
+// `destino` y no `URL`: `URL` es un global de Node y sombrearlo se cobra caro
+// el dia que alguien quiera usarlo aca adentro.
+const destino = process.argv[2];
 const b = await chromium.launch();
+try {
 const p = await b.newPage();
 const errores = [];
 p.on('pageerror', e => errores.push(String(e)));
 p.on('console', m => { if (m.type() === 'error') errores.push('console: ' + m.text()); });
-await p.goto(URL, { waitUntil: 'networkidle' });
+await p.goto(destino, { waitUntil: 'networkidle' });
 
 const ver = async sel => p.evaluate(s => {
   const e = document.querySelector(s);
@@ -42,7 +45,10 @@ ok((await ver('#btnRefinarIa')) === false, 'con el lienzo vacio, Refinar se esco
 
 // 2. Agrego un nodo como lo haria el usuario (doble clic en el lienzo).
 await p.dblclick('#lienzo', { position: { x: 300, y: 200 } });
-await p.waitForTimeout(300);
+// `waitForFunction` y no `waitForTimeout`: un timeout fijo es un presupuesto,
+// no un estado. En una maquina cargada el guion leia antes de que el handler
+// terminara y la falla aparecia como intermitente.
+await p.waitForFunction(() => grafo.nodos.length === 1, null, { timeout: 5000 });
 const nodos = await p.evaluate(() => grafo.nodos.length);
 ok(nodos === 1, `un doble clic crea un nodo (hay ${nodos})`);
 await aDiseno();
@@ -54,7 +60,9 @@ ok((await p.textContent('#pistaRefinar')).includes('en vez de empezar de cero'),
 let llamadas = 0;
 await p.route('**/api/generar-grafo', r => { llamadas++; r.continue(); });
 await p.click('#btnRefinarIa');
-await p.waitForTimeout(300);
+await p.waitForFunction(
+  () => document.querySelector('#aviso').textContent.includes('qué querés cambiar'),
+  null, { timeout: 5000 });
 ok(llamadas === 0, 'Refinar sin descripcion no llama al servidor');
 ok((await p.textContent('#aviso')).includes('qué querés cambiar'),
    'y avisa que falta la descripcion');
@@ -75,7 +83,8 @@ await p.evaluate(() => { grafo.nodos[0].id = 'n_uno'; grafo.nodos[0].x = 640; gr
 await aDiseno();
 await p.fill('#promptGenIa', 'agregale un nodo de tests');
 await p.click('#btnRefinarIa');
-await p.waitForTimeout(600);
+await p.waitForFunction(() => grafo.nodos.some(n => n.id === 'n_dos'),
+                        null, { timeout: 5000 });
 
 const env = cuerpos[0] || {};
 ok(!!env.actual && env.actual.nodos.length === 1, 'Refinar manda el grafo actual');
@@ -103,7 +112,7 @@ ok(estado.deshacer > 0, 'el refinamiento quedo en la pila de deshacer');
 // 5. Deshacer devuelve el grafo anterior.
 await aDiseno();
 await p.keyboard.press('Control+z');
-await p.waitForTimeout(300);
+await p.waitForFunction(() => grafo.nodos.length === 1, null, { timeout: 5000 });
 const tras = await p.evaluate(() => grafo.nodos.map(n => n.id));
 ok(JSON.stringify(tras) === '["n_uno"]', `deshacer revierte el refinamiento (${tras})`);
 
@@ -114,12 +123,23 @@ await p.route('**/api/generar-grafo', r => r.fulfill({ status: 200, contentType:
     sesion: null, grafo: { board: 'x', aristas: [], nodos: [{ id:'n_uno', titulo:'t', runtime:'opencode' }] }})}));
 await aDiseno();
 await p.click('#btnRefinarIa');
-await p.waitForTimeout(600);
+// Por el TEXTO del aviso, no por su clase: la clase ya venia en 'ok' del
+// aviso anterior, asi que esperar 'className !== ""' no esperaba nada y se
+// leia el estado viejo.
+await p.waitForFunction(
+  () => document.querySelector('#aviso').textContent.includes('Sin diseño de un agente'),
+  null, { timeout: 5000 });
 const cls = await p.getAttribute('#aviso', 'class');
 ok(cls === 'tibio', `la degradacion se pinta en ambar, no en verde (class="${cls}")`);
 
 ok(errores.length === 0, `sin errores de JS en toda la corrida${errores.length ? ': ' + errores[0] : ''}`);
 if (process.argv[3]) await p.screenshot({ path: process.argv[3], fullPage: false });
-await b.close();
 console.log(fallos ? `\n${fallos} FALLA(S)` : '\nTODO OK');
-process.exit(fallos ? 1 : 0);
+// `exitCode` y no `exit()`: `exit()` corta el proceso con escrituras de stdout
+// pendientes, y el lado Python lee stdout por un pipe. Y el `finally` cierra
+// Chromium aunque un selector ausente aborte el guion a la mitad: sin eso el
+// navegador quedaba vivo y solo lo mataba el timeout de 180s de afuera.
+process.exitCode = fallos ? 1 : 0;
+} finally {
+  await b.close();
+}

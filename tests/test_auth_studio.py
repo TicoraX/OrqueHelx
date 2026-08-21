@@ -6,7 +6,7 @@ endpoint por fuera de la guardia.
 
     uv run --python 3.11 --with jsonschema python ..\\tests\\test_auth_studio.py
 """
-import json, os, re, subprocess, sys, time, urllib.error, urllib.request
+import json, os, re, subprocess, sys, tempfile, time, urllib.error, urllib.request
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -14,9 +14,35 @@ PUERTO = 8799
 TOKEN = "token-de-prueba-no-adivinable"
 
 env = {**os.environ, "ORQUESTER_TOKEN": TOKEN, "PYTHONIOENCODING": "utf-8"}
+# A un archivo y no a `PIPE`: nadie lee ese pipe mientras corre el test, y con
+# el buffer del sistema lleno el Studio se cuelga escribiendo su propio log.
+# Pasaba de verdad: un traceback por pedido rechazado alcanzaba para llenarlo.
+# `test_ui_navegador` ya lo hacia asi; esto es la misma solucion, propagada.
+_log = tempfile.NamedTemporaryFile("w+", suffix=".log", delete=False,
+                                   encoding="utf-8", errors="replace")
 proc = subprocess.Popen([sys.executable, str(RAIZ / "ui" / "server.py"), str(PUERTO)],
-                        env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                        text=True, encoding="utf-8", errors="replace")
+                        env=env, stdout=_log, stderr=subprocess.STDOUT)
+
+
+def _cerrar_log():
+    """El log del Studio: se muestra si algo fallo, y se borra si no.
+
+    En Windows el handle del hijo tarda en soltarse despues del `terminate()`,
+    asi que el `unlink` se reintenta un rato corto.
+    """
+    _log.flush(); _log.close()
+    if sys.exc_info()[0] is not None:
+        cola = Path(_log.name).read_text(encoding="utf-8", errors="replace").strip()
+        if cola:
+            print("--- ultimas lineas del Studio ---")
+            for linea in cola.splitlines()[-15:]:
+                print("   ", linea)
+    for _ in range(10):
+        try:
+            Path(_log.name).unlink(missing_ok=True)
+            break
+        except OSError:
+            time.sleep(0.2)
 
 
 def pedir(ruta, token=None, cabecera=True, cuerpo=None):
@@ -56,7 +82,16 @@ try:
     fuente = (RAIZ / "ui" / "server.py").read_text(encoding="utf-8")
     rutas_get = sorted(set(re.findall(r'ruta == "(/api/[^"]*)"', fuente)))
     rutas_post = sorted(set(re.findall(r'self\.path == "(/api/[^"]*)"', fuente)))
-    assert len(rutas_get) >= 15 and len(rutas_post) >= 15, (rutas_get, rutas_post)
+    # El agujero de sacar rutas con una regex es la ruta escrita de otra forma:
+    # un `in`, una variable, un helper. Contra eso no alcanza un minimo de
+    # rutas encontradas: un umbral se cumple igual con una afuera. Se toman
+    # TODOS los literales /api/... del fuente y se exige que cada uno haya
+    # caido en alguna de las dos listas; el que se escape, este assert lo
+    # nombra en vez de dejarlo sin cubrir.
+    todas = set(re.findall(r'"(/api/[^"]*)"', fuente))
+    huerfanas = todas - set(rutas_get) - set(rutas_post)
+    assert not huerfanas, f"rutas /api que este test no cubre: {sorted(huerfanas)}"
+    assert rutas_get and rutas_post, (rutas_get, rutas_post)
 
     # La unica excepcion deliberada: no expone nada del usuario, solo que sabe
     # hacer este motor, y un agente la consulta antes de armar un grafo.
@@ -96,6 +131,11 @@ try:
     print("6. POST autenticado funciona: OK")
 finally:
     proc.terminate()
-    proc.wait(timeout=10)
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=10)
+    _cerrar_log()
 
 print("\nOK: sin token no se toca nada que ejecute agentes.")

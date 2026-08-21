@@ -190,8 +190,10 @@ def doctor() -> dict:
     import platform, sqlite3
 
     sqlite_ver = sqlite3.sqlite_version
-    partes = [int(p) for p in sqlite_ver.split(".") if p.isdigit()]
-    wal_seguro = tuple(partes[:2]) >= (3, 51) if len(partes) >= 2 else False
+    # La version segura es 3.51.3, no 3.51: comparando solo (mayor, menor) un
+    # 3.51.0 pasaba como sano y es una de las que tiene el bug de WAL-reset
+    # (ARQUITECTURA.md SS10). `sqlite_version_info` ya es la tupla, sin parsear.
+    wal_seguro = sqlite3.sqlite_version_info >= (3, 51, 3)
 
     binarios = {}
     todos_bin = {
@@ -206,16 +208,27 @@ def doctor() -> dict:
     for nombre, argv in todos_bin.items():
         presente = bool(shutil.which(argv[0]))
         version = None
+        # Que el binario EXISTA y que RESPONDA son dos cosas distintas, y este
+        # diagnostico las daba por la misma: un CLI a medio instalar que salia
+        # con error se informaba como "disponible", que es la palabra que uno
+        # viene a buscar aca justamente cuando algo no anda.
+        operable = False
+        detalle = None
         if presente:
             try:
                 p = subprocess.run(argv, capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL)
                 out = (p.stdout or p.stderr or "").strip()
-                version = out.splitlines()[0] if out else "disponible"
-            except Exception:
-                version = "disponible"
+                operable = p.returncode == 0
+                version = out.splitlines()[0] if out else None
+                if not operable:
+                    detalle = f"`{' '.join(argv)}` salio {p.returncode}"
+            except Exception as e:
+                detalle = f"{type(e).__name__}: {e}"
         binarios[nombre] = {
             "disponible": presente,
+            "operable": operable,
             "version": version,
+            "problema": detalle,
             "ruta": shutil.which(argv[0]) or None,
         }
 

@@ -144,7 +144,10 @@ def validar(grafo: dict, *, capacidades: bool = True) -> None:
         if not es_nota(n) and n.get("herramientas") is not None:
             herr = n["herramientas"]
             validas = {"Read", "Grep", "Glob", "Bash", "Write"}
-            if not isinstance(herr, (list, tuple, set)) or any(h not in validas for h in herr):
+            # `isinstance(h, str)` primero: `h not in validas` con una lista
+            # adentro tira TypeError (unhashable) en vez de ErrorDeGrafo, y eso
+            # sale del compilador como un 500 en lugar del mensaje al canvas.
+            if not isinstance(herr, (list, tuple, set)) or                     any(not isinstance(h, str) or h not in validas for h in herr):
                 raise ErrorDeGrafo(
                     f"nodo '{n['id']}': herramientas '{herr}' invalidas. "
                     f"Validas: {sorted(validas)}")

@@ -12,7 +12,7 @@ verifica con Playwright, no aca: son eventos del navegador.
 
     uv run --python 3.11 --with jsonschema python ..\\tests\\test_ui_expansion.py
 """
-import json, os, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
+import json, os, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -37,9 +37,35 @@ disponibles = [rt for rt, d in capacidades.tabla().items()
 RT = disponibles[0] if disponibles else None
 
 env = {**os.environ, "ORQUESTER_TOKEN": TOKEN, "PYTHONIOENCODING": "utf-8"}
+# A un archivo y no a `PIPE`: nadie lee ese pipe mientras corre el test, y con
+# el buffer del sistema lleno el Studio se cuelga escribiendo su propio log.
+# Pasaba de verdad: un traceback por pedido rechazado alcanzaba para llenarlo.
+# `test_ui_navegador` ya lo hacia asi; esto es la misma solucion, propagada.
+_log = tempfile.NamedTemporaryFile("w+", suffix=".log", delete=False,
+                                   encoding="utf-8", errors="replace")
 proc = subprocess.Popen([sys.executable, str(RAIZ / "ui" / "server.py"), str(PUERTO)],
-                        env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                        text=True, encoding="utf-8", errors="replace")
+                        env=env, stdout=_log, stderr=subprocess.STDOUT)
+
+
+def _cerrar_log():
+    """El log del Studio: se muestra si algo fallo, y se borra si no.
+
+    En Windows el handle del hijo tarda en soltarse despues del `terminate()`,
+    asi que el `unlink` se reintenta un rato corto.
+    """
+    _log.flush(); _log.close()
+    if sys.exc_info()[0] is not None:
+        cola = Path(_log.name).read_text(encoding="utf-8", errors="replace").strip()
+        if cola:
+            print("--- ultimas lineas del Studio ---")
+            for linea in cola.splitlines()[-15:]:
+                print("   ", linea)
+    for _ in range(10):
+        try:
+            Path(_log.name).unlink(missing_ok=True)
+            break
+        except OSError:
+            time.sleep(0.2)
 
 
 def pedir(ruta, cuerpo=None):
@@ -231,7 +257,10 @@ try:
     # Editar el campo con la corrida en marcha no cambia el techo de esa
     # corrida: la barra mostraba un tope que nadie estaba respetando.
     BOARD_17 = BOARD + "-17"
-    pedir("/api/compilar", {**GRAFO, "board": BOARD_17, "valores": {"repo": "."}})
+    codigo, datos = pedir("/api/compilar", {**GRAFO, "board": BOARD_17, "valores": {"repo": "."}})
+    # Mirar el 200: sin esto una compilacion fallida se descubria tres lineas
+    # despues como un KeyError sobre `tope_usd`, que no dice nada del motivo.
+    assert codigo == 200, f"no compilo el board del test 17: {datos}"
     codigo, datos = pedir(f"/api/consumo?board={BOARD_17}")
     assert datos["tope_usd"] is None, f"informa un tope sin haber arrancado: {datos}"
     codigo, datos = pedir("/api/correr", {"board": BOARD_17, "presupuesto_usd": "0.5"})
@@ -325,16 +354,25 @@ try:
     print("24b. refinar sin agente devuelve el grafo intacto: OK")
 
     # --- 25. /api/reintentar-nodo desbloquea una card fallida ---
+    # Miraba solo el 200 sobre una card en cualquier estado: pasaba igual con
+    # `unblock_task` convertido en un no-op, y se saltaba entero si el board
+    # venia vacio. Ahora la card se BLOQUEA primero y se comprueba el cambio.
     conn = k.connect(board=BOARD)
     tasks = k.list_tasks(conn)
-    if tasks:
-        tid = tasks[0].id
-        codigo, datos_reintento = pedir("/api/reintentar-nodo", {
-            "board": BOARD,
-            "task_id": tid
-        })
-        assert codigo == 200 and datos_reintento.get("ok"), datos_reintento
-        print("25. /api/reintentar-nodo desbloquea card sin error: OK")
+    assert tasks, "el board de prueba quedo sin cards"
+    tid = tasks[0].id
+    k.block_task(conn, tid, reason="bloqueo de prueba", kind="transient")
+    assert k.get_task(conn, tid).status == "blocked"
+    codigo, datos_reintento = pedir("/api/reintentar-nodo", {"board": BOARD, "task_id": tid})
+    assert codigo == 200 and datos_reintento.get("ok"), datos_reintento
+    assert k.get_task(conn, tid).status != "blocked", "la card sigue bloqueada"
+    # Y una card que NO esta bloqueada no se toca: reintentar una `done` la
+    # mandaba a `ready` y el nodo se reejecutaba pisando su propio entregable.
+    estado_antes = k.get_task(conn, tid).status
+    codigo, datos_no = pedir("/api/reintentar-nodo", {"board": BOARD, "task_id": tid})
+    assert codigo == 400 and "solo se reintenta" in datos_no.get("error", ""), datos_no
+    assert k.get_task(conn, tid).status == estado_antes, "toco una card no bloqueada"
+    print("25. /api/reintentar-nodo desbloquea lo bloqueado y rechaza el resto: OK")
     conn.close()
 
     # --- 26. /api/doctor devuelve diagnóstico integral ---
@@ -421,6 +459,21 @@ try:
     assert "# Reporte de Auditoría:" in datos_rep["reporte"], datos_rep["reporte"]
     assert "Resumen Ejecutivo" in datos_rep["reporte"], datos_rep["reporte"]
     print("34. /api/reporte-corrida compila reporte de auditoría Markdown: OK")
+
+    # --- 34b. Un board inventado no se CREA al consultarlo ---
+    # `k.connect` hace mkdir + init del esquema: cada nombre tipeado mal dejaba
+    # una base nueva en disco y el endpoint contestaba 200 sobre un board vacio.
+    # Se verifica el error Y que no haya quedado nada, que es la mitad que un
+    # `try/except` alrededor de `connect` nunca llego a cubrir.
+    INVENTADO = f"{BOARD}-no-existe"
+    assert not k.board_dir(INVENTADO).exists(), "el board de prueba ya existia"
+    for ruta in (f"/api/reporte-corrida?board={INVENTADO}",
+                 f"/api/traza?board={INVENTADO}&task=lo-que-sea",
+                 f"/api/consumo?board={INVENTADO}"):
+        codigo, datos = pedir(ruta)
+        assert "no existe el board" in json.dumps(datos), (ruta, codigo, datos)
+    assert not k.board_dir(INVENTADO).exists(), "consultar un board inventado lo creo"
+    print("34b. un board inexistente da error y no queda nada en disco: OK")
 
     # --- 35. Un snapshot no puede escribir fuera de ui/grafos/snapshots ---
     # Explotado de verdad antes del arreglo: `board` solo se filtraba contra
@@ -509,9 +562,16 @@ try:
     compile(script, "<exportado>", "exec")          # SyntaxError si se rompio
     assert "os.system" not in script.replace(json.dumps(HOSTIL), ""), \
         "el board se interpolo en el fuente del script"
-    ns = {}
-    exec(compile(script.split("def main()")[0].replace("Path(__file__)", 'Path(".")'),
-                 "<exportado>", "exec"), ns)
+    # Solo la asignacion de GRAFO. El encabezado del script hace
+    # `sys.path.insert` e importa compile, loop y kanban_db: ejecutarlo aca
+    # ataba el test al cwd y reimportaba tres modulos del repo bajo otro nombre
+    # dentro del proceso del test. Lo que se verifica es el viaje del JSON.
+    # `json` en el namespace: el script exportado arma el grafo con
+    # `json.loads(r"""...""")`, que es justamente el arreglo que evita que el
+    # grafo viaje como codigo.
+    ns = {"json": json}
+    literal = "GRAFO = " + script.split("GRAFO = ", 1)[1].split(chr(10) * 2 + "def main()", 1)[0]
+    exec(compile(literal, "<exportado>", "exec"), ns)
     assert ns["GRAFO"] == g_raro, "el grafo no sobrevivio el viaje (bool/null/comillas)"
     print("39. script exportado: compila, sin inyeccion y con el grafo intacto: OK")
 
@@ -658,23 +718,49 @@ try:
     ws_viva.mkdir(parents=True, exist_ok=True)
     (ws_viva / "a-medio-escribir.txt").write_text("no me borres", encoding="utf-8")
 
-    codigo, res_viva = pedir("/api/workspaces/limpiar", {"board": BOARD})
-    assert codigo == 200, res_viva
-    assert ws_viva.exists(), "borro el scratch de una card corriendo"
-    assert any(o.get("task") == viva for o in res_viva.get("omitidos", [])), res_viva
-    print("45b. la purga saltea el scratch de una card en `running` y lo informa: OK")
-    k.complete_task(conn_ws, viva, summary="fin de prueba", result="fin")
-    conn_ws.close()
+    try:
+        codigo, res_viva = pedir("/api/workspaces/limpiar", {"board": BOARD})
+        assert codigo == 200, res_viva
+        assert ws_viva.exists(), "borro el scratch de una card corriendo"
+        assert any(o.get("task") == viva for o in res_viva.get("omitidos", [])), res_viva
+        print("45b. la purga saltea el scratch de una card en `running` y lo informa: OK")
+    finally:
+        # En `finally`: si el assert de arriba falla, la card queda `running` y
+        # la conexion abierta, y el rmtree del cierre no puede borrar el board
+        # en Windows. Un test que falla no tiene que ensuciar a los que siguen.
+        k.complete_task(conn_ws, viva, summary="fin de prueba", result="fin")
+        conn_ws.close()
 
     # --- 46. /api/exportar-dataset genera formato JSONL para benchmark y fine-tuning ---
+    # `isinstance(total_registros, int)` era todo lo que se verificaba, y 0 es
+    # un int: el exportador leia `t.description`, `t.summary` y `total_usd`
+    # (ninguno existe), el `except` por board se comia el AttributeError y esto
+    # daba verde sobre un dataset VACIO. Ahora se cuentan las cards del board y
+    # se exige un registro por cada una, con los campos que promete.
     codigo, datos_ds = pedir("/api/exportar-dataset", {"board": BOARD})
     assert codigo == 200 and datos_ds.get("ok"), datos_ds
-    assert "jsonl" in datos_ds, datos_ds
-    assert isinstance(datos_ds["total_registros"], int), datos_ds
-    print("46. /api/exportar-dataset compila dataset estructurado JSONL: OK")
+    assert not datos_ds.get("omitidos"), f"se salteo un board: {datos_ds}"
+    conn_ds = k.connect(board=BOARD)
+    esperados = len(k.list_tasks(conn_ds))
+    conn_ds.close()
+    assert datos_ds["total_registros"] == esperados, \
+        f"exporto {datos_ds['total_registros']} de {esperados} cards"
+    filas = [json.loads(l) for l in datos_ds["jsonl"].splitlines() if l.strip()]
+    assert len(filas) == esperados, (len(filas), esperados)
+    for fila in filas:
+        for campo in ("task_id", "board", "title", "status", "prompt",
+                      "gasto_usd", "entregable", "summary"):
+            assert campo in fila, f"al registro le falta '{campo}': {fila}"
+        assert isinstance(fila["gasto_usd"], (int, float)), fila
+    print(f"46. /api/exportar-dataset exporta las {esperados} cards del board: OK")
 finally:
     proc.terminate()
-    proc.wait(timeout=10)
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=10)
+    _cerrar_log()
     (RAIZ / "ui" / "grafos" / f"{NOMBRE}.json").unlink(missing_ok=True)
     (RAIZ / "plantillas" / "plantilla-test-promo.json").unlink(missing_ok=True)
     # Los snapshots de los tests 28 y 35 tambien: cada corrida dejaba uno y
@@ -688,13 +774,17 @@ finally:
     # En Windows el handle de SQLite no se suelta en el instante del terminate(),
     # asi que se reintenta un rato corto. Y si igual no sale, se DICE: un
     # `ignore_errors` a secas deja el mismo basural de antes, en silencio.
+    # Los DOS: el test 17 compila `BOARD-17`, que es otro board con su propia
+    # SQLite. Borrar solo el primero dejaba la mitad del basural que esta
+    # limpieza existe para evitar.
     import shutil
-    for _ in range(20):
-        shutil.rmtree(k.board_dir(BOARD), ignore_errors=True)
-        if not k.board_dir(BOARD).exists():
-            break
-        time.sleep(0.25)
-    else:
-        print(f"AVISO: quedo sin borrar el board de prueba {BOARD}")
+    for b_test in (BOARD, BOARD + "-17"):
+        for _ in range(20):
+            shutil.rmtree(k.board_dir(b_test), ignore_errors=True)
+            if not k.board_dir(b_test).exists():
+                break
+            time.sleep(0.25)
+        else:
+            print(f"AVISO: quedo sin borrar el board de prueba {b_test}")
 
 print("\nOK: abrir un grafo, pasarle parametros y elegir el workspace.")

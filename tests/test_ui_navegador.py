@@ -37,6 +37,17 @@ if subprocess.run(["node", "-e", "require.resolve('playwright')"],
     print("OMITIDO: falta playwright.")
     print("  Instalalo con:  npm install --no-save playwright && npx playwright install chromium")
     raise SystemExit(0)
+# El paquete y el NAVEGADOR se instalan aparte. Con el paquete puesto y sin
+# `npx playwright install chromium`, `chromium.launch()` explota y esto
+# reportaba FALLA: justo lo contrario del criterio de arriba, porque las
+# dependencias del navegador no son del producto.
+_ver_chromium = ("import('playwright').then(p => process.exit("
+                 "require('fs').existsSync(p.chromium.executablePath()) ? 0 : 1))")
+if subprocess.run(["node", "-e", _ver_chromium],
+                  cwd=str(RAIZ), capture_output=True).returncode != 0:
+    print("OMITIDO: falta el binario de Chromium.")
+    print("  Instalalo con:  npx playwright install chromium")
+    raise SystemExit(0)
 
 PUERTO = _libre()
 env = {**os.environ, "ORQUESTER_TOKEN": TOKEN, "PYTHONIOENCODING": "utf-8"}

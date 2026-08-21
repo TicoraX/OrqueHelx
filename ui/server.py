@@ -9,7 +9,7 @@ pidio.
     uv run --python 3.11 --with jsonschema python ui/server.py
     -> http://127.0.0.1:8765
 """
-import hmac, json, os, re, secrets, subprocess, sys, threading, time, traceback
+import hmac, json, os, re, secrets, shutil, subprocess, sys, threading, time, traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qsl
@@ -171,9 +171,18 @@ def _catalogo() -> dict:
     return {"plantillas": salida}
 
 
-def _guardar_plantilla(nombre: str, descripcion: str, grafo: dict) -> dict:
-    """Promociona un grafo válido a plantilla reutilizable en el catálogo."""
+def _guardar_plantilla(nombre: str, descripcion: str, grafo: dict,
+                       pisar: bool = False) -> dict:
+    """Promociona un grafo válido a plantilla reutilizable en el catálogo.
+
+    `pisar` no es una opcion nueva: es el MISMO contrato que ya tiene
+    `/api/plantilla` para no reemplazar un grafo guardado (409 y el flag).
+    Sin el, promocionar con un nombre repetido reemplazaba en silencio una
+    plantilla que viene en el repo.
+    """
     f = _ruta_segura(nombre, PLANTILLAS, "nombre de plantilla")
+    if f.exists() and not pisar:
+        raise FileExistsError(f"ya existe la plantilla '{f.stem}'")
     compilador.validar(grafo, capacidades=False)
 
     data = {
@@ -231,8 +240,11 @@ def _runtime_para_chatear(runtime: str) -> str | None:
     t = capacidades.tabla()
     if runtime in t and t[runtime]["disponible"] and runtime in dispatcher.BACKENDS:
         return runtime
+    # Las dos condiciones, igual que arriba: un candidato instalado pero fuera
+    # de `BACKENDS` no lo sabe correr nadie, y el fallo aparecia recien en
+    # `run_chat`, culpando al agente de algo que era ruteo.
     return next((c for c in ("opencode", "claude-code", "antigravity")
-                 if c in t and t[c]["disponible"]), None)
+                 if c in t and t[c]["disponible"] and c in dispatcher.BACKENDS), None)
 
 
 def _goal_estructurado(goal: str, marcadores: list, reglas: str) -> str:
@@ -696,13 +708,25 @@ def _generar_grafo(descripcion: str, runtime: str = "claude-code", dry_run: bool
 
 
 def _reintentar_nodo(board: str, task_id: str) -> dict:
-    """Reintentar un nodo fallido o bloqueado desbloqueándolo en kanban_db."""
+    """Reintentar un nodo bloqueado desbloqueándolo en kanban_db.
+
+    Se mira el estado ANTES de tocar nada. `unblock_task` no valida de donde
+    viene: sobre una card `done` la manda a `ready` y el nodo se vuelve a
+    ejecutar pisando su propio entregable, y sobre una `running` le saca la
+    card al dispatcher que la tiene reclamada. Los unicos estados de los que
+    se puede volver son los que este boton dice atender.
+    """
     conn = _conn(board)
     t = k.get_task(conn, task_id)
     if not t:
         raise ValueError(f"no existe la card {task_id}")
+    # `failed` no existe en `VALID_STATUSES`: un fallo terminal en Hermes
+    # termina en `triage`, y uno del dispatcher nuestro en `blocked`.
+    if t.status not in ("blocked", "triage", "scheduled"):
+        raise ValueError(f"la card {task_id} esta en '{t.status}': "
+                         "solo se reintenta lo bloqueado")
     k.unblock_task(conn, task_id)
-    return {"ok": True, "task_id": task_id}
+    return {"ok": True, "task_id": task_id, "estado_previo": t.status}
 
 
 def _guardar_snapshot(board: str, grafo: dict, descripcion: str = "") -> dict:
@@ -1098,10 +1122,18 @@ def _generar_reporte_corrida(board: str) -> dict:
 
 
 def _generar_dataset_jsonl(board: str = None) -> dict:
-    """Exportar tareas e historial de ejecución en formato JSONL para benchmarking y dataset."""
+    """Exportar tareas e historial de ejecución en formato JSONL para benchmarking y dataset.
+
+    Los campos salen de `kanban_db.Task`, no de como uno cree que se llaman:
+    esto leia `t.description` y `t.summary`, que NO existen (son `body` y el
+    summary del run), y `total_usd` en `por_nodo`, que es `costo_usd`. El
+    `except` por board se comia el AttributeError y el endpoint devolvia 200
+    con cero registros sobre un board lleno de cards `done`.
+    """
     boards = [board.strip()] if (board and board.strip()) else [b.get("slug") for b in k.list_boards() if b.get("slug")]
     lineas = []
     total_registros = 0
+    omitidos = []
 
     for b in boards:
         try:
@@ -1113,13 +1145,17 @@ def _generar_dataset_jsonl(board: str = None) -> dict:
                 rt = "hermes"
                 if t.assignee and ":" in t.assignee:
                     rt = t.assignee.split(":", 1)[1]
-                gasto = por_nodo.get(t.id, {}).get("total_usd", 0.0)
+                gasto = (por_nodo.get(t.id, {}) or {}).get("costo_usd") or 0.0
                 dur = None
                 if t.started_at and t.completed_at:
                     try:
                         dur = round(float(t.completed_at) - float(t.started_at), 2)
                     except (ValueError, TypeError):
                         pass
+                # El resumen es del ultimo intento: la card guarda el `result`,
+                # y el `summary` vive en el run que lo produjo.
+                runs = k.list_runs(conn, t.id)
+                resumen = (runs[-1].summary or "").strip() if runs else ""
 
                 registro = {
                     "task_id": t.id,
@@ -1127,29 +1163,31 @@ def _generar_dataset_jsonl(board: str = None) -> dict:
                     "title": t.title,
                     "runtime": rt,
                     "status": t.status,
-                    "prompt": t.description or "",
+                    "prompt": t.body or "",
                     "model_override": t.model_override,
                     "reasoning_effort": t.reasoning_effort,
                     "gasto_usd": gasto,
                     "duracion_segundos": dur,
                     "entregable": (t.result or "").strip(),
-                    "summary": (t.summary or "").strip(),
+                    "summary": resumen,
+                    "intentos": len(runs),
                     "created_at": t.created_at,
                     "completed_at": t.completed_at,
                 }
                 lineas.append(json.dumps(registro, ensure_ascii=False))
                 total_registros += 1
-        except Exception:
-            continue
+        except Exception as e:
+            # Se DICE cual board no entro. Un `continue` mudo devuelve un
+            # dataset incompleto con cara de completo, que es peor que un error.
+            omitidos.append({"board": b, "motivo": f"{type(e).__name__}: {e}"})
 
-    contenido_jsonl = "\n".join(lineas)
     return {
         "ok": True,
         "board": board or "todos",
         "total_registros": total_registros,
-        "jsonl": contenido_jsonl,
+        "omitidos": omitidos,
+        "jsonl": "\n".join(lineas),
     }
-
 
 
 def _quedan_de_hermes(conn) -> bool:
@@ -1279,7 +1317,6 @@ def _limpiar_workspaces(board: str = None, task_id: str = None) -> dict:
     Lo que se saltea se DEVUELVE: una purga que dice "0 eliminados" sin explicar
     que no toco nada porque habia una corrida parece rota.
     """
-    import shutil
     eliminados = 0
     bytes_liberados = 0
     omitidos = []
@@ -1343,11 +1380,39 @@ class Handler(BaseHTTPRequestHandler):
 
     def _host_ok(self) -> bool:
         """La cabecera `Host` tiene que nombrar a esta maquina (ver HOSTS_OK)."""
-        host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]").lower()
+        crudo = (self.headers.get("Host") or "").strip()
+        # Un literal IPv6 viaja entre corchetes y TIENE `:` adentro: cortar por
+        # el ultimo `:` convertia `[::1]` en `[:` y el Studio se negaba a
+        # atenderse a si mismo en IPv6.
+        if crudo.startswith("["):
+            cierre = crudo.find("]")
+            host = crudo[1:cierre] if cierre != -1 else crudo.lstrip("[")
+        else:
+            host = crudo.rsplit(":", 1)[0]
+        host = host.strip("[]").lower()
         if host in HOSTS_OK:
             return True
         self._responder(421, {"error": f"Host '{host}' no atendido aca"})
         return False
+
+    def _fallo_400(self, prefijo: str, e: Exception):
+        """400 con el motivo, y el traceback donde se pueda leer.
+
+        Estas rutas contestaban 400 y tiraban el traceback: un fallo interno
+        quedaba indistinguible de un cuerpo mal armado y no dejaba rastro en
+        ningun lado. El manejador de afuera si lo imprime antes del 500, y era
+        justo la senal que estos `except` de mas adentro se comian. El codigo
+        sigue siendo 400 a proposito: lo que entra por aca es el grafo que
+        manda el cliente, y el error casi siempre es suyo.
+
+        El traceback va solo para lo INESPERADO: `ValueError` es la convencion
+        del repo para "el pedido esta mal" (`_ruta_segura`, `ErrorDeGrafo`) y
+        volcar su pila por cada nombre invalido es ruido que tapa justo la
+        senal que esto viene a rescatar.
+        """
+        if not isinstance(e, ValueError):
+            traceback.print_exc()
+        return self._responder(400, {"error": f"{prefijo}: {e}"})
 
     def _autorizado(self) -> bool:
         if _token_ok(self):
@@ -1497,7 +1562,7 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     return self._responder(200, {"ok": True, "mermaid": _generar_mermaid(cuerpo)})
                 except Exception as e:
-                    return self._responder(400, {"error": f"no se pudo generar mermaid: {e}"})
+                    return self._fallo_400("no se pudo generar mermaid", e)
             if self.path == "/api/generar-grafo":
                 desc = cuerpo.get("descripcion") or ""
                 rt = cuerpo.get("runtime") or "claude-code"
@@ -1527,29 +1592,29 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     return self._responder(200, {"ok": True, "workflow": _generar_ci_workflow(cuerpo)})
                 except Exception as e:
-                    return self._responder(400, {"error": f"error generando workflow CI: {e}"})
+                    return self._fallo_400("error generando workflow CI", e)
             if self.path == "/api/exportar-python":
                 try:
                     return self._responder(200, {"ok": True, "script": _generar_script_python(cuerpo)})
                 except Exception as e:
-                    return self._responder(400, {"error": f"error generando script python: {e}"})
+                    return self._fallo_400("error generando script python", e)
             if self.path == "/api/simular":
                 try:
                     return self._responder(200, _simular_flujo(cuerpo))
                 except Exception as e:
-                    return self._responder(400, {"error": f"error simulando flujo: {e}"})
+                    return self._fallo_400("error simulando flujo", e)
             if self.path == "/api/analizar-grafo":
                 try:
                     return self._responder(200, {"ok": True, "hallazgos": compilador.analizar(cuerpo)})
                 except Exception as e:
-                    return self._responder(400, {"error": f"error analizando grafo: {e}"})
+                    return self._fallo_400("error analizando grafo", e)
             if self.path == "/api/trazabilidad-grafo":
                 nid = cuerpo.get("nodo") or ""
                 g = cuerpo.get("grafo") or {}
                 try:
                     return self._responder(200, compilador.trazabilidad(g, nid))
                 except Exception as e:
-                    return self._responder(400, {"error": f"error en trazabilidad: {e}"})
+                    return self._fallo_400("error en trazabilidad", e)
             if self.path == "/api/snapshot":
                 b = cuerpo.get("board") or "orquester"
                 g = cuerpo.get("grafo") or {}
@@ -1557,13 +1622,13 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     return self._responder(200, _guardar_snapshot(b, g, desc))
                 except Exception as e:
-                    return self._responder(400, {"error": f"error guardando snapshot: {e}"})
+                    return self._fallo_400("error guardando snapshot", e)
             if self.path == "/api/snapshot/restaurar":
                 sid = cuerpo.get("id") or ""
                 try:
                     return self._responder(200, _restaurar_snapshot(sid))
                 except Exception as e:
-                    return self._responder(400, {"error": f"error restaurando snapshot: {e}"})
+                    return self._fallo_400("error restaurando snapshot", e)
             if self.path == "/api/snapshot/diff":
                 sid = cuerpo.get("id") or ""
                 cid = cuerpo.get("compare_id") or None
@@ -1571,34 +1636,37 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     return self._responder(200, _diff_snapshots(sid, grafo_actual=g, compare_id=cid))
                 except Exception as e:
-                    return self._responder(400, {"error": f"error comparando snapshots: {e}"})
+                    return self._fallo_400("error comparando snapshots", e)
             if self.path == "/api/reporte-corrida":
                 b = cuerpo.get("board") or "orquester"
                 try:
                     return self._responder(200, _generar_reporte_corrida(b))
                 except Exception as e:
-                    return self._responder(400, {"error": f"error generando reporte: {e}"})
+                    return self._fallo_400("error generando reporte", e)
             if self.path == "/api/guardar-plantilla":
                 nom = cuerpo.get("nombre") or ""
                 desc = cuerpo.get("descripcion") or ""
                 g = cuerpo.get("grafo") or {}
                 try:
-                    return self._responder(200, _guardar_plantilla(nom, desc, g))
+                    return self._responder(200, _guardar_plantilla(
+                        nom, desc, g, pisar=bool(cuerpo.get("pisar"))))
+                except FileExistsError as e:
+                    return self._responder(409, {"error": str(e)})
                 except Exception as e:
-                    return self._responder(400, {"error": f"error guardando plantilla: {e}"})
+                    return self._fallo_400("error guardando plantilla", e)
             if self.path == "/api/workspaces/limpiar":
                 b = cuerpo.get("board") or None
                 tid = cuerpo.get("task_id") or None
                 try:
                     return self._responder(200, _limpiar_workspaces(board=b, task_id=tid))
                 except Exception as e:
-                    return self._responder(400, {"error": f"error limpiando workspaces: {e}"})
+                    return self._fallo_400("error limpiando workspaces", e)
             if self.path == "/api/exportar-dataset":
                 b = cuerpo.get("board") or None
                 try:
                     return self._responder(200, _generar_dataset_jsonl(b))
                 except Exception as e:
-                    return self._responder(400, {"error": f"error exportando dataset: {e}"})
+                    return self._fallo_400("error exportando dataset", e)
             if self.path == "/api/parametros":
                 # Los marcadores los detecta el exportador MCP, no una segunda
                 # regex en el navegador: si se duplica, se desincroniza y el

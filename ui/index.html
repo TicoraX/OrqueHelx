@@ -765,9 +765,10 @@ async function cargarTraza() {
   const btnCopiar = $("#btnCopiarRes");
   if (btnCopiar) {
     btnCopiar.onclick = () => {
-      navigator.clipboard.writeText(ULTIMO_RESULTADO);
-      btnCopiar.textContent = "¡Copiado!";
-      setTimeout(() => { btnCopiar.textContent = "Copiar entregable"; }, 1500);
+      copiar(ULTIMO_RESULTADO, () => {
+        btnCopiar.textContent = "¡Copiado!";
+        setTimeout(() => { btnCopiar.textContent = "Copiar entregable"; }, 1500);
+      });
     };
   }
   const btnExpandir = $("#btnExpandirRes");
@@ -822,9 +823,10 @@ function pintarChat(quien, texto, clase) {
     btn.style.cssText = "width:auto; padding:2px 6px; font-size:10.5px;";
     btn.textContent = "Copiar";
     btn.onclick = () => {
-      navigator.clipboard.writeText(texto);
-      btn.textContent = "¡Copiado!";
-      setTimeout(() => { btn.textContent = "Copiar"; }, 1500);
+      copiar(texto, () => {
+        btn.textContent = "¡Copiado!";
+        setTimeout(() => { btn.textContent = "Copiar"; }, 1500);
+      });
     };
     hdr.appendChild(btn);
     d.appendChild(hdr);
@@ -1037,8 +1039,19 @@ $("#chatMensaje").onkeydown = e => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviarChat(); }
 };
 
+// `writeText` devuelve una promesa que se RECHAZA si el navegador niega el
+// permiso o si el documento no tiene el foco. Sin `catch`, el cartel decia
+// "copiado al portapapeles" sobre algo que no se copio, y encima quedaba una
+// promesa rechazada sin atender en la consola.
+function copiar(texto, alExito) {
+  navigator.clipboard.writeText(texto).then(alExito, e =>
+    avisar("No se pudo copiar al portapapeles: " + (e?.message || e), "error"));
+}
+
 const esc = t => String(t).replace(/[&<>"]/g, c =>
   ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+
+let ULTIMA_TRAZA = null;
 
 function refrescarEditor() {
   const n = buscar(sel);
@@ -1064,17 +1077,26 @@ function refrescarEditor() {
         cb.checked = herr.includes(cb.value);
       });
 
-      // Trazabilidad y linaje en vivo
-      api("/api/trazabilidad-grafo", { nodo: sel, grafo: grafo }).then(({ ok, datos }) => {
-        const box = $("#boxTrazabilidadNodo");
-        if (ok && datos && sel === n.id) {
-          box.style.display = "block";
-          $("#nodoImpactoBadge").textContent = `${datos.impacto_pct}% impacto`;
-          $("#nodoLinajeTxt").textContent = `Ancestros: ${datos.ancestros.length} · Downstreams bloqueados: ${datos.descendientes.length}`;
-        } else if (box) {
-          box.style.display = "none";
-        }
-      }).catch(() => {});
+      // Trazabilidad y linaje en vivo. `refrescarEditor` corre en cada
+      // seleccion, duplicado, cambio de runtime y borrado, y mandaba el grafo
+      // ENTERO en cada una, contra un servidor de un solo hilo. La topologia
+      // solo cambia si cambia el nodo mirado o el cableado, asi que se pide
+      // una vez por combinacion y no una vez por clic.
+      const claveTraza = sel + "|" + JSON.stringify(grafo.aristas || []) +
+                         "|" + (grafo.nodos || []).map(x => x.id).join(",");
+      if (claveTraza !== ULTIMA_TRAZA) {
+        ULTIMA_TRAZA = claveTraza;
+        api("/api/trazabilidad-grafo", { nodo: sel, grafo: grafo }).then(({ ok, datos }) => {
+          const box = $("#boxTrazabilidadNodo");
+          if (ok && datos && sel === n.id) {
+            box.style.display = "block";
+            $("#nodoImpactoBadge").textContent = `${datos.impacto_pct}% impacto`;
+            $("#nodoLinajeTxt").textContent = `Ancestros: ${datos.ancestros.length} · Downstreams bloqueados: ${datos.descendientes.length}`;
+          } else if (box) {
+            box.style.display = "none";
+          }
+        }).catch(() => { ULTIMA_TRAZA = null; });
+      }
     } else {
       $("#boxTrazabilidadNodo").style.display = "none";
     }
@@ -1637,9 +1659,10 @@ $("#exportar").onclick = async () => {
 
 $("#btnCopiarMcp").onclick = () => {
   if (!CONFIG_MCP) return;
-  navigator.clipboard.writeText(CONFIG_MCP);
-  $("#btnCopiarMcp").textContent = "¡Copiado al portapapeles!";
-  setTimeout(() => { $("#btnCopiarMcp").textContent = "Copiar config MCP"; }, 1500);
+  copiar(CONFIG_MCP, () => {
+    $("#btnCopiarMcp").textContent = "¡Copiado al portapapeles!";
+    setTimeout(() => { $("#btnCopiarMcp").textContent = "Copiar config MCP"; }, 1500);
+  });
 };
 
 $("#exportarSvg").onclick = () => {
@@ -1680,11 +1703,13 @@ $("#exportarMermaid").onclick = async () => {
   if (!grafo.nodos.length) return avisar("No hay nodos para exportar.", "error");
   const { ok, datos } = await api("/api/exportar-mermaid", grafo);
   if (!ok) return avisar(datos.error || "No se pudo generar Mermaid", "error");
-  navigator.clipboard.writeText(datos.mermaid);
-  avisar("Diagrama Mermaid copiado al portapapeles.", "ok");
+  copiar(datos.mermaid, () => avisar("Diagrama Mermaid copiado al portapapeles.", "ok"));
 };
 
 $("#exportarDataset").onclick = async () => {
+  // Sin board, el endpoint exporta TODOS los boards de la maquina: un click
+  // sobre un lienzo sin nombre devolvia el historial entero, ajeno incluido.
+  if (!(grafo.board || "").trim()) return avisar("Ponele nombre al flujo antes de exportar el dataset.", "error");
   const { ok, datos } = await api(`/api/exportar-dataset?board=${encodeURIComponent(grafo.board)}`);
   if (!ok || !datos) return avisar("No se pudo exportar dataset", "error");
 
@@ -1707,16 +1732,14 @@ $("#exportarCi").onclick = async () => {
   if (!grafo.nodos.length) return avisar("No hay nodos para exportar.", "error");
   const { ok, datos } = await api("/api/exportar-ci", grafo);
   if (!ok) return avisar(datos.error || "No se pudo generar workflow CI/CD", "error");
-  navigator.clipboard.writeText(datos.workflow);
-  avisar("Pipeline GitHub Actions copiado al portapapeles.", "ok");
+  copiar(datos.workflow, () => avisar("Pipeline GitHub Actions copiado al portapapeles.", "ok"));
 };
 
 $("#exportarPy").onclick = async () => {
   if (!grafo.nodos.length) return avisar("No hay nodos para exportar.", "error");
   const { ok, datos } = await api("/api/exportar-python", grafo);
   if (!ok) return avisar(datos.error || "No se pudo generar script Python", "error");
-  navigator.clipboard.writeText(datos.script);
-  avisar("Script Python autónomo copiado al portapapeles.", "ok");
+  copiar(datos.script, () => avisar("Script Python autónomo copiado al portapapeles.", "ok"));
 };
 
 $("#btnSimular").onclick = async () => {
@@ -1832,9 +1855,10 @@ $("#modalEntregable").onclick = e => {
   if (e.target === $("#modalEntregable")) cerrarModalEntregable();
 };
 $("#modalBtnCopiar").onclick = () => {
-  navigator.clipboard.writeText(ULTIMO_RESULTADO);
-  $("#modalBtnCopiar").textContent = "¡Copiado!";
-  setTimeout(() => { $("#modalBtnCopiar").textContent = "Copiar todo"; }, 1500);
+  copiar(ULTIMO_RESULTADO, () => {
+    $("#modalBtnCopiar").textContent = "¡Copiado!";
+    setTimeout(() => { $("#modalBtnCopiar").textContent = "Copiar todo"; }, 1500);
+  });
 };
 
 async function listarSnapshots() {
@@ -2055,8 +2079,12 @@ function aplicarGrafoIa(nuevo, pisar) {
     return;
   }
   const antes = new Set(grafo.nodos.map(n => n.id));
-  ubicarSinCoordenadas(nuevo.nodos);
-  grafo.nodos = nuevo.nodos;
+  // Un grafo sin `nodos` (o con `nodos` que no es lista) dejaba `grafo.nodos`
+  // en undefined y `pintar()` reventaba con el lienzo ya vacio: el trabajo
+  // perdido y sin nada dibujado. Se normaliza ANTES de tocar el estado.
+  const nodos = Array.isArray(nuevo.nodos) ? nuevo.nodos : [];
+  ubicarSinCoordenadas(nodos);
+  grafo.nodos = nodos;
   grafo.aristas = nuevo.aristas || [];
   if (nuevo.reglas !== undefined) grafo.reglas = nuevo.reglas;
   // Si el nodo seleccionado dejó de existir, el editor quedaría mostrando un
