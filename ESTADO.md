@@ -7,9 +7,9 @@
 
 ## Dónde está el código
 
-- Commit `ecd4fb0` — feat(studio): exportador dataset jsonl, controles de zoom y modo focus zen en canvas
+- Commit `8262943` — feat(studio): catalogo de plantillas profesionales de desarrollo, seguridad y poda YAGNI, y limpieza visual anti-slop
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 11
+- Árbol limpio: sí · sin pushear: 16
 
 ## Runtime prestado
 
@@ -47,7 +47,7 @@
 
 ## Bloqueos
 
-- 11 commit(s) sin pushear
+- 16 commit(s) sin pushear
 
 ## Qué sigue
 
