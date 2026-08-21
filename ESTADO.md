@@ -7,9 +7,9 @@
 
 ## Dónde está el código
 
-- Commit `d71a2de` — chore: actualizar ESTADO.md tras inclusion de plantillas profesionales y correcciones UI
+- Commit `3346bbc` — feat(app): overhaul folder-first y orquestador conversacional accesible con modo dual
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: **no** · sin pushear: 17
+- Árbol limpio: sí · sin pushear: 18
 
 ## Runtime prestado
 
@@ -47,8 +47,7 @@
 
 ## Bloqueos
 
-- hay cambios sin commitear
-- 17 commit(s) sin pushear
+- 18 commit(s) sin pushear
 
 ## Qué sigue
 
