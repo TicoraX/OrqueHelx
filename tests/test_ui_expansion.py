@@ -622,6 +622,15 @@ try:
     assert codigo == 200 and ws_info.get("ok"), ws_info
     assert "total_workspaces" in ws_info, ws_info
 
+    # Parar el board primero: la purga se NIEGA a tocar un board con un
+    # dispatcher en marcha, y el test 18 dejo uno arrancado sobre este mismo.
+    pedir("/api/parar", {"board": BOARD})
+    for _ in range(40):
+        _, tel = pedir(f"/api/telemetria?board={BOARD}")
+        if not tel.get("corriendo"):
+            break
+        time.sleep(0.25)
+
     # Crear workspace de prueba en el board activo
     test_ws = k.workspaces_root(board=BOARD) / "test-scratch-task"
     test_ws.mkdir(parents=True, exist_ok=True)

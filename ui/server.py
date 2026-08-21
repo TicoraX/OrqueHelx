@@ -1264,33 +1264,70 @@ def _listar_workspaces() -> dict:
 
 
 def _limpiar_workspaces(board: str = None, task_id: str = None) -> dict:
-    """Limpia los workspaces scratch de un board o tarea específica de forma segura."""
+    """Limpia los workspaces scratch de un board o tarea, sin tocar los vivos.
+
+    El scratch de un nodo ES su `cwd`: `workspaces_root(board)/<task_id>`
+    (`kanban_db` lo arma asi). Borrarlo mientras el nodo corre le saca el piso
+    al agente a mitad del trabajo — y esto se dispara desde un boton que, sin
+    argumentos, barre TODOS los boards. Por eso se saltean dos cosas:
+
+      - los boards con un dispatcher nuestro en marcha (`_corriendo`), enteros,
+        porque entre listar y borrar puede arrancar un nodo mas;
+      - las cards en `running` de los demas boards, que es lo que ejecuta el
+        dispatcher de Hermes, que corre fuera de este proceso.
+
+    Lo que se saltea se DEVUELVE: una purga que dice "0 eliminados" sin explicar
+    que no toco nada porque habia una corrida parece rota.
+    """
     import shutil
     eliminados = 0
     bytes_liberados = 0
+    omitidos = []
 
     boards = [board] if board else [b.get("slug") for b in k.list_boards() if b.get("slug")]
     for b in boards:
+        # `is_alive()`, igual que `_arrancar`: `_corriendo` puede tener el hilo
+        # de una corrida que ya termino y todavia no se saco del diccionario, y
+        # eso no es motivo para negarse a limpiar.
+        if b in _corriendo and _corriendo[b].is_alive():
+            omitidos.append({"board": b, "motivo": "hay un dispatcher corriendo"})
+            continue
         try:
             ws_root = k.workspaces_root(board=b)
             if not ws_root.exists():
                 continue
+            try:
+                activas = {t.id for t in k.list_tasks(k.connect(board=b), status="running")}
+            except Exception:
+                # Sin poder leer que corre, NO se borra: el default de una
+                # operacion destructiva es no hacer nada.
+                omitidos.append({"board": b, "motivo": "no se pudo leer que esta corriendo"})
+                continue
             for p in list(ws_root.iterdir()):
-                if p.is_dir():
-                    if task_id and p.name != task_id:
-                        continue
-                    tam = sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
-                    shutil.rmtree(p, ignore_errors=True)
-                    if not p.exists():
-                        eliminados += 1
-                        bytes_liberados += tam
-        except Exception:
+                if not p.is_dir():
+                    continue
+                if task_id and p.name != task_id:
+                    continue
+                if p.name in activas:
+                    omitidos.append({"board": b, "task": p.name, "motivo": "la card esta corriendo"})
+                    continue
+                tam = sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+                shutil.rmtree(p, ignore_errors=True)
+                if not p.exists():
+                    eliminados += 1
+                    bytes_liberados += tam
+                else:
+                    omitidos.append({"board": b, "task": p.name,
+                                     "motivo": "no se pudo borrar (archivo en uso?)"})
+        except Exception as e:
+            omitidos.append({"board": b, "motivo": f"{type(e).__name__}: {e}"})
             continue
 
     return {
         "ok": True,
         "workspaces_eliminados": eliminados,
         "bytes_liberados": bytes_liberados,
+        "omitidos": omitidos,
         "liberado_humano": f"{bytes_liberados / 1024:.1f} KB" if bytes_liberados < 1024 * 1024 else f"{bytes_liberados / (1024 * 1024):.2f} MB",
     }
 
