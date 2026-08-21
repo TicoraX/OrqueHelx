@@ -118,8 +118,283 @@
                padding:7px 9px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
                font-size:11px; max-height:180px; overflow-y:auto; color:var(--texto); white-space:pre-wrap; }
   body.modo-zen #panel, body.modo-zen #panelDerecho { display: none !important; }
-  body.modo-zen #barraCanvasFlotante { right: 16px; }
+  body.modo-zen #barraCanvasFlotante { right: 16px; top: 12px; }
+  body.modo-zen #barraSuperiorApp { display: none !important; }
+  body.modo-zen #lienzo { margin-top: 0 !important; }
+
+  /* Dual Mode (App vs Studio) */
+  #barraSuperiorApp {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 44px;
+    background: rgba(14, 16, 23, 0.95);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--linea);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 16px;
+    z-index: 100;
+  }
+  .app-logo {
+    font-weight: 700;
+    font-size: 14.5px;
+    letter-spacing: 0.5px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .badge-ws {
+    background: #181c26;
+    border: 1px solid var(--linea);
+    border-radius: 14px;
+    padding: 2px 10px;
+    font-size: 11px;
+    color: var(--tenue);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .modo-selector {
+    display: flex;
+    background: #141720;
+    border: 1px solid var(--linea);
+    border-radius: 6px;
+    padding: 2px;
+    gap: 2px;
+  }
+  .btn-modo {
+    padding: 3px 12px;
+    font-size: 11px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    background: transparent;
+    color: var(--tenue);
+    font-weight: 600;
+    width: auto;
+  }
+  .btn-modo.activo {
+    background: var(--acento);
+    color: #0e1017;
+  }
+  #vistaApp {
+    position: fixed;
+    top: 44px; left: 0; right: 0; bottom: 0;
+    overflow-y: auto;
+    background: #0e1017;
+    padding: 24px 16px 60px;
+    z-index: 50;
+  }
+  .app-contenedor {
+    max-width: 840px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .seccion-card {
+    background: var(--panel);
+    border: 1px solid var(--linea);
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  }
+  .grid-intenciones {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .card-intencion {
+    background: #141720;
+    border: 1px solid var(--linea);
+    border-radius: 6px;
+    padding: 12px;
+    cursor: pointer;
+    transition: all .15s;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .card-intencion:hover {
+    border-color: var(--acento);
+    background: #191e2b;
+    transform: translateY(-1px);
+  }
+  .card-intencion b {
+    font-size: 12.5px;
+    color: var(--texto);
+  }
+  .card-intencion p {
+    margin: 0;
+    font-size: 11px;
+    color: var(--tenue);
+    line-height: 1.35;
+  }
+  .chip-reciente {
+    background: #141720;
+    border: 1px solid var(--linea);
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: 11px;
+    color: var(--tenue);
+    cursor: pointer;
+    display: inline-block;
+  }
+  .chip-reciente:hover {
+    border-color: var(--acento);
+    color: var(--texto);
+  }
+  .timeline-nodo-app {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 8px;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    background: #0e1017;
+    border: 1px solid rgba(255,255,255,0.03);
+    font-size: 12px;
+  }
+  .timeline-nodo-app.running {
+    border-color: var(--running);
+    background: #141e2b;
+  }
+  .timeline-nodo-app.done {
+    border-color: rgba(63,157,82,0.4);
+  }
+  .timeline-nodo-app.failed {
+    border-color: rgba(192,80,77,0.5);
+  }
+  body.modo-app-activo #vistaApp { display: block; }
+  body.modo-app-activo #lienzo,
+  body.modo-app-activo #barraCanvasFlotante,
+  body.modo-app-activo #panel { display: none !important; }
+
+  body.modo-studio-activo #vistaApp { display: none !important; }
+  body.modo-studio-activo #lienzo { display: block; margin-top: 44px; }
+  body.modo-studio-activo #panel { display: flex; margin-top: 44px; height: calc(100vh - 44px); }
+  body.modo-studio-activo #barraCanvasFlotante { top: 56px; }
 </style>
+
+<header id="barraSuperiorApp">
+  <div class="app-logo">
+    <span>ORQUESTER</span>
+    <div id="badgeWorkspaceActual" class="badge-ws">
+      <span>Proyecto:</span>
+      <b id="txtNombreWsActual" style="color:var(--acento); max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Sin seleccionar</b>
+    </div>
+  </div>
+  <div style="display:flex; align-items:center; gap:8px;">
+    <div class="modo-selector">
+      <button id="btnModoApp" class="btn-modo activo">App</button>
+      <button id="btnModoStudio" class="btn-modo">Studio</button>
+    </div>
+  </div>
+</header>
+
+<main id="vistaApp">
+  <div class="app-contenedor">
+    <!-- Card 1: Workspace Selector & Stack Diagnostic -->
+    <div class="seccion-card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <h2 style="margin:0;">1. Carpeta de Trabajo (Workspace)</h2>
+        <button id="btnUsarRaizActual" style="width:auto; font-size:11px; padding:2px 8px; background:#1e293b; border-color:#334155; color:#94a3b8;">Usar proyecto actual</button>
+      </div>
+      <div class="fila" style="margin-bottom:8px;">
+        <input id="inputWorkspaceApp" placeholder="Ruta absoluta a la carpeta del proyecto (ej: a:\Proyectos\mi-app)..." style="font-size:13px;" />
+        <button id="btnAnalizarWorkspaceApp" class="primario" style="width:auto; white-space:nowrap; padding:6px 14px; font-size:12.5px;">Abrir</button>
+      </div>
+      <div id="listaRecientesApp" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;"></div>
+      
+      <div id="diagnosticoWsBox" style="display:none; background:#141720; border:1px solid var(--linea); border-radius:6px; padding:10px 12px; font-size:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--linea); padding-bottom:6px; margin-bottom:6px;">
+          <b id="diagNombreProyecto" style="font-size:13px; color:#fff;">-</b>
+          <span id="diagStackBadge" style="background:#1e293b; color:#38bdf8; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600;">-</span>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; color:var(--tenue); font-size:11.5px;">
+          <div><b>Git:</b> <span id="diagGitTxt" style="color:var(--texto);">-</span></div>
+          <div><b>Tests:</b> <span id="diagTestsTxt" style="color:var(--texto);">-</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 2: Intenciones Rápidas (1-Click) -->
+    <div class="seccion-card">
+      <h2 style="margin:0 0 4px;">2. ¿Qué deseas hacer con este proyecto?</h2>
+      <p class="ayuda" style="margin:0 0 10px;">Elige una acción pre-configurada o escribe tu requerimiento abajo. ORQUESTER orquestará los agentes en segundo plano.</p>
+      
+      <div class="grid-intenciones">
+        <div class="card-intencion" data-intencion="seguridad">
+          <b>Auditoría de Seguridad</b>
+          <p>Arqueología de secretos, modelado STRIDE, análisis de dependencias y pruebas de exploits con Strix.</p>
+        </div>
+        <div class="card-intencion" data-intencion="web">
+          <b>Diseño Web Deliberate</b>
+          <p>Arquitectura frontend anti-AI-slop con paleta OKLCH calibrada, tipografía intencional y micro-motion.</p>
+        </div>
+        <div class="card-intencion" data-intencion="refactor">
+          <b>Refactor y Poda YAGNI</b>
+          <p>Poda de complejidad, eliminación de código muerto y reemplazo por biblioteca estándar (Ponytail).</p>
+        </div>
+        <div class="card-intencion" data-intencion="feature">
+          <b>Pipeline de Feature</b>
+          <p>Ciclo completo: especificación de contrato, backend seguro, frontend reactivo, QA y docs.</p>
+        </div>
+        <div class="card-intencion" data-intencion="diff">
+          <b>Revisión de Cambios</b>
+          <p>Análisis en paralelo de bugs, cobertura de tests, seguridad y alcance antes de mergear.</p>
+        </div>
+        <div class="card-intencion" data-intencion="explicar">
+          <b>Explicar Arquitectura</b>
+          <p>Mapeo de módulos, dependencias de código y flujo de datos del repositorio.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 3: Chat / Objetivo Libre -->
+    <div class="seccion-card">
+      <h2 style="margin:0 0 6px;">3. O escribe un objetivo personalizado</h2>
+      <div style="display:flex; gap:8px;">
+        <input id="inputPromptApp" placeholder="Ej: Auditar el módulo de autenticación y agregar tests unitarios para casos borde..." style="font-size:13px;" />
+        <button id="btnEjecutarPromptApp" class="primario" style="width:auto; white-space:nowrap; padding:6px 16px; font-size:12.5px;">Orquestar</button>
+      </div>
+    </div>
+
+    <!-- Card 4: Live Execution Timeline & Entregables -->
+    <div id="seccionEjecucionApp" class="seccion-card" style="display:none;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <div>
+          <h2 style="margin:0; color:var(--acento);">Ejecución en Curso: <span id="appBoardTitulo" style="color:#fff;">-</span></h2>
+          <div id="appProgresoSubtxt" style="font-size:11.5px; color:var(--tenue); margin-top:2px;">Iniciando agentes...</div>
+        </div>
+        <button id="btnVerEnStudio" style="width:auto; font-size:11.5px; padding:3px 10px; background:#223042;">Ver en Studio ↗</button>
+      </div>
+
+      <!-- Barra de progreso -->
+      <div style="background:#13161f; border:1px solid var(--linea); border-radius:4px; height:8px; overflow:hidden; margin-bottom:12px;">
+        <div id="appBarraProgreso" style="background:var(--acento); width:0%; height:100%; transition:width .3s;"></div>
+      </div>
+
+      <!-- Timeline de Nodos -->
+      <div id="appTimelineNodos" style="background:#141720; border:1px solid var(--linea); border-radius:6px; padding:10px 12px; margin-bottom:14px; max-height:220px; overflow-y:auto;"></div>
+
+      <!-- Entregables en Vivo -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <b style="font-size:13px;">Entregable Consolidado</b>
+        <div style="display:flex; gap:6px;">
+          <button id="btnCopiarEntregableApp" style="width:auto; font-size:11px; padding:3px 8px;">Copiar</button>
+          <button id="btnReporteAuditApp" style="width:auto; font-size:11px; padding:3px 8px; background:#1b2a3a; color:#7dd3fc; border-color:#2f4a66;">Reporte Completo</button>
+        </div>
+      </div>
+      <div id="appEntregableRender" style="background:#141720; border:1px solid var(--linea); border-radius:6px; padding:14px; min-height:100px; max-height:400px; overflow-y:auto; font-size:12.5px; line-height:1.5;">
+        <div class="d">Esperando entregable de los agentes...</div>
+      </div>
+    </div>
+  </div>
+</main>
 
 <svg id="lienzo">
   <defs>
@@ -2321,4 +2596,206 @@ api("/api/capacidades").then(({ datos }) => {
   CAPS = datos || {};
   pistaDeModelo(); refrescarEditor(); verSesion();
 });
+
+// --- Dual Mode & Folder-First App Orchestrator ---
+let WORKSPACE_ACTUAL = "";
+let INFO_WS_ACTUAL = null;
+let APP_INTERVAL_ID = null;
+
+function cambiarModoVista(modo) {
+  if (modo === "studio") {
+    document.body.classList.remove("modo-app-activo");
+    document.body.classList.add("modo-studio-activo");
+    $("#btnModoStudio").classList.add("activo");
+    $("#btnModoApp").classList.remove("activo");
+    localStorage.setItem("orquester_modo", "studio");
+    pintar(); encuadrar();
+  } else {
+    document.body.classList.remove("modo-studio-activo");
+    document.body.classList.add("modo-app-activo");
+    $("#btnModoApp").classList.add("activo");
+    $("#btnModoStudio").classList.remove("activo");
+    localStorage.setItem("orquester_modo", "app");
+  }
+}
+
+$("#btnModoApp").onclick = () => cambiarModoVista("app");
+$("#btnModoStudio").onclick = () => cambiarModoVista("studio");
+$("#btnVerEnStudio").onclick = () => cambiarModoVista("studio");
+
+function guardarRecienteWs(ruta) {
+  if (!ruta) return;
+  try {
+    let recs = JSON.parse(localStorage.getItem("orquester_recientes") || "[]");
+    recs = [ruta, ...recs.filter(r => r !== ruta)].slice(0, 5);
+    localStorage.setItem("orquester_recientes", JSON.stringify(recs));
+    renderRecientesWs();
+  } catch (e) {}
+}
+
+function renderRecientesWs() {
+  const cont = $("#listaRecientesApp");
+  if (!cont) return;
+  try {
+    const recs = JSON.parse(localStorage.getItem("orquester_recientes") || "[]");
+    if (!recs.length) {
+      cont.innerHTML = "";
+      return;
+    }
+    cont.innerHTML = '<span style="font-size:11px; color:var(--tenue); align-self:center;">Recientes:</span>' +
+      recs.map(r => `<span class="chip-reciente" data-ruta="${esc(r)}">${esc(r.split(/[\\\\/]/).pop() || r)}</span>`).join("");
+    cont.querySelectorAll(".chip-reciente").forEach(chip => {
+      chip.onclick = () => {
+        const r = chip.getAttribute("data-ruta");
+        $("#inputWorkspaceApp").value = r;
+        analizarWorkspaceApp(r);
+      };
+    });
+  } catch (e) {}
+}
+
+async function analizarWorkspaceApp(ruta) {
+  const r = (ruta || $("#inputWorkspaceApp").value || "").trim();
+  if (!r) return avisar("Escribe o selecciona la ruta de una carpeta.", "error");
+  $("#btnAnalizarWorkspaceApp").disabled = true;
+  $("#btnAnalizarWorkspaceApp").textContent = "Analizando…";
+  const { ok, datos } = await api("/api/workspace/analizar", { ruta: r });
+  $("#btnAnalizarWorkspaceApp").disabled = false;
+  $("#btnAnalizarWorkspaceApp").textContent = "Abrir";
+  if (!ok || !datos) return avisar(datos?.error || "Error al analizar el workspace.", "error");
+
+  WORKSPACE_ACTUAL = datos.ruta;
+  INFO_WS_ACTUAL = datos;
+  $("#txtNombreWsActual").textContent = datos.nombre || datos.ruta;
+  $("#txtNombreWsActual").title = datos.ruta;
+  $("#inputWorkspaceApp").value = datos.ruta;
+  guardarRecienteWs(datos.ruta);
+
+  // Mostrar diagnóstico
+  $("#diagnosticoWsBox").style.display = "block";
+  $("#diagNombreProyecto").textContent = datos.nombre;
+  $("#diagStackBadge").textContent = datos.stack + (datos.frameworks?.length ? ` (${datos.frameworks.join(", ")})` : "");
+  $("#diagGitTxt").textContent = datos.es_git
+    ? `${datos.git_branch} ${datos.git_cambios_pendientes ? `(${datos.git_cambios_pendientes} cambios pendientes)` : "(limpio)"}`
+    : "No es un repositorio Git";
+  $("#diagTestsTxt").textContent = datos.comando_tests || "No detectado";
+
+  avisar(`Proyecto '${datos.nombre}' cargado y analizado con éxito.`, "ok");
+}
+
+$("#btnAnalizarWorkspaceApp").onclick = () => analizarWorkspaceApp();
+$("#btnUsarRaizActual").onclick = async () => {
+  const { datos } = await api("/api/doctor");
+  const raizPath = datos?.plataforma?.cwd || "";
+  if (raizPath) {
+    $("#inputWorkspaceApp").value = raizPath;
+    analizarWorkspaceApp(raizPath);
+  }
+};
+
+async function lanzarOrquestacionApp(intencion, promptTexto) {
+  if (!WORKSPACE_ACTUAL) {
+    const r = ($("#inputWorkspaceApp").value || "").trim();
+    if (!r) return avisar("Primero selecciona y analiza una carpeta de proyecto.", "error");
+    await analizarWorkspaceApp(r);
+    if (!WORKSPACE_ACTUAL) return;
+  }
+
+  const cuerpo = {
+    workspace: WORKSPACE_ACTUAL,
+    intencion: intencion,
+    prompt: promptTexto || "",
+    ejecutar: true
+  };
+
+  avisar("Orquestando agentes y compilando grafo...", "ok");
+  const { ok, datos } = await api("/api/orquestar-intencion", cuerpo);
+  if (!ok || !datos) return avisar(datos?.error || "Error al orquestar.", "error");
+
+  // Actualizar datos del grafo en Studio
+  if (datos.grafo) {
+    anotar();
+    abrirGrafo(datos.grafo, datos.board);
+    pintar(); encuadrar();
+  }
+
+  // Mostrar sección de ejecución
+  $("#seccionEjecucionApp").style.display = "block";
+  $("#appBoardTitulo").textContent = datos.board;
+  $("#appProgresoSubtxt").textContent = `Plantilla: ${datos.plantilla} · ${datos.total_nodos} nodos en ejecución`;
+  $("#appBarraProgreso").style.width = "0%";
+  $("#appEntregableRender").innerHTML = '<div class="d">Ejecutando nodos del DAG en segundo plano…</div>';
+
+  if (APP_INTERVAL_ID) clearInterval(APP_INTERVAL_ID);
+  APP_INTERVAL_ID = setInterval(() => monitorearProgresoApp(datos.board), 2000);
+  monitorearProgresoApp(datos.board);
+}
+
+document.querySelectorAll(".card-intencion").forEach(card => {
+  card.onclick = () => {
+    const it = card.getAttribute("data-intencion");
+    lanzarOrquestacionApp(it, "");
+  };
+});
+
+$("#btnEjecutarPromptApp").onclick = () => {
+  const p = ($("#inputPromptApp").value || "").trim();
+  if (!p) return avisar("Escribe un objetivo para orquestar.", "error");
+  lanzarOrquestacionApp("custom", p);
+};
+
+async function monitorearProgresoApp(board) {
+  const [{ ok: okTel, datos: datosTel }, { ok: okEst, datos: datosEst }] = await Promise.all([
+    api(`/api/telemetria?board=${encodeURIComponent(board)}`),
+    api(`/api/estado?board=${encodeURIComponent(board)}`)
+  ]);
+
+  if (okTel && datosTel) {
+    const pct = datosTel.progreso_porcentaje || 0;
+    $("#appBarraProgreso").style.width = `${pct}%`;
+    $("#appProgresoSubtxt").textContent = `${pct}% completado (${datosTel.hechas}/${datosTel.total_tareas} nodos) · ${datosTel.tiempo_total_humano}`;
+    if (datosTel.en_progreso === 0 && datosTel.hechas === datosTel.total_tareas && datosTel.total_tareas > 0) {
+      if (APP_INTERVAL_ID) { clearInterval(APP_INTERVAL_ID); APP_INTERVAL_ID = null; }
+    }
+  }
+
+  if (okEst && datosEst && datosEst.tareas) {
+    const tareas = datosEst.tareas;
+    const timeline = $("#appTimelineNodos");
+    timeline.innerHTML = Object.entries(tareas).map(([id, t]) => {
+      const st = t.status || "todo";
+      const icon = st === "done" ? '<span style="color:var(--done);">✓</span>' : (st === "running" ? '<span style="color:var(--running);">●</span>' : (st === "failed" ? '<span style="color:var(--failed);">✗</span>' : '<span style="color:var(--tenue);">○</span>'));
+      return `<div class="timeline-nodo-app ${st}">
+        <span>${icon} <b>${esc(id)}</b> <span style="color:var(--tenue); font-size:11px;">(${esc(t.runtime || "hermes")})</span></span>
+        <span style="font-size:10.5px; color:var(--tenue);">${esc(t.title || "").slice(0, 50)}…</span>
+      </div>`;
+    }).join("");
+
+    // Buscar el entregable del último nodo completado
+    const nodosHechos = Object.values(tareas).filter(t => t.status === "done" && t.result);
+    if (nodosHechos.length) {
+      const ultimo = nodosHechos[nodosHechos.length - 1];
+      $("#appEntregableRender").innerHTML = renderMarkdown(ultimo.result);
+    }
+  }
+}
+
+$("#btnCopiarEntregableApp").onclick = () => {
+  const texto = $("#appEntregableRender").innerText;
+  copiar(texto, () => {
+    $("#btnCopiarEntregableApp").textContent = "¡Copiado!";
+    setTimeout(() => { $("#btnCopiarEntregableApp").textContent = "Copiar"; }, 1500);
+  });
+};
+
+$("#btnReporteAuditApp").onclick = () => {
+  activarTab("obs");
+  cambiarModoVista("studio");
+  $("#btnGenerarReporte").click();
+};
+
+// Inicialización de modo guardado
+const modoInicial = localStorage.getItem("orquester_modo") || "app";
+cambiarModoVista(modoInicial);
+renderRecientesWs();
 </script>

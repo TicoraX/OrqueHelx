@@ -753,6 +753,34 @@ try:
             assert campo in fila, f"al registro le falta '{campo}': {fila}"
         assert isinstance(fila["gasto_usd"], (int, float)), fila
     print(f"46. /api/exportar-dataset exporta las {esperados} cards del board: OK")
+
+    # --- 47. /api/workspace/analizar detecta stack, git y tests ---
+    codigo, info_ws = pedir("/api/workspace/analizar", {"ruta": str(RAIZ)})
+    assert codigo == 200 and info_ws.get("ok"), info_ws
+    assert "Python" in info_ws["stack"], info_ws["stack"]
+    assert info_ws["es_git"] is True, info_ws
+    assert info_ws["nombre"] == RAIZ.name, info_ws
+    assert info_ws["comando_tests"], info_ws
+    codigo, err_ws = pedir("/api/workspace/analizar", {"ruta": "carpeta_que_no_existe_9999"})
+    assert codigo == 400, (codigo, err_ws)
+    print("47. /api/workspace/analizar detecta stack, git y comando de tests: OK")
+
+    # --- 48. /api/orquestar-intencion mapea intencion a DAG con parametros inyectados ---
+    codigo, orq_res = pedir("/api/orquestar-intencion", {
+        "workspace": str(RAIZ),
+        "intencion": "seguridad",
+        "ejecutar": False
+    })
+    assert codigo == 200 and orq_res.get("ok"), orq_res
+    assert orq_res["plantilla"] == "auditoria-seguridad-cso-strix", orq_res
+    assert orq_res["total_nodos"] >= 5, orq_res
+    # Verificar que ningun nodo tenga `{{repo}}` literal sin sustituir
+    for n in orq_res["grafo"]["nodos"]:
+        assert "{{repo}}" not in n.get("titulo", ""), f"nodo {n['id']} no sustituyo {{{{repo}}}}"
+        if n.get("workspace"):
+            assert "{{repo}}" not in n["workspace"], f"nodo {n['id']} no sustituyo workspace"
+    (RAIZ / "ui" / "grafos" / f"{orq_res['board']}.json").unlink(missing_ok=True)
+    print("48. /api/orquestar-intencion mapea intencion, sustituye parametros y prepara DAG: OK")
 finally:
     proc.terminate()
     try:

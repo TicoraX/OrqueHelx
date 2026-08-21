@@ -1369,6 +1369,184 @@ def _limpiar_workspaces(board: str = None, task_id: str = None) -> dict:
     }
 
 
+def _analizar_workspace(ruta: str) -> dict:
+    """Inspecciona una carpeta para detectar su stack, tests y estado git."""
+    if not ruta or not str(ruta).strip():
+        raise ValueError("Ruta de workspace vacia")
+    p = Path(ruta).resolve()
+    if not p.exists() or not p.is_dir():
+        raise ValueError(f"La carpeta '{ruta}' no existe o no es un directorio")
+
+    stack = "Desconocido"
+    frameworks = []
+    comando_tests = ""
+
+    # Detectar Node.js
+    pkg = p / "package.json"
+    if pkg.exists():
+        stack = "Node.js / TypeScript" if (p / "tsconfig.json").exists() else "Node.js / JavaScript"
+        try:
+            data = json.loads(pkg.read_text(encoding="utf-8"))
+            deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
+            scripts = data.get("scripts", {})
+            if "react" in deps: frameworks.append("React")
+            if "next" in deps: frameworks.append("Next.js")
+            if "vue" in deps: frameworks.append("Vue")
+            if "svelte" in deps: frameworks.append("Svelte")
+            if "express" in deps: frameworks.append("Express")
+            if "vitest" in deps or "test" in scripts:
+                comando_tests = "npm test"
+        except Exception:
+            pass
+
+    # Detectar Python
+    py_markers = [p / "pyproject.toml", p / "requirements.txt", p / "setup.py", p / "Pipfile", p / "uv.lock"]
+    tiene_py = any(m.exists() for m in py_markers) or bool(list(p.glob("*.py"))) or bool(list(p.glob("*/*.py")))
+    if tiene_py:
+        if stack == "Desconocido":
+            stack = "Python"
+        else:
+            stack += " + Python"
+        if (p / "tests").exists() or (p / "test").exists() or (p / "pytest.ini").exists():
+            comando_tests = comando_tests or "pytest"
+        else:
+            comando_tests = comando_tests or "python -m unittest"
+
+    # Detectar Rust
+    if (p / "Cargo.toml").exists():
+        stack = "Rust"
+        comando_tests = "cargo test"
+
+    # Detectar Go
+    if (p / "go.mod").exists():
+        stack = "Go"
+        comando_tests = "go test ./..."
+
+    # Detectar Git
+    es_git = False
+    git_branch = ""
+    git_cambios = 0
+    ultimo_commit = ""
+    try:
+        r = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=str(p),
+                           capture_output=True, text=True, timeout=3)
+        if r.returncode == 0 and "true" in r.stdout:
+            es_git = True
+            rb = subprocess.run(["git", "branch", "--show-current"], cwd=str(p),
+                                capture_output=True, text=True, timeout=3)
+            git_branch = rb.stdout.strip()
+            rc = subprocess.run(["git", "status", "--porcelain"], cwd=str(p),
+                                capture_output=True, text=True, timeout=3)
+            git_cambios = len([l for l in rc.stdout.splitlines() if l.strip()])
+            rl = subprocess.run(["git", "log", "-1", "--oneline"], cwd=str(p),
+                                capture_output=True, text=True, timeout=3)
+            ultimo_commit = rl.stdout.strip()
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "nombre": p.name,
+        "ruta": str(p),
+        "stack": stack,
+        "frameworks": frameworks,
+        "comando_tests": comando_tests or "pytest",
+        "es_git": es_git,
+        "git_branch": git_branch or "main",
+        "git_cambios_pendientes": git_cambios,
+        "ultimo_commit": ultimo_commit,
+    }
+
+
+def _orquestar_intencion(cuerpo: dict) -> dict:
+    """Mapea una intencion a un DAG optimo, inyecta parametros del workspace y ejecuta."""
+    ws = cuerpo.get("workspace") or ""
+    info_ws = _analizar_workspace(ws) if ws else {}
+    ruta_ws = info_ws.get("ruta") or ws or str(RAIZ)
+    cmd_tests = info_ws.get("comando_tests") or "pytest"
+
+    intencion = (cuerpo.get("intencion") or "").lower().strip()
+    prompt = (cuerpo.get("prompt") or "").strip()
+    ejecutar = bool(cuerpo.get("ejecutar", True))
+    tope_usd = float(cuerpo["tope_usd"]) if cuerpo.get("tope_usd") else None
+
+    mapa_plantillas = {
+        "seguridad": "auditoria-seguridad-cso-strix",
+        "web": "desarrollo-web-deliberate",
+        "refactor": "refactor-yagni-ponytail",
+        "feature": "pipeline-feature-fullstack",
+        "diff": "revision-de-repo",
+        "explicar": "explicar-un-repo",
+        "triage": "triage-de-bug",
+        "documentar": "documentar-cambios",
+    }
+
+    nom_pl = mapa_plantillas.get(intencion)
+    if nom_pl:
+        pl_path = PLANTILLAS / f"{nom_pl}.json"
+        if not pl_path.exists():
+            raise ValueError(f"Plantilla '{nom_pl}' no encontrada")
+        g = json.loads(pl_path.read_text(encoding="utf-8"))
+    else:
+        if prompt:
+            res_ia = _generar_grafo(prompt, runtime="claude-code", dry_run=True)
+            g = res_ia.get("grafo")
+            nom_pl = "sintesis-ia"
+        else:
+            nom_pl = "revision-de-repo"
+            g = json.loads((PLANTILLAS / f"{nom_pl}.json").read_text(encoding="utf-8"))
+
+    # Reemplazo de marcadores
+    valores_params = {
+        "repo": ruta_ws,
+        "ruta": ruta_ws,
+        "comando_tests": cmd_tests,
+        "modulo": prompt or info_ws.get("nombre") or "modulo-principal",
+        "feature": prompt or "nueva-funcionalidad",
+        "pregunta": prompt or f"Explicar arquitectura de {info_ws.get('nombre', 'este repositorio')}",
+        "sintoma": prompt or "Comportamiento inesperado o falla observada",
+        "commits": str(cuerpo.get("commits") or 5),
+    }
+
+    for n in g.get("nodos", []):
+        for k_p, v_p in valores_params.items():
+            if n.get("titulo"):
+                n["titulo"] = n["titulo"].replace(f"{{{{{k_p}}}}}", str(v_p))
+            if n.get("workspace"):
+                n["workspace"] = n["workspace"].replace(f"{{{{{k_p}}}}}", str(v_p))
+
+    board_slug = f"{nom_pl}-{int(time.time()) % 100000}"
+    g["board"] = board_slug
+
+    compilador.validar(g, capacidades=False)
+
+    try:
+        pos = disposicion.ordenar(g)
+        for n in g.get("nodos", []):
+            if n["id"] in pos:
+                n["x"] = pos[n["id"]]["x"]
+                n["y"] = pos[n["id"]]["y"]
+    except Exception:
+        pass
+
+    f_g = GRAFOS / f"{board_slug}.json"
+    f_g.write_text(json.dumps(g, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    if ejecutar:
+        compilador.compilar(g, board=board_slug, conexion=None, tope_usd=tope_usd)
+        _correr_dispatcher_board(board_slug, tope_usd=tope_usd)
+
+    return {
+        "ok": True,
+        "board": board_slug,
+        "plantilla": nom_pl,
+        "workspace_analizado": info_ws,
+        "grafo": g,
+        "total_nodos": len(g.get("nodos", [])),
+        "ejecutando": ejecutar
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     def _responder(self, codigo, cuerpo, tipo="application/json"):
         datos = cuerpo if isinstance(cuerpo, bytes) else json.dumps(cuerpo).encode()
@@ -1482,6 +1660,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._responder(200, _listar_snapshots(params.get("board", "")))
         if ruta == "/api/workspaces":
             return self._responder(200, _listar_workspaces())
+        if ruta == "/api/workspace/analizar":
+            return self._responder(200, _analizar_workspace(params.get("ruta", "")))
         if ruta == "/api/exportar-dataset":
             return self._responder(200, _generar_dataset_jsonl(params.get("board")))
         if ruta == "/api/grafo":
@@ -1667,6 +1847,16 @@ class Handler(BaseHTTPRequestHandler):
                     return self._responder(200, _generar_dataset_jsonl(b))
                 except Exception as e:
                     return self._fallo_400("error exportando dataset", e)
+            if self.path == "/api/workspace/analizar":
+                try:
+                    return self._responder(200, _analizar_workspace(cuerpo.get("ruta", "")))
+                except Exception as e:
+                    return self._fallo_400("error analizando workspace", e)
+            if self.path == "/api/orquestar-intencion":
+                try:
+                    return self._responder(200, _orquestar_intencion(cuerpo))
+                except Exception as e:
+                    return self._fallo_400("error orquestando intencion", e)
             if self.path == "/api/parametros":
                 # Los marcadores los detecta el exportador MCP, no una segunda
                 # regex en el navegador: si se duplica, se desincroniza y el

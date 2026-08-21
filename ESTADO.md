@@ -7,9 +7,9 @@
 
 ## Dónde está el código
 
-- Commit `8262943` — feat(studio): catalogo de plantillas profesionales de desarrollo, seguridad y poda YAGNI, y limpieza visual anti-slop
+- Commit `d71a2de` — chore: actualizar ESTADO.md tras inclusion de plantillas profesionales y correcciones UI
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 16
+- Árbol limpio: **no** · sin pushear: 17
 
 ## Runtime prestado
 
@@ -47,7 +47,8 @@
 
 ## Bloqueos
 
-- 16 commit(s) sin pushear
+- hay cambios sin commitear
+- 17 commit(s) sin pushear
 
 ## Qué sigue
 
