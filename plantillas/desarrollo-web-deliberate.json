@@ -1,0 +1,69 @@
+{
+  "board": "desarrollo-web-deliberate",
+  "descripcion": "Diseño y desarrollo web anti-AI-slop con arquitectura Deliberate, paleta OKLCH calibrada, tipografía intencional, micro-interacciones fluidas y accesibilidad WCAG AAA.",
+  "reglas": "Seguir estrictamente los lineamientos de Deliberate y Anti-AI-Slop.\nNo inventar métricas ficticias, no usar gradientes púrpuras genéricos ni tipografías default de frameworks.\nTodo estado interactivo (hover, active, focus-visible, loading, empty, error) debe ser explícito.\nResponder en español técnico.",
+  "nodos": [
+    {
+      "id": "brief_y_sistema",
+      "titulo": "Analizar los requerimientos en {{repo}} y formular la hoja de decisiones de diseño: definir paleta OKLCH calibrada (dominante, neutros, acento), escala tipográfica con jerarquía funcional y tokens de espaciado sin defaults genéricos de IA.",
+      "runtime": "claude-code",
+      "workspace": "{{repo}}",
+      "x": 40,
+      "y": 60
+    },
+    {
+      "id": "estructura_componentes",
+      "titulo": "Construir los componentes web en {{repo}} para el módulo {{modulo}}: estructura HTML semántica accesible, tokens CSS vinculados y todos los estados interactivos (hover, active, focus-visible, disabled, loading, empty).",
+      "runtime": "opencode",
+      "workspace": "{{repo}}",
+      "x": 40,
+      "y": 240
+    },
+    {
+      "id": "microinteracciones_motion",
+      "titulo": "Implementar las transiciones de movimiento fluido y física de resortes en {{modulo}} para {{repo}}: micro-interacciones interrumpibles, animaciones de entrada y respeto estricto a prefers-reduced-motion.",
+      "runtime": "antigravity",
+      "workspace": "{{repo}}",
+      "x": 40,
+      "y": 420
+    },
+    {
+      "id": "auditoria_calidad_web",
+      "titulo": "Auditar el frontend de {{modulo}} en {{repo}}: ejecutar linter de deliberate, validar contraste de color WCAG AAA, verificar responsive layouts en breakpoints móviles y de escritorio, y emitir informe de cumplimiento.",
+      "runtime": "claude-code",
+      "workspace": "{{repo}}",
+      "x": 380,
+      "y": 240
+    },
+    {
+      "id": "entrega_final",
+      "titulo": "Consolidar los entregables de diseño y código web de {{modulo}} en {{repo}}: generar guía de integración, documentación de tokens y verificar que los archivos estén listos para producción sin errores.",
+      "runtime": "antigravity",
+      "workspace": "{{repo}}",
+      "x": 380,
+      "y": 420
+    }
+  ],
+  "aristas": [
+    [
+      "brief_y_sistema",
+      "estructura_componentes"
+    ],
+    [
+      "estructura_componentes",
+      "microinteracciones_motion"
+    ],
+    [
+      "estructura_componentes",
+      "auditoria_calidad_web"
+    ],
+    [
+      "microinteracciones_motion",
+      "entrega_final"
+    ],
+    [
+      "auditoria_calidad_web",
+      "entrega_final"
+    ]
+  ]
+}

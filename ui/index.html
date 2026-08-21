@@ -136,12 +136,12 @@
      stroke-dasharray="4 3" fill="none"></path>
 </svg>
 
-<div id="barraCanvasFlotante" style="position:fixed; top:12px; right:320px; z-index:20; display:flex; gap:4px; background:rgba(20,23,32,0.85); backdrop-filter:blur(8px); border:1px solid var(--linea); border-radius:6px; padding:3px 6px; box-shadow:0 4px 12px rgba(0,0,0,0.4);">
-  <button id="btnZoomIn" title="Acercar zoom" style="font-size:11px; padding:3px 7px; width:auto;">➕</button>
-  <button id="btnZoomOut" title="Alejar zoom" style="font-size:11px; padding:3px 7px; width:auto;">➖</button>
-  <button id="btnZoomReset" title="Zoom 100%" style="font-size:10.5px; padding:3px 7px; width:auto;">1:1</button>
-  <button id="btnZoomFit" title="Encuadrar todos los nodos" style="font-size:10.5px; padding:3px 7px; width:auto;">⛶ Fit</button>
-  <button id="btnModoZen" title="Modo Pantalla Completa / Focus" style="font-size:10.5px; padding:3px 7px; width:auto; background:#242838; border-color:#475069; color:#cdd6f4;">Zen</button>
+<div id="barraCanvasFlotante" style="position:fixed; top:12px; left:12px; z-index:20; display:flex; gap:4px; background:rgba(20,23,32,0.85); backdrop-filter:blur(8px); border:1px solid var(--linea); border-radius:6px; padding:3px 6px; box-shadow:0 4px 12px rgba(0,0,0,0.4);">
+  <button id="btnZoomIn" title="Acercar zoom" style="font-size:12px; padding:3px 8px; width:auto; font-weight:bold;">+</button>
+  <button id="btnZoomOut" title="Alejar zoom" style="font-size:12px; padding:3px 8px; width:auto; font-weight:bold;">-</button>
+  <button id="btnZoomReset" title="Zoom 100%" style="font-size:10.5px; padding:3px 8px; width:auto;">1:1</button>
+  <button id="btnZoomFit" title="Encuadrar todos los nodos" style="font-size:10.5px; padding:3px 8px; width:auto;">Fit</button>
+  <button id="btnModoZen" title="Modo Pantalla Completa / Focus" style="font-size:10.5px; padding:3px 8px; width:auto; background:#242838; border-color:#475069; color:#cdd6f4;">Zen</button>
 </div>
 
 <aside id="panel">
@@ -196,7 +196,7 @@
       </div>
 
       <div style="background:#141720; border:1px solid var(--linea); border-radius:6px; padding:8px 10px; margin-top:2px;">
-        <label style="margin:0 0 4px; font-weight:600; color:var(--acento);">✨ Diseñar flujo con IA</label>
+        <label style="margin:0 0 4px; font-weight:600; color:var(--acento);">Diseñar flujo con IA</label>
         <div style="display:flex; gap:6px;">
           <input id="promptGenIa" placeholder="Ej: 3 nodos para auditar seguridad..." style="margin:0; font-size:12px;">
           <button id="btnGenIa" class="primario" style="width:auto; white-space:nowrap; padding:4px 10px; font-size:12px;">Crear</button>
@@ -226,13 +226,13 @@
         <div class="fila" style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:4px;">
           <button id="exportarCi" style="font-size:10px; padding:4px 2px;">CI/CD</button>
           <button id="exportarPy" style="font-size:10px; padding:4px 2px;">Python</button>
-          <button id="btnSimular" style="font-size:10px; padding:4px 2px; background:#212c3d; border-color:#3b567d;">⚡ Simular</button>
-          <button id="btnLintGrafo" style="font-size:10px; padding:4px 2px; background:#2a2418; border-color:#6d5324; color:#f0c068;">🔍 Lint</button>
+          <button id="btnSimular" style="font-size:10px; padding:4px 2px; background:#212c3d; border-color:#3b567d;">Simular</button>
+          <button id="btnLintGrafo" style="font-size:10px; padding:4px 2px; background:#2a2418; border-color:#6d5324; color:#f0c068;">Lint</button>
         </div>
       </div>
 
       <div style="background:#141720; border:1px solid var(--linea); border-radius:6px; padding:8px 10px; margin-top:4px;">
-        <label style="margin:0 0 6px; font-weight:600; font-size:11.5px;">📸 Puntos de control (Snapshots)</label>
+        <label style="margin:0 0 6px; font-weight:600; font-size:11.5px;">Puntos de control (Snapshots)</label>
         <div class="fila" style="gap:4px; margin-bottom:6px;">
           <input id="descSnapshot" type="text" placeholder="Nota de la versión…" style="flex:1; font-size:11px; margin:0; padding:3px 6px;" />
           <button id="btnGuardarSnapshot" style="white-space:nowrap; padding:3px 8px; font-size:11px;">Guardar</button>
@@ -268,7 +268,7 @@
         <div>
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
             <label style="margin:0;">Título (el goal del nodo)</label>
-            <button id="btnOptimizarGoal" class="res-btn tenue" style="width:auto; padding:2px 8px; font-size:11px;">✨ Optimizar</button>
+            <button id="btnOptimizarGoal" class="res-btn tenue" style="width:auto; padding:2px 8px; font-size:11px;">Optimizar</button>
           </div>
           <textarea id="titulo"></textarea>
         </div>
@@ -319,7 +319,7 @@
           <div id="nodoLinajeTxt" style="color:var(--tenue); font-size:10.5px; margin-top:3px;"></div>
         </div>
         <div id="boxReintentarNodo" style="display:none; margin-top:4px;">
-          <button id="btnReintentarNodo" class="res-btn" style="width:100%; border-color:#8e5229; color:#f0a868; font-weight:600; padding:6px;">🔁 Reintentar este nodo</button>
+          <button id="btnReintentarNodo" class="res-btn" style="width:100%; border-color:#8e5229; color:#f0a868; font-weight:600; padding:6px;">Reintentar este nodo</button>
         </div>
         <button id="borrar" class="peligro">Borrar nodo</button>
       </div>
@@ -360,7 +360,7 @@
       <div>
         <label>Inspeccionar corrida histórica</label>
         <select id="selBoardHistorial"><option value="">(elegir corrida previa…)</option></select>
-        <button id="btnGenerarReporte" style="margin-top:6px; width:100%; font-size:11.5px; padding:4px 8px;">📄 Reporte de Auditoría</button>
+        <button id="btnGenerarReporte" style="margin-top:6px; width:100%; font-size:11.5px; padding:4px 8px;">Reporte de Auditoría</button>
       </div>
 
       <div id="bloqueTelemetria" style="display:none; background:#141720; border:1px solid var(--linea); border-radius:6px; padding:10px; margin-bottom:12px;">
@@ -402,7 +402,7 @@
     <!-- Pestaña 5: Doctor & Preflight -->
     <div id="vista-doctor" class="tab-vista">
       <h2>Diagnóstico del Entorno</h2>
-      <button id="btnEjecutarDoctor" style="width:100%; margin-bottom:8px;">🩺 Ejecutar Diagnóstico</button>
+      <button id="btnEjecutarDoctor" style="width:100%; margin-bottom:8px;">Ejecutar Diagnóstico</button>
       <div id="resultadoDoctor" style="background:#141720; border:1px solid var(--linea); border-radius:6px; padding:10px; font-size:11.5px; line-height:1.5;">
         <div class="d">Haz clic para comprobar la salud de SQLite, runtimes CLI y conectividad del entorno.</div>
       </div>
@@ -735,7 +735,7 @@ async function cargarTraza() {
          <div class="res-hdr">
            <b>Entregable</b>
            <div style="display:flex; gap:6px;">
-             <button class="res-btn" id="btnExpandirRes">Expandir ⛶</button>
+             <button class="res-btn" id="btnExpandirRes">Expandir</button>
              <button class="res-btn" id="btnCopiarRes">Copiar entregable</button>
            </div>
          </div>
@@ -841,7 +841,7 @@ function pintarChat(quien, texto, clase) {
       const btnCargar = document.createElement("button");
       btnCargar.className = "primario";
       btnCargar.style.cssText = "font-size:11.5px; padding:5px 9px;";
-      btnCargar.textContent = `📥 Cargar grafo en el lienzo (${gJson.nodos.length} nodo(s))`;
+      btnCargar.textContent = `Cargar grafo en el lienzo (${gJson.nodos.length} nodo(s))`;
       btnCargar.onclick = async () => {
         anotar();
         abrirGrafo(gJson, gJson.board || grafo.board || "flujo-chat");
@@ -1391,7 +1391,7 @@ $("#btnOptimizarGoal").onclick = async () => {
   const goal = (n.titulo || "").trim();
   if (!goal) return avisar("El goal está vacío.", "error");
   $("#btnOptimizarGoal").disabled = true;
-  $("#btnOptimizarGoal").textContent = "✨ Optimizando…";
+  $("#btnOptimizarGoal").textContent = "Optimizando…";
   avisar("Optimizando goal con el agente...", "ok");
   const { ok, datos } = await api("/api/optimizar-goal", {
     goal: goal,
@@ -1399,7 +1399,7 @@ $("#btnOptimizarGoal").onclick = async () => {
     reglas: grafo.reglas || ""
   });
   $("#btnOptimizarGoal").disabled = false;
-  $("#btnOptimizarGoal").textContent = "✨ Optimizar";
+  $("#btnOptimizarGoal").textContent = "Optimizar";
   if (!ok || !datos.optimizado) return avisar(datos.error || "Fallo optimizando el goal.", "error");
   anotar();
   n.titulo = datos.optimizado;
@@ -1785,9 +1785,8 @@ $("#btnLintGrafo").onclick = async () => {
 
   const itemsHtml = hallazgos.map(h => {
     const col = h.tipo === "advertencia" ? "var(--failed)" : (h.tipo === "optimizacion" ? "#74c0fc" : "#ffd43b");
-    const icono = h.tipo === "advertencia" ? "⚠" : (h.tipo === "optimizacion" ? "⚡" : "💡");
     return `<div style="border-left:3px solid ${col}; background:rgba(255,255,255,0.03); padding:8px 12px; margin:6px 0; border-radius:0 4px 4px 0; font-size:12px;">
-      <b>${icono} [${esc(h.tipo.toUpperCase())}]</b> ${esc(h.mensaje)}
+      <b>[${esc(h.tipo.toUpperCase())}]</b> ${esc(h.mensaje)}
     </div>`;
   }).join("");
 
@@ -1883,7 +1882,7 @@ $("#btnGuardarSnapshot").onclick = async () => {
   });
   if (!ok) return avisar(datos.error || "No se pudo guardar snapshot", "error");
   $("#descSnapshot").value = "";
-  avisar("📸 Snapshot guardado con éxito.", "ok");
+  avisar("Snapshot guardado con éxito.", "ok");
   listarSnapshots();
 };
 
@@ -1945,14 +1944,14 @@ $("#btnRestaurarSnapshot").onclick = async () => {
 
 $("#btnEjecutarDoctor").onclick = async () => {
   $("#btnEjecutarDoctor").disabled = true;
-  $("#btnEjecutarDoctor").textContent = "🩺 Diagnosticando…";
+  $("#btnEjecutarDoctor").textContent = "Diagnosticando…";
   const [{ ok, datos }, { ok: okSec, datos: datosSec }, { ok: okWs, datos: datosWs }] = await Promise.all([
     api("/api/doctor"),
     api("/api/secretos-status"),
     api("/api/workspaces")
   ]);
   $("#btnEjecutarDoctor").disabled = false;
-  $("#btnEjecutarDoctor").textContent = "🩺 Ejecutar Diagnóstico";
+  $("#btnEjecutarDoctor").textContent = "Ejecutar Diagnóstico";
   const box = $("#resultadoDoctor");
   if (!ok || !datos) {
     box.innerHTML = '<div class="intento mal">Error al ejecutar diagnóstico.</div>';
@@ -1981,7 +1980,7 @@ $("#btnEjecutarDoctor").onclick = async () => {
   box.innerHTML = `
     <div style="margin-bottom:8px; border-bottom:1px solid var(--linea); padding-bottom:6px;">
       <b>Plataforma:</b> ${esc(plat.os)} ${esc(plat.release)} · Python ${esc(plat.python)}<br>
-      <b>SQLite:</b> v${esc(plat.sqlite_version)} ${plat.wal_seguro ? '<span style="color:var(--done);">✓ WAL seguro</span>' : '<span style="color:var(--ready);">⚠ DELETE mode</span>'}
+      <b>SQLite:</b> v${esc(plat.sqlite_version)} ${plat.wal_seguro ? '<span style="color:var(--done);">✓ WAL seguro</span>' : '<span style="color:var(--ready);">[!] DELETE mode</span>'}
     </div>
     <div style="margin-bottom:4px; font-weight:600; font-size:11.5px;">Binarios y Runtimes:</div>
     <div style="background:#0e1017; border:1px solid var(--linea); border-radius:4px; padding:6px 8px; margin-bottom:8px;">
@@ -2000,7 +1999,7 @@ $("#btnEjecutarDoctor").onclick = async () => {
     </div>
     <div style="background:#0e1017; border:1px solid var(--linea); border-radius:4px; padding:6px 8px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
       <span style="font-size:11px; color:var(--tenue);">${totalWs ? `${totalWs} carpetas temporales` : 'Sin residuos temporales'}</span>
-      <button id="btnLimpiarWs" style="font-size:10px; padding:2px 8px; ${totalWs ? 'background:#3b2024; color:#fca5a5;' : 'display:none;'}">🧹 Limpiar</button>
+      <button id="btnLimpiarWs" style="font-size:10px; padding:2px 8px; ${totalWs ? 'background:#3b2024; color:#fca5a5;' : 'display:none;'}">Limpiar</button>
     </div>
     <div style="font-size:11px; color:var(--tenue);">
       Runtimes activos para ejecución: <b>${datos.runtimes_activos}/4</b>
@@ -2017,7 +2016,7 @@ $("#btnEjecutarDoctor").onclick = async () => {
     const reponer = () => {
       confirmar = false;
       btnLimpiar.disabled = false;
-      btnLimpiar.textContent = "🧹 Limpiar";
+      btnLimpiar.textContent = "Limpiar";
       btnLimpiar.classList.remove("peligro");
     };
     btnLimpiar.onclick = async () => {
@@ -2046,10 +2045,10 @@ $("#btnEjecutarDoctor").onclick = async () => {
 
 $("#btnGenerarReporte").onclick = async () => {
   $("#btnGenerarReporte").disabled = true;
-  $("#btnGenerarReporte").textContent = "📄 Generando reporte…";
+  $("#btnGenerarReporte").textContent = "Generando reporte…";
   const { ok, datos } = await api(`/api/reporte-corrida?board=${encodeURIComponent(grafo.board)}`);
   $("#btnGenerarReporte").disabled = false;
-  $("#btnGenerarReporte").textContent = "📄 Reporte de Auditoría";
+  $("#btnGenerarReporte").textContent = "Reporte de Auditoría";
   if (!ok || !datos.reporte) return avisar("No se pudo generar el reporte.", "error");
 
   $("#modalEntregableRender").innerHTML = renderMarkdown(datos.reporte);
@@ -2104,7 +2103,7 @@ async function pedirDisenoIa(refinar) {
                           : "Escribí una descripción para el flujo.", "error");
   }
   boton.disabled = true;
-  boton.textContent = refinar ? "✨ Refinando…" : "✨ Creando…";
+  boton.textContent = refinar ? "Refinando…" : "Creando…";
   avisar(refinar ? "Pidiéndole el cambio al agente..." : "Diseñando flujo con IA...", "ok");
   const { ok, datos } = await api("/api/generar-grafo", {
     descripcion: prompt,
@@ -2148,13 +2147,13 @@ $("#btnReintentarNodo").onclick = async () => {
   const tid = ids[sel];
   if (!tid) return;
   $("#btnReintentarNodo").disabled = true;
-  $("#btnReintentarNodo").textContent = "🔁 Reintentando…";
+  $("#btnReintentarNodo").textContent = "Reintentando…";
   const { ok, datos } = await api("/api/reintentar-nodo", {
     board: grafo.board,
     task_id: tid
   });
   $("#btnReintentarNodo").disabled = false;
-  $("#btnReintentarNodo").textContent = "🔁 Reintentar este nodo";
+  $("#btnReintentarNodo").textContent = "Reintentar este nodo";
   if (!ok) return avisar(datos.error || "No se pudo reintentar el nodo", "error");
   avisar(`Nodo '${sel}' desbloqueado para reintento.`, "ok");
   refrescarEstado();
