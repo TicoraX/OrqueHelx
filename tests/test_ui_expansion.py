@@ -230,17 +230,20 @@ try:
     # --- 17. El tope que se informa es el que se APLICO ---
     # Editar el campo con la corrida en marcha no cambia el techo de esa
     # corrida: la barra mostraba un tope que nadie estaba respetando.
-    codigo, datos = pedir(f"/api/consumo?board={BOARD}")
+    BOARD_17 = BOARD + "-17"
+    pedir("/api/compilar", {**GRAFO, "board": BOARD_17, "valores": {"repo": "."}})
+    codigo, datos = pedir(f"/api/consumo?board={BOARD_17}")
     assert datos["tope_usd"] is None, f"informa un tope sin haber arrancado: {datos}"
-    codigo, datos = pedir("/api/correr", {"board": BOARD, "presupuesto_usd": "0.5"})
+    codigo, datos = pedir("/api/correr", {"board": BOARD_17, "presupuesto_usd": "0.5"})
     assert codigo == 200, datos
-    codigo, datos = pedir(f"/api/consumo?board={BOARD}")
+    codigo, datos = pedir(f"/api/consumo?board={BOARD_17}")
     assert datos["tope_usd"] == 0.5, f"no recuerda el tope de la corrida: {datos}"
-    codigo, datos = pedir("/api/correr", {"board": BOARD, "presupuesto_usd": "-1"})
+    codigo, datos = pedir("/api/correr", {"board": BOARD_17, "presupuesto_usd": "-1"})
     assert codigo == 400, "acepto un presupuesto negativo"
-    codigo, datos = pedir(f"/api/consumo?board={BOARD}")
+    codigo, datos = pedir(f"/api/consumo?board={BOARD_17}")
     assert datos["tope_usd"] == 0.5, "un arranque rechazado piso el tope vigente"
     print("17. el consumo informa el tope con el que se arranco: OK")
+    pedir("/api/parar", {"board": BOARD_17})
 
     # --- 18. El grafo guardado conserva sus marcadores ---
     # Se guarda el grafo, no la corrida: si al guardar se sustituyera, el grafo
@@ -632,6 +635,27 @@ try:
     assert res_clean["workspaces_eliminados"] >= 1, res_clean
     assert not test_ws.exists(), "el workspace no fue eliminado"
     print("45. /api/workspaces y /api/workspaces/limpiar inspeccionan y purgan workspaces: OK")
+
+    # --- 45b. La purga NO toca el scratch de una card que esta corriendo ---
+    # El scratch de un nodo es su `cwd` (`workspaces_root/<task_id>`): borrarlo
+    # a mitad de la corrida le saca el piso al agente. Y el boton, sin
+    # argumentos, barre TODOS los boards.
+    conn_ws = k.connect(board=BOARD)
+    viva = k.create_task(conn_ws, title="con scratch en uso",
+                         assignee=dispatcher.carril(RT) if RT else "default")
+    k.claim_task(conn_ws, viva, claimer="prueba-ws")     # la deja en `running`
+    assert k.get_task(conn_ws, viva).status == "running"
+    ws_viva = k.workspaces_root(board=BOARD) / viva
+    ws_viva.mkdir(parents=True, exist_ok=True)
+    (ws_viva / "a-medio-escribir.txt").write_text("no me borres", encoding="utf-8")
+
+    codigo, res_viva = pedir("/api/workspaces/limpiar", {"board": BOARD})
+    assert codigo == 200, res_viva
+    assert ws_viva.exists(), "borro el scratch de una card corriendo"
+    assert any(o.get("task") == viva for o in res_viva.get("omitidos", [])), res_viva
+    print("45b. la purga saltea el scratch de una card en `running` y lo informa: OK")
+    k.complete_task(conn_ws, viva, summary="fin de prueba", result="fin")
+    conn_ws.close()
 
     # --- 46. /api/exportar-dataset genera formato JSONL para benchmark y fine-tuning ---
     codigo, datos_ds = pedir("/api/exportar-dataset", {"board": BOARD})

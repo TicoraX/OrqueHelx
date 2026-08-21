@@ -793,10 +793,18 @@ let MODELO_CHAT = {}, ESFUERZO_CHAT = {};
 
 function extraerGrafoJson(txt) {
   try {
-    const m = txt.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/) ||
-              txt.match(/(\{[\s\S]*?"nodos"\s*:\s*\[[\s\S]*?"aristas"\s*:\s*\[[\s\S]*?\})/);
+    const m = txt.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
     if (m) {
       const obj = JSON.parse(m[1]);
+      if (Array.isArray(obj.nodos) && Array.isArray(obj.aristas)) return obj;
+    }
+    
+    // Fallback: Si no hay bloques markdown, intentar extraer JSON crudo.
+    // El LLM podría devolver prosa antes o después del JSON.
+    const start = txt.indexOf('{');
+    const end = txt.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      const obj = JSON.parse(txt.substring(start, end + 1));
       if (Array.isArray(obj.nodos) && Array.isArray(obj.aristas)) return obj;
     }
   } catch (_) {}
@@ -1432,8 +1440,8 @@ $("#runtime").onchange = e => {
   const niveles = llenarEsfuerzo("#esfuerzo", n.runtime, n.esfuerzo);
   if (n.esfuerzo && !niveles.includes(n.esfuerzo)) delete n.esfuerzo;
   const tope = (CAPS[n.runtime] || {}).tope_gasto_flag;
-  $("#pistaEsfuerzo").textContent = tope ? "— acepta tope de gasto por nodo" : "";
-  pintar(); pistaDeModelo(); cargarModelos();
+  if (!tope) delete n.presupuesto_usd;
+  refrescarEditor(); pintar(); pistaDeModelo(); cargarModelos();
 };
 $("#modelo").oninput = e => {
   const n = buscar(sel);
@@ -1977,16 +1985,37 @@ $("#btnEjecutarDoctor").onclick = async () => {
 
   const btnLimpiar = $("#btnLimpiarWs");
   if (btnLimpiar) {
+    // Doble clic para confirmar, con el mismo patrón que "Borrar" un grafo: un
+    // `confirm()` suprimido por el navegador devuelve false y la acción no pasa
+    // nunca. Acá hace falta porque un solo clic borra el scratch de TODOS los
+    // boards, y eso no se deshace.
+    let confirmar = false;
+    const reponer = () => {
+      confirmar = false;
+      btnLimpiar.disabled = false;
+      btnLimpiar.textContent = "🧹 Limpiar";
+      btnLimpiar.classList.remove("peligro");
+    };
     btnLimpiar.onclick = async () => {
+      if (!confirmar) {
+        confirmar = true;
+        btnLimpiar.textContent = "¿Borrar todos?";
+        btnLimpiar.classList.add("peligro");
+        setTimeout(() => { if (confirmar) reponer(); }, 4000);
+        return;
+      }
+      confirmar = false;
       btnLimpiar.disabled = true;
       btnLimpiar.textContent = "Limpiando…";
       const { ok: okL, datos: datosL } = await api("/api/workspaces/limpiar", {});
-      if (okL) {
-        avisar(`✓ ${datosL.workspaces_eliminados} workspaces eliminados (${datosL.liberado_humano} liberados).`, "ok");
-        $("#btnEjecutarDoctor").click();
-      } else {
-        avisar(datosL?.error || "Error al limpiar workspaces", "error");
-      }
+      reponer();                       // pase lo que pase: antes quedaba muerto
+      if (!okL) return avisar(datosL?.error || "Error al limpiar workspaces", "error");
+      const om = (datosL.omitidos || []).length;
+      avisar(`✓ ${datosL.workspaces_eliminados} workspaces eliminados `
+             + `(${datosL.liberado_humano} liberados).`
+             + (om ? ` ${om} sin tocar por estar en uso.` : ""),
+             om ? "tibio" : "ok");
+      $("#btnEjecutarDoctor").click();
     };
   }
 };
