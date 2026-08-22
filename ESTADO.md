@@ -7,9 +7,9 @@
 
 ## Dónde está el código
 
-- Commit `b986abb` — docs: catalogo de ideas evaluado contra el codigo, y se van cuatro docs muertos
+- Commit `b1abbb7` — fix(runtime): el board se normaliza como en el kanban, y el arranque toma lock
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: **no** · sin pushear: 0
+- Árbol limpio: sí · sin pushear: 1
 
 ## Runtime prestado
 
@@ -47,11 +47,10 @@
 
 ## Bloqueos
 
-- hay cambios sin commitear
+- 1 commit(s) sin pushear
 
 ## Qué sigue
 
-- 61 commit(s) pusheados y sin mergear a master (rama de trabajo)
 - `docker compose up -d db` si vas a usar multiusuario
 - §10 tiene 1 afirmación(es) pendiente(s)
 - conectar el Studio a la API multiusuario (hoy le habla directo al motor)
