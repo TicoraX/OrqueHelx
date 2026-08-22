@@ -357,22 +357,28 @@ def trazabilidad(grafo: dict, nodo_id: str) -> dict:
         padres[h].add(p)
         hijos[p].add(h)
 
-    def _recorrer_ancestros(nid, visitados=None):
-        if visitados is None:
-            visitados = set()
-        for p in padres.get(nid, set()):
-            if p not in visitados:
-                visitados.add(p)
-                _recorrer_ancestros(p, visitados)
+    def _recorrer_ancestros(nid):
+        visitados = set()
+        pila = list(padres.get(nid, set()))
+        while pila:
+            if len(visitados) > 10_000:
+                raise ValueError("grafo demasiado grande para analizar trazabilidad")
+            actual = pila.pop()
+            if actual not in visitados:
+                visitados.add(actual)
+                pila.extend(p for p in padres.get(actual, set()) if p not in visitados)
         return visitados
 
-    def _recorrer_descendientes(nid, visitados=None):
-        if visitados is None:
-            visitados = set()
-        for h in hijos.get(nid, set()):
-            if h not in visitados:
-                visitados.add(h)
-                _recorrer_descendientes(h, visitados)
+    def _recorrer_descendientes(nid):
+        visitados = set()
+        pila = list(hijos.get(nid, set()))
+        while pila:
+            if len(visitados) > 10_000:
+                raise ValueError("grafo demasiado grande para analizar trazabilidad")
+            actual = pila.pop()
+            if actual not in visitados:
+                visitados.add(actual)
+                pila.extend(h for h in hijos.get(actual, set()) if h not in visitados)
         return visitados
 
     ancestros = sorted(list(_recorrer_ancestros(nodo_id)))

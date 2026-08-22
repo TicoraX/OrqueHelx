@@ -105,7 +105,10 @@ def main() -> int:
         print(f"{corridos}/{len(tests)} OK, {len(omitidos)} OMITIDO(S): "
               f"{', '.join(omitidos)}.")
         print("No es verde entero: eso no se probo.")
-        return 0
+        # --strict: en CI un test omitido no es verde. Sin el flag, se mantiene
+        # el comportamiento original (0) para desarrollo local donde puede no
+        # haber Postgres.
+        return 2 if "--strict" in sys.argv else 0
     print(f"OK: {len(tests)}/{len(tests)}, ninguno omitido.")
     return 0
 

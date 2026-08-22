@@ -1202,6 +1202,17 @@ def _quedan_de_hermes(conn) -> bool:
 
 
 def _arrancar(board: str, tope_usd: float = None) -> dict:
+    # El nombre se valida ACA y no en la ruta: `_arrancar` tiene dos llamadores
+    # (`/api/correr` y el modo App), y una guarda puesta en uno solo es como
+    # llegamos a la mitad de los bugs de esta rama.
+    #
+    # NO es por inyeccion de comandos: se probo. `subprocess.run` con lista y
+    # sin `shell=True` cita los argumentos incluso para un `.cmd` (Python 3.11.14
+    # devolvio `arg=["inocente & echo pwned"]` y no ejecuto nada), y ademas
+    # `_resolver_argv` ya resuelve el shim de npm al `.exe` real. Es por lo
+    # aburrido: un nombre con `/` o `..` llega a `k.connect`, que hace
+    # `mkdir(parents=True)`, y termina creando directorios donde no va.
+    _ruta_segura(board, GRAFOS, "board")
     if board in _corriendo and _corriendo[board].is_alive():
         return {"ok": False, "motivo": "ya hay un dispatcher corriendo en este board"}
 
@@ -1211,13 +1222,29 @@ def _arrancar(board: str, tope_usd: float = None) -> dict:
     # mismo comportamiento.
     hermes = mcp._hermes_bin()
 
+    # `[0]` y no una variable suelta: el `_tick_hermes` de abajo necesita
+    # recordar el proceso ENTRE vueltas del loop, y una lista es el closure mas
+    # corto que hay para eso.
+    en_vuelo = [None]
+
     def _tick_hermes():
+        """Pincha al dispatcher de Hermes sin quedarse esperandolo.
+
+        Era `subprocess.run(..., timeout=180)` adentro del while: un Hermes
+        colgado frenaba TRES MINUTOS el despacho de nuestro propio carril, que
+        no tiene nada que ver con el suyo. Ahora se lanza y se sigue; en la
+        vuelta siguiente, si el anterior no termino, no se lanza otro (dos
+        dispatchers sobre el mismo board se pisan el claim).
+        """
         if not hermes:
             return
+        if en_vuelo[0] is not None and en_vuelo[0].poll() is None:
+            return                         # el anterior sigue trabajando
         try:
-            subprocess.run([hermes, "kanban", "--board", board, "dispatch"],
-                           capture_output=True, timeout=180,
-                           stdin=subprocess.DEVNULL)
+            en_vuelo[0] = subprocess.Popen(
+                [hermes, "kanban", "--board", board, "dispatch"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL)
         except Exception:
             traceback.print_exc()          # que no tumbe el loop del carril propio
 
@@ -1248,6 +1275,11 @@ def _arrancar(board: str, tope_usd: float = None) -> dict:
         except Exception:
             traceback.print_exc()
         finally:
+            # El hijo de Hermes no sobrevive a la corrida: si sigue vivo cuando
+            # esto termina, queda un dispatcher suelto sobre un board que el
+            # Studio ya da por cerrado.
+            if en_vuelo[0] is not None and en_vuelo[0].poll() is None:
+                en_vuelo[0].terminate()
             _corriendo.pop(board, None)
             _parar.discard(board)
 
@@ -1380,6 +1412,14 @@ def _analizar_workspace(ruta: str) -> dict:
     p = Path(ruta).resolve()
     if not p.exists() or not p.is_dir():
         raise ValueError(f"La carpeta '{ruta}' no existe o no es un directorio")
+    # Sin allowlist de rutas, a proposito. Se probo una (home + raiz del repo) y
+    # rechazaba `A:/Proyectos/skills`, que es exactamente el caso de uso: "elegi
+    # una carpeta" no puede significar "elegi una carpeta de esta lista". Y no
+    # compra nada: `/api/*` ya exige token, y lo siguiente que hace el producto
+    # con esa carpeta es correr un agente con shell adentro. Restringir la
+    # LECTURA mientras se permite la EJECUCION no es una barrera, es un
+    # inconveniente. La barrera real es el token, mas no ejecutar lo que la
+    # carpeta diga (ver `_sin_filtros`).
 
     stack = "Desconocido"
     frameworks = []
@@ -1625,6 +1665,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(codigo)
         self.send_header("Content-Type", tipo)
         self.send_header("Content-Length", str(len(datos)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        if tipo == "application/json":
+            self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(datos)
 

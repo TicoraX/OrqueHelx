@@ -23,11 +23,16 @@ actual = subprocess.run(["git", "-C", str(RAIZ / "hermes-agent"), "rev-parse", "
                         capture_output=True, text=True).stdout.strip()
 print(f"pin     : {pin['commit'][:12]} ({pin['fecha']})")
 print(f"clon    : {actual[:12]}")
-if actual != pin["commit"]:
-    print("\n  AVISO: el clon se movio del commit verificado.")
-    print("  Las afirmaciones de ARQUITECTURA.md §10 se comprobaron contra el pin.")
-    print("  Revalidar la suite y actualizar HERMES_PIN, o volver al pin:")
-    print(f"    git -C hermes-agent checkout {pin['commit'][:12]}")
+# Falla, no avisa. Un aviso en medio de una suite verde no lo lee nadie, y el
+# pin es el contrato entero del "motor prestado": si el clon se movio, las
+# afirmaciones de ARQUITECTURA.md §10 se comprobaron contra otro codigo. Que el
+# desfase sea deliberado se declara moviendo HERMES_PIN, que es justamente el
+# acto de revalidar.
+assert actual == pin["commit"], (
+    f"el clon esta en {actual[:12]} y el pin dice {pin['commit'][:12]}.\n"
+    "  Las afirmaciones de ARQUITECTURA.md §10 se comprobaron contra el pin.\n"
+    "  Revalidar la suite y actualizar HERMES_PIN, o volver al pin:\n"
+    f"    git -C hermes-agent checkout {pin['commit'][:12]}")
 
 # La copia instalada: la que corre el CLI y el dispatcher de Hermes.
 exe = Path(os.environ["LOCALAPPDATA"]) / "hermes/hermes-agent/venv/Scripts/hermes.exe"

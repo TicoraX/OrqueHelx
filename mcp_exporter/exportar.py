@@ -59,10 +59,24 @@ def sustituir(grafo: dict, valores: dict) -> dict:
         # con string lo interpretaria como referencia de grupo.
         return _MARCADOR.sub(lambda m: str(valores.get(m.group(1), m.group(0))), txt or "")
 
-    return {**grafo,
+    resultado = {**grafo,
             "nodos": [{clave: _sub(valor) if isinstance(valor, str) else valor
                        for clave, valor in n.items()}
                       for n in grafo.get("nodos") or []]}
+    # El `workspace` es el `cwd` del agente, y aca es donde un valor de AFUERA
+    # entra al grafo: por el servidor MCP lo elige un IDE ajeno, no el autor.
+    # Un `..` en el medio saca al agente del arbol que el grafo declaraba.
+    #
+    # Se saco de esta guarda un `not Path(ws).resolve().is_absolute()` que
+    # estaba muerto: `resolve()` SIEMPRE devuelve una ruta absoluta, asi que esa
+    # mitad de la condicion era `not True` en los tres casos posibles
+    # (verificado con una ruta absoluta, una con '..' y una relativa).
+    for n in resultado.get("nodos") or []:
+        ws = n.get("workspace") or ""
+        if ws and ".." in Path(ws).parts:
+            raise ValueError(
+                f"workspace invalido tras sustituir: {ws!r} sale del arbol con '..'")
+    return resultado
 
 
 def _hermes_bin() -> str | None:
