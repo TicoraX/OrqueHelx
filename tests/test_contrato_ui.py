@@ -18,7 +18,7 @@ el navegador, por su lado, barre el texto visible buscando `undefined`.
 
     uv run --python 3.11 --with jsonschema --with pyyaml python tests/test_contrato_ui.py
 """
-import json, os, subprocess, sys, tempfile, time
+import gc, json, os, re, sqlite3, subprocess, sys, tempfile, time
 import urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 
@@ -33,6 +33,8 @@ import loop as dispatcher
 PUERTO = 8799
 TOKEN = "token-de-prueba-contrato"
 BOARD = f"contrato-{int(time.time()) % 100000}"
+# Todo board que este test cree, para borrarlo al final.
+_creados = {BOARD, f"{BOARD}-c"}
 FIJAS = json.loads((RAIZ / "tests" / "fixtures" / "respuestas_ui.json")
                    .read_text(encoding="utf-8"))
 
@@ -104,7 +106,7 @@ def recorrer(datos, camino):
     return True
 
 
-def TABLA(grafo, board, repo, tarea, snap, sucio):
+def TABLA(grafo, board, repo, tarea, snap, sucio, plantilla, copia):
     """Lo que `ui/index.html` lee de cada respuesta, endpoint por endpoint.
 
     Escrito a mano, no extraido con una regex. Lo intente: un extractor sobre el
@@ -145,10 +147,12 @@ def TABLA(grafo, board, repo, tarea, snap, sucio):
         # de aca, y llegan asincronos DESPUES del primer dibujo.
         ("/api/capacidades", None,
          ["*.tope_gasto_flag", "*.modelo_forma", "*.esfuerzos"]),
+        ("/api/snapshot", {"board": board, "grafo": grafo, "descripcion": "tabla"}, []),
         (f"/api/snapshots?board={board}", None,
          ["snapshots[].id", "snapshots[].descripcion", "snapshots[].total_nodos"]),
 
         # --- Lo que se calcula sobre el grafo, sin tocar nada ------------------
+        ("/api/validar", grafo, []),
         ("/api/ordenar", grafo, ["posiciones"]),
         ("/api/simular", grafo, [
             "total_nodos", "paralelismo_maximo", "camino_critico_pasos", "runtimes",
@@ -187,6 +191,15 @@ def TABLA(grafo, board, repo, tarea, snap, sucio):
             "eventos[].kind", "eventos[].cuando", "eventos[].detalle",
         ]),
 
+        # --- Guardar, abrir, copiar y borrar ----------------------------------
+        # `abrirGrafo(datos, nombre)`: el grafo llega en la raiz de la respuesta,
+        # no anidado. La UI dibuja `nodos` y `aristas` directo de ahi.
+        ("/api/grafo", grafo, []),                      # POST: guardar
+        (f"/api/grafo?nombre={board}", None, ["nodos", "aristas"]),
+        ("/api/compilar", {**grafo, "board": f"{board}-c"}, ["ids"]),
+        ("/api/plantilla", {"plantilla": plantilla, "nombre": copia}, ["grafo"]),
+        ("/api/grafo/borrar", {"board": copia}, []),    # se lleva la copia de arriba
+
         # --- La carpeta que el modo App analiza -------------------------------
         (f"/api/workspace/analizar?ruta={repo}", None, [
             "nombre", "ruta", "es_git", "git_branch", "git_cambios_pendientes",
@@ -198,18 +211,24 @@ def TABLA(grafo, board, repo, tarea, snap, sucio):
 # Lo que NO se contrasta, y por que. Se imprime al terminar: una omision dicha
 # es una decision; una omision callada es el bug de la proxima tanda.
 AFUERA = {
-    "/api/chat": "llama a un agente: cuesta plata en cada corrida",
-    "/api/generar-grafo": "llama a un agente",
-    "/api/optimizar-goal": "llama a un agente",
-    "/api/orquestar-intencion": "llama a un agente (su forma se fija en el mock)",
+    # Se contrastan igual, sin HTTP y sin agente, en el punto 8.
+    "/api/generar-grafo": "por HTTP llamaria a un agente; su forma va en el punto 8",
+    "/api/optimizar-goal": "por HTTP llamaria a un agente; su forma va en el punto 8",
+    "/api/orquestar-intencion": "por HTTP llamaria a un agente; su forma va en el punto 8",
+    # Cubiertos por otro test de la suite. Decir donde vale mas que decir que no.
+    "/api/chat": "responde el dict de `run_chat` tal cual; su forma la fija test_chat",
+    "/api/workspace/elegir": "abre un dialogo del sistema; sus 4 salidas van en test_modo_app",
+    # Sin cubrir, y por que.
     "/api/modelos": "lanza un subproceso que consulta al proveedor",
     "/api/correr": "arranca el dispatcher",
     "/api/parar": "frena una corrida",
     "/api/reintentar-nodo": "reabre una card",
-    "/api/grafo/borrar": "borra un archivo del usuario",
     "/api/workspaces/limpiar": "borra el scratch de todos los boards",
     "/api/snapshot/restaurar": "pisa el grafo abierto",
-    "/api/workspace/elegir": "abre un dialogo del sistema y bloquea el test",
+    "/api/guardar-plantilla": "escribe en el catalogo del usuario y no hay endpoint para borrarla",
+    "/api/boards": "no lo lee nadie en la UI (QA-2026-08-20 D3): endpoint muerto",
+    "/api/telemetria": "punto 1: su forma se contrasta contra el mock del navegador",
+    "/api/estado": "punto 1: su forma se contrasta contra el mock del navegador",
 }
 
 env = {**os.environ, "ORQUESTER_TOKEN": TOKEN, "PYTHONIOENCODING": "utf-8"}
@@ -352,7 +371,15 @@ try:
     rotos, sin_datos, revisadas, cubiertos = [], [], 0, set()
     SUCIO = {**GRAFO, "nodos": GRAFO["nodos"] + [
         {"id": "c", "titulo": "aislado", "runtime": "opencode"}]}
-    for ruta, cuerpo, caminos in TABLA(GRAFO, BOARD, repo, tarea, snap, SUCIO):
+    # Una plantilla del catalogo, para copiarla y borrar la copia enseguida: es
+    # la unica forma de ejercitar `/api/plantilla` sin dejar basura.
+    _, cat = pedir("/api/plantillas")
+    PLANTILLA = (cat.get("plantillas") or [{}])[0].get("nombre", "")
+    assert PLANTILLA, "el catalogo de plantillas vino vacio"
+    COPIA = f"{BOARD}-copia"
+
+    for ruta, cuerpo, caminos in TABLA(GRAFO, BOARD, repo, tarea, snap, SUCIO,
+                                       PLANTILLA, COPIA):
         codigo, datos = pedir(ruta, cuerpo)
         assert codigo == 200, f"{ruta} devolvio {codigo}: {datos}"
         for camino in caminos:
@@ -380,6 +407,110 @@ try:
     else:
         print("6. ningun camino quedo sin datos: OK")
 
+    # --- 7. Ninguna ruta del servidor queda sin declarar ----------------------
+    # El punto que hace que esto no se pudra. Sin el, la tabla es "me acorde de
+    # todos" y nadie se entera de la ruta 45. Se escribio despues de que una
+    # comparacion a mano encontrara SEIS rutas que no estaban ni en la tabla ni
+    # en AFUERA: no se habian excluido por ningun motivo, se habian perdido.
+    #
+    # Del fuente y no de una lista escrita al lado: una lista al lado es otra
+    # cosa que se queda vieja. Es la misma idea que `test_pin_hermes`.
+    fuente = (RAIZ / "ui" / "server.py").read_text(encoding="utf-8")
+    del_servidor = set(re.findall(r'(?:ruta|self\.path) == "(/api/[^"]+)"', fuente))
+    assert len(del_servidor) >= 40, (
+        f"el patron encontro {len(del_servidor)} rutas: cambio la forma de "
+        "despachar en server.py y este chequeo dejo de mirar lo que decia mirar")
+
+    declaradas = {r.split("?")[0] for r, _, _ in
+                  TABLA(GRAFO, BOARD, repo, tarea, snap, SUCIO, PLANTILLA, COPIA)}
+    declaradas |= set(AFUERA)
+    huerfanas = sorted(del_servidor - declaradas)
+    assert not huerfanas, (
+        "rutas del servidor que no estan ni contrastadas ni declaradas en "
+        f"AFUERA:\n  " + "\n  ".join(huerfanas) +
+        "\n  (agregala a TABLA con lo que la UI le lee, o a AFUERA con el motivo)")
+
+    # Y al reves: una entrada que apunta a una ruta que ya no existe es una
+    # cobertura imaginaria, que es peor que ninguna.
+    fantasmas = sorted(declaradas - del_servidor)
+    assert not fantasmas, (
+        f"declaradas pero el servidor ya no las sirve: {fantasmas}")
+    print(f"7. las {len(del_servidor)} rutas de server.py estan declaradas: OK")
+
+    # --- 8. Los tres que llaman a un agente, sin llamar a ninguno -------------
+    # Los tenia afuera por caros y estaba equivocado: la forma de la respuesta no
+    # la arma el agente, la arma este codigo envolviendo lo que el agente
+    # devolvio. Es determinista y se puede mirar gratis.
+    #
+    # En proceso y no por HTTP: lo que se pregunta es la forma de un diccionario,
+    # y el HTTP no agrega nada a esa pregunta. Ademas es lo unico que permite
+    # stubbear el agente, que en el subproceso del Studio esta fuera de alcance.
+    sys.path.insert(0, str(RAIZ / "ui"))
+    import server as srv
+
+    GRAFO_DEL_AGENTE = json.dumps({
+        "board": "disenado", "nodos": [
+            {"id": "n1", "titulo": "leer", "runtime": "opencode"},
+            {"id": "n2", "titulo": "escribir", "runtime": "opencode"}],
+        "aristas": [["n1", "n2"]]})
+
+    chat_real, rt_real, arrancar_real = (srv.dispatcher.run_chat,
+                                         srv._runtime_para_chatear, srv._arrancar)
+    srv.dispatcher.run_chat = lambda rt, prompt, **kw: {
+        "texto": GRAFO_DEL_AGENTE if "arquitecto" in prompt else "goal optimizado",
+        "sesion": "ses-1", "uso": {"costo_usd": 0.0}}
+    # Sin esto, en una maquina sin CLIs instalados las dos funciones se van por
+    # la rama degradada y el camino con agente nunca se mira.
+    srv._runtime_para_chatear = lambda rt: "opencode"
+    srv._arrancar = lambda board, tope: {"ok": True, "motivo": ""}
+    try:
+        # Las dos ramas tienen que devolver LAS MISMAS claves. Si la degradada
+        # devolviera de menos, la UI leeria `undefined` justo cuando algo salio
+        # mal, que es cuando el usuario mas necesita que le hablen claro.
+        for nombre, con_agente, degradado in (
+            ("_generar_grafo",
+             srv._generar_grafo("armá un flujo de revisión"),
+             srv._generar_grafo("armá un flujo de revisión", dry_run=True)),
+            ("_optimizar_goal",
+             srv._optimizar_goal("revisá el repo"),
+             srv._optimizar_goal("revisá el repo", dry_run=True)),
+        ):
+            assert set(con_agente) == set(degradado), (
+                f"{nombre}: la rama degradada devuelve otras claves que la normal: "
+                f"con agente {sorted(con_agente)} / degradada {sorted(degradado)}")
+            assert degradado["degradado"] is True and con_agente["degradado"] is False, (
+                f"{nombre}: `degradado` no distingue las dos ramas")
+
+        g = srv._generar_grafo("armá un flujo de revisión")
+        for camino in ("grafo.board", "grafo.nodos", "grafo.aristas",
+                       "degradado", "motivo", "sesion"):
+            assert recorrer(g, camino) is True, f"_generar_grafo no devuelve {camino}"
+        # La UI dibuja los nodos con las coordenadas que vienen del servidor.
+        n0 = g["grafo"]["nodos"][0]
+        faltan_n = [c for c in ("id", "titulo", "runtime", "x", "y") if c not in n0]
+        assert not faltan_n, f"al nodo disenado le faltan {faltan_n}: {n0}"
+
+        o = srv._optimizar_goal("revisá el repo")
+        for camino in ("optimizado", "degradado", "motivo"):
+            assert recorrer(o, camino) is True, f"_optimizar_goal no devuelve {camino}"
+
+        # Y el mock del modo App, que hasta aca era el unico sin contrastar:
+        # `/api/orquestar-intencion` no se puede pedir por HTTP sin gastar, asi
+        # que su forma se comparaba contra si misma.
+        oi = srv._orquestar_intencion({"workspace": str(RAIZ), "prompt": "revisá el repo",
+                                       "ejecutar": True, "tope_usd": "1"})
+        _creados.add(oi.get("board", ""))
+        faltan_oi = comparar(FIJAS["/api/orquestar-intencion"], oi)
+        assert not faltan_oi, (
+            "el mock de /api/orquestar-intencion promete claves que la funcion "
+            f"no devuelve: {faltan_oi}\n  devuelve: {sorted(oi)}")
+        print("8. las 3 funciones que llaman a un agente devuelven lo que la UI "
+              "lee, con agente y sin el: OK")
+    finally:
+        srv.dispatcher.run_chat = chat_real
+        srv._runtime_para_chatear = rt_real
+        srv._arrancar = arrancar_real
+
     print(f"\n   afuera del contraste, a proposito ({len(AFUERA)}):")
     for ruta, motivo in sorted(AFUERA.items()):
         print(f"     {ruta:26} {motivo}")
@@ -393,7 +524,34 @@ finally:
     except subprocess.TimeoutExpired:
         proc.kill()
     _cerrar_log()
-    try:
-        k.connect(board=BOARD).close()
-    except Exception:
-        pass
+    # Lo que este test escribio, este test lo saca. `ui/grafos/` es la carpeta
+    # donde el usuario guarda SUS flujos y `list_boards` es lo que llena el
+    # desplegable de corridas previas del Studio: un test que deja tres boards y
+    # un .json por corrida le ensucia la interfaz a quien lo corra dos veces.
+    for f in (RAIZ / "ui" / "grafos").glob(f"{BOARD}*.json"):
+        f.unlink(missing_ok=True)
+    # Antes de borrar: soltar las conexiones que este proceso dejo abiertas. En
+    # Windows un `.db` con un handle vivo no se puede borrar, y `compilar`,
+    # `ejecutar_una` y `_orquestar_intencion` abren la suya adentro sin
+    # devolverla. La causa se vio en el error, no se adivino:
+    #   PermissionError [WinError 32] ... 'boards\contrato-82636\kanban.db'
+    # ponytail: barrido por `gc` en vez de un registro de conexiones. Es teardown
+    # de un test; si algun dia hace falta en produccion, ahi si va el registro.
+    for objeto in gc.get_objects():
+        if isinstance(objeto, sqlite3.Connection):
+            try:
+                objeto.close()
+            except Exception:
+                pass
+
+    for slug in sorted(x for x in _creados if x):
+        try:
+            # `archive=False`: archivar mueve el directorio a `_archived/`, o sea
+            # que la basura de un test seguiria ocupando disco del usuario para
+            # siempre. Lo que este test creo no vale la pena recuperarlo.
+            k.remove_board(slug, archive=False)
+        except Exception as e:
+            # Dicho, no tragado: un limpiado que falla en silencio es como
+            # empezo este problema.
+            print(f"   [aviso] no se pudo borrar el board {slug}: "
+                  f"{type(e).__name__}: {e}")
