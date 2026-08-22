@@ -18,7 +18,8 @@ sys.path.insert(0, str(RAIZ / "hermes-agent"))
 import hermes_cli.kanban_db as k
 
 from backends import (run_backend, chat_backend, BackendError, BACKENDS,
-                      matar_procesos_activos, marcar_board)
+                      matar_procesos_activos, matar_proceso_task,
+                      marcar_board, marcar_tarea)
 
 # El carril va en `assignee`, y el runtime como sufijo: `orquester-external:opencode`.
 # Informacion de ruteo en el campo de ruteo. Dos razones para no usar `skills`:
@@ -379,12 +380,14 @@ def tick(conn, *, timeout: int = 600, board: str = None,
         # El hilo del pool queda fichado con su board, que es lo que despues
         # permite parar ESTA corrida sin llevarse puesta la de al lado.
         marcar_board(board)
+        marcar_tarea(t.id)
         try:
             return (t.id, ejecutar_una(c, t.id, timeout=timeout,
                                        presupuesto=resto))
         finally:
             # Los hilos del pool se reciclan entre ticks: dejar la marca vieja
             # puesta ficharia el proximo proceso en el board equivocado.
+            marcar_tarea(None)
             marcar_board(None)
             c.close()
 

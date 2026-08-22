@@ -102,6 +102,28 @@ try:
         f"el fichero no quedo vacio: {b._PROCESOS_ACTIVOS}")
     print("5. desregistrar saca el proceso y la clave del board vacia: OK")
 
+    # --- 6. Matar un proceso especifico por task_id ----------------------------
+    def lanzar_con_task(board, task_id):
+        b.marcar_board(board)
+        b.marcar_tarea(task_id)
+        p = subprocess.Popen(DORMIR, stdin=subprocess.DEVNULL)
+        b.registrar_proceso(p)
+        b.marcar_tarea(None)
+        b.marcar_board(None)
+        abiertos.append(p)
+        return p
+
+    pt1 = lanzar_con_task("board-d", "t_1")
+    pt2 = lanzar_con_task("board-d", "t_2")
+    assert vivo(pt1, 0.3) and vivo(pt2, 0.3), "no arrancaron con task"
+
+    matado = b.matar_proceso_task("board-d", "t_1")
+    assert matado is True, "no mato la tarea t_1"
+    assert not vivo(pt1), "quedo viva la tarea t_1"
+    assert vivo(pt2), "mato la tarea t_2 indebidamente"
+    b.matar_procesos_activos("board-d")
+    print("6. matar_proceso_task corta solo la tarea indicada: OK")
+
     print("\nOK: parar una corrida corta esa corrida y ninguna otra.")
 finally:
     for p in abiertos:

@@ -129,6 +129,31 @@ def _parar_board(board: str) -> dict:
         "tareas_bloqueadas": n_bloqueadas
     }
 
+
+def _parar_nodo(board: str, task_id: str) -> dict:
+    """Detener inmediatamente un nodo especifico en ejecucion."""
+    muerto = False
+    try:
+        muerto = dispatcher.matar_proceso_task(board, task_id)
+    except Exception:
+        pass
+    bloqueado = False
+    try:
+        conn = _conn(board)
+        t = k.get_task(conn, task_id)
+        if t and t.status in ("running", "ready", "todo"):
+            k.block_task(conn, task_id, reason="Detenido por el usuario", kind="capability")
+            bloqueado = True
+    except Exception:
+        pass
+    return {
+        "ok": True,
+        "board": board,
+        "task_id": task_id,
+        "proceso_matado": muerto,
+        "tarea_bloqueada": bloqueado,
+    }
+
 # board -> tope de gasto con el que se arranco. El Studio tiene que mostrar el
 # que se esta APLICANDO, no el que hay tipeado en el campo: editar el campo con
 # una corrida en marcha no cambia el tope de esa corrida, y la barra mostraba
@@ -208,6 +233,50 @@ def _catalogo() -> dict:
             "faltan": capacidades.faltantes(runtimes),
         })
     return {"plantillas": salida}
+
+
+def _catalogo_skills() -> dict:
+    """Listar las skills disponibles en los directorios del entorno local."""
+    carpetas = [
+        Path.home() / ".gemini" / "config" / "skills",
+        RAIZ.parent / "skills",
+        Path.home() / ".claude" / "skills",
+        Path.home() / ".codex" / "skills",
+    ]
+    encontradas = {}
+    for base in carpetas:
+        if not base.is_dir():
+            continue
+        try:
+            for d in base.iterdir():
+                if not d.is_dir():
+                    continue
+                skill_md = d / "SKILL.md"
+                if not skill_md.is_file():
+                    continue
+                nombre = d.name
+                if nombre in encontradas:
+                    continue
+                desc = ""
+                try:
+                    txt = skill_md.read_text(encoding="utf-8", errors="ignore")
+                    if txt.startswith("---"):
+                        partes = txt.split("---", 2)
+                        if len(partes) >= 3:
+                            for linea in partes[1].splitlines():
+                                if linea.strip().startswith("description:"):
+                                    desc = linea.partition(":")[2].strip().strip('"').strip("'")
+                                    break
+                except Exception:
+                    pass
+                encontradas[nombre] = {
+                    "nombre": nombre,
+                    "descripcion": desc or "Habilidad de agente local",
+                    "ruta": str(skill_md),
+                }
+        except Exception:
+            continue
+    return {"skills": sorted(encontradas.values(), key=lambda x: x["nombre"]), "total": len(encontradas)}
 
 
 def _guardar_plantilla(nombre: str, descripcion: str, grafo: dict,
@@ -1852,9 +1921,36 @@ class Handler(BaseHTTPRequestHandler):
             traceback.print_exc()
             return self._responder(500, {"error": f"{type(e).__name__}: {e}"})
 
+    def _stream_eventos(self, board: str):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        ultimo_hash = None
+        for _ in range(60):
+            try:
+                est = _estado(board)
+                est_raw = json.dumps(est, sort_keys=True)
+                if est_raw != ultimo_hash:
+                    msg = f"data: {json.dumps(est)}\n\n".encode("utf-8")
+                    self.wfile.write(msg)
+                    self.wfile.flush()
+                    ultimo_hash = est_raw
+                time.sleep(0.5)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                break
+            except Exception:
+                break
+
     def _get(self, ruta, params):
         if ruta == "/":
             return self._responder(200, HTML.read_bytes(), "text/html; charset=utf-8")
+        if ruta == "/api/eventos":
+            return self._stream_eventos(params.get("board", "orquester"))
+        if ruta == "/api/skills/catalogo":
+            return self._responder(200, _catalogo_skills())
         if ruta == "/api/estado":
             return self._responder(200, _estado(params.get("board", "orquester")))
         if ruta == "/api/capacidades":
@@ -2127,6 +2223,10 @@ class Handler(BaseHTTPRequestHandler):
                 board = cuerpo.get("board", "orquester")
                 res = _parar_board(board)
                 return self._responder(200, res)
+            if self.path == "/api/nodo/parar":
+                board = cuerpo.get("board", "orquester")
+                tid = cuerpo.get("task_id") or ""
+                return self._responder(200, _parar_nodo(board, tid))
             if self.path == "/api/correr":
                 tope = cuerpo.get("presupuesto_usd")
                 try:

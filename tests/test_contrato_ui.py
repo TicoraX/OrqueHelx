@@ -143,6 +143,9 @@ def TABLA(grafo, board, repo, tarea, snap, sucio, plantilla, copia):
             "plantillas[].nombre", "plantillas[].descripcion", "plantillas[].nodos",
             "plantillas[].runtimes", "plantillas[].parametros", "plantillas[].faltan",
         ]),
+        ("/api/skills/catalogo", None, [
+            "skills[].nombre", "skills[].descripcion", "total",
+        ]),
         ("/api/historial", None, [
             "historial[].slug", "historial[].total_nodos", "historial[].completado",
             "historial[].tiene_fallos", "historial[].costo_usd",
@@ -239,6 +242,8 @@ AFUERA = {
     "/api/boards": "no lo lee nadie en la UI (QA-2026-08-20 D3): endpoint muerto",
     "/api/telemetria": "punto 1: su forma se contrasta contra el mock del navegador",
     "/api/estado": "punto 1: su forma se contrasta contra el mock del navegador",
+    "/api/eventos": "stream SSE para observabilidad en vivo de task_events",
+    "/api/nodo/parar": "detiene el subproceso de un nodo especifico",
 }
 
 env = {**os.environ, "ORQUESTER_TOKEN": TOKEN, "PYTHONIOENCODING": "utf-8"}

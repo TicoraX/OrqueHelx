@@ -21,6 +21,7 @@ from pathlib import Path
 # morian los dos.
 _PROCESOS_LOCK = threading.Lock()
 _PROCESOS_ACTIVOS: dict[str, set] = {}
+_PROCESOS_POR_TASK: dict[tuple[str | None, str], subprocess.Popen] = {}
 
 # En que board esta trabajando ESTE hilo. `threading.local` y no un parametro
 # nuevo: entre `tick` --que es quien sabe el board-- y `Popen` hay cuatro
@@ -36,9 +37,18 @@ def marcar_board(board: str | None):
     _HILO.board = board
 
 
+def marcar_tarea(task_id: str | None):
+    """Decir en que tarea trabaja este hilo."""
+    _HILO.task_id = task_id
+
+
 def registrar_proceso(p: subprocess.Popen):
     with _PROCESOS_LOCK:
-        _PROCESOS_ACTIVOS.setdefault(getattr(_HILO, "board", None), set()).add(p)
+        b = getattr(_HILO, "board", None)
+        t = getattr(_HILO, "task_id", None)
+        _PROCESOS_ACTIVOS.setdefault(b, set()).add(p)
+        if t:
+            _PROCESOS_POR_TASK[(b, t)] = p
 
 
 def desregistrar_proceso(p: subprocess.Popen):
@@ -49,6 +59,23 @@ def desregistrar_proceso(p: subprocess.Popen):
             # por board que haya corrido alguna vez en la vida del proceso.
             if not vivos:
                 _PROCESOS_ACTIVOS.pop(board, None)
+        for clave, proc in list(_PROCESOS_POR_TASK.items()):
+            if proc == p:
+                _PROCESOS_POR_TASK.pop(clave, None)
+
+
+def matar_proceso_task(board: str | None, task_id: str) -> bool:
+    """Cortar el proceso de una tarea especifica si esta en vuelo."""
+    with _PROCESOS_LOCK:
+        p = _PROCESOS_POR_TASK.get((board, task_id))
+    if p is not None:
+        try:
+            if p.poll() is None:
+                p.kill()
+                return True
+        except Exception:
+            pass
+    return False
 
 
 def matar_procesos_activos(board: str | None = None):
