@@ -432,25 +432,25 @@
 
     <!-- Card 2: Intenciones Rápidas (1-Click) -->
     <div class="seccion-card">
-      <h2 style="margin:0 0 4px;">2. ¿Qué deseas hacer con este proyecto?</h2>
-      <p class="ayuda" style="margin:0 0 10px;">Elige una acción pre-configurada o escribe tu requerimiento abajo. ORQUESTER orquestará los agentes en segundo plano.</p>
+      <h2 style="margin:0 0 4px;">2. ¿Qué querés correr en este proyecto?</h2>
+      <p class="ayuda" style="margin:0 0 10px;">Elegí una acción rápida o escribí un objetivo abajo. ORQUESTER orquesta los agentes en segundo plano.</p>
       
       <div class="grid-intenciones">
         <div class="card-intencion" data-intencion="seguridad" tabindex="0" role="button">
           <b>Auditoría de Seguridad</b>
-          <p>Arqueología de secretos, modelado STRIDE, análisis de dependencias y pruebas de exploits con Strix.</p>
+          <p>Auditoría de dependencias y código: escanea fallos conocidos, busca patrones inseguros y propone parches con Strix.</p>
         </div>
         <div class="card-intencion" data-intencion="web" tabindex="0" role="button">
           <b>Diseño Web Deliberate</b>
-          <p>Arquitectura frontend anti-AI-slop con paleta OKLCH calibrada, tipografía intencional y micro-motion.</p>
+          <p>Página o componente web: maquetado HTML/CSS con tokens, verificación de accesibilidad y captura en navegador.</p>
         </div>
         <div class="card-intencion" data-intencion="refactor" tabindex="0" role="button">
           <b>Refactor y Poda YAGNI</b>
-          <p>Poda de complejidad, eliminación de código muerto y reemplazo por biblioteca estándar (Ponytail).</p>
+          <p>Simplificación de código: busca duplicaciones y complejidad innecesaria, aplica Ponytail y corre la suite de tests.</p>
         </div>
         <div class="card-intencion" data-intencion="feature" tabindex="0" role="button">
           <b>Pipeline de Feature</b>
-          <p>Ciclo completo: especificación de contrato, backend seguro, frontend reactivo, QA y docs.</p>
+          <p>Ciclo completo: especificación de contrato, backend seguro, frontend reactivo, QA y documentación.</p>
         </div>
         <div class="card-intencion" data-intencion="diff" tabindex="0" role="button">
           <b>Revisión de Cambios</b>
@@ -465,7 +465,7 @@
 
     <!-- Card 3: Chat / Objetivo Libre -->
     <div class="seccion-card">
-      <h2 style="margin:0 0 6px;">3. O escribe un objetivo personalizado</h2>
+      <h2 style="margin:0 0 6px;">3. O escribí un objetivo personalizado</h2>
       <div style="display:flex; gap:8px;">
         <input id="inputPromptApp" placeholder="Ej: Auditar el módulo de autenticación y agregar tests unitarios para casos borde..." style="font-size:13px;" />
         <button id="btnEjecutarPromptApp" class="primario" style="width:auto; white-space:nowrap; padding:6px 16px; font-size:12.5px;">Orquestar</button>
@@ -2885,7 +2885,7 @@ document.querySelectorAll(".card-intencion").forEach(card => {
 
 $("#btnEjecutarPromptApp").onclick = () => {
   const p = ($("#inputPromptApp").value || "").trim();
-  if (!p) return avisar("Escribe un objetivo para orquestar.", "error");
+  if (!p) return avisar("Escribí un objetivo para orquestar.", "error");
   lanzarOrquestacionApp("custom", p);
 };
 
