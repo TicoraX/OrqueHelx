@@ -6,6 +6,11 @@
     --bg:#14161a; --panel:#1c1f26; --linea:#2c313b; --texto:#e6e8ec;
     --tenue:#8b93a1; --acento:#5b9dd9;
     --todo:#4a5160; --ready:#c9a227; --running:#3d8bcd; --done:#3f9d52; --failed:#c0504d; --triage:#d1743a;
+    /* Dos registros. Intra: lo que vive junto adentro de un control o grupo.
+       Ritmo: lo que separa secciones que se leen aparte. */
+    --intra-1:4px; --intra-2:8px;
+    --ritmo-1:14px; --ritmo-2:24px;
+    --radio:6px;
   }
   * { box-sizing:border-box; }
   body { margin:0; height:100vh; display:flex; background:var(--bg); color:var(--texto);
@@ -16,7 +21,7 @@
      sistema, o sea de otro producto. */
   * { scrollbar-width: thin; scrollbar-color: var(--linea) transparent; }
   ::-webkit-scrollbar { width: 9px; height: 9px; }
-  ::-webkit-scrollbar-thumb { background: var(--linea); border-radius: 6px; }
+  ::-webkit-scrollbar-thumb { background: var(--linea); border-radius: var(--radio); }
   ::-webkit-scrollbar-thumb:hover { background: #3b4250; }
   ::-webkit-scrollbar-track { background: transparent; }
   #lienzo { flex:1; cursor:crosshair; }
@@ -26,24 +31,24 @@
   h1 { font-size:15px; margin:0 0 10px; letter-spacing:.02em; display:flex; align-items:center; justify-content:space-between; }
   h2 { font-size:11px; text-transform:uppercase; letter-spacing:.08em;
        color:var(--tenue); margin:0 0 6px; font-weight:600; }
-  .tabs { display:flex; gap:4px; }
+  .tabs { display:flex; gap:var(--intra-1); }
   .tab { padding:6px 8px; background:transparent; border:none; border-bottom:2px solid transparent;
          border-radius:0; color:var(--tenue); cursor:pointer; font-size:12px; font-weight:600;
          width:auto; flex:1; text-align:center; transition:color .15s, border-color .15s; }
   .tab:hover { color:var(--texto); border-color:transparent; background:rgba(255,255,255,0.03); }
   .tab.activa { color:var(--acento); border-bottom-color:var(--acento); }
 
-  #panelCuerpo { flex:1; overflow-y:auto; padding:14px 16px; display:flex; flex-direction:column; gap:14px; }
-  .tab-vista { display:none; flex-direction:column; gap:14px; }
+  #panelCuerpo { flex:1; overflow-y:auto; padding:14px 16px; display:flex; flex-direction:column; gap:var(--ritmo-2); }
+  .tab-vista { display:none; flex-direction:column; gap:var(--ritmo-1); }
   .tab-vista.activa { display:flex; }
 
   #panelFooter { padding:12px 16px; border-top:1px solid var(--linea); background:#171a20;
-                 flex-shrink:0; display:flex; flex-direction:column; gap:8px; }
+                 flex-shrink:0; display:flex; flex-direction:column; gap:var(--intra-2); }
 
   label { display:block; font-size:12px; color:var(--tenue); margin-bottom:4px; }
   input, select, textarea, button {
     width:100%; padding:7px 9px; background:#141720; color:var(--texto);
-    border:1px solid var(--linea); border-radius:6px; font:inherit; }
+    border:1px solid var(--linea); border-radius:var(--radio); font:inherit; }
   textarea { resize:vertical; min-height:56px; }
   button { cursor:pointer; background:#232833; transition: transform 60ms ease-out, border-color 120ms ease-out; }
   button:hover:not(:disabled) { border-color:var(--acento); }
@@ -64,15 +69,15 @@
   button.primario { background:var(--acento); border-color:var(--acento); color:#0d1117; font-weight:600; }
   button.peligro { border-color:#7a3b39; color:#e0706d; }
   button.peligro:hover:not(:disabled) { border-color:#c0504d; background:#2d1a1b; }
-  .fila { display:flex; gap:8px; }
-  #aviso { padding:9px 11px; border-radius:6px; font-size:12.5px; white-space:pre-wrap;
+  .fila { display:flex; gap:var(--intra-2); }
+  #aviso { padding:9px 11px; border-radius:var(--radio); font-size:12.5px; white-space:pre-wrap;
            display:none; border:1px solid; }
   #aviso.error { background:#3a1d1d; border-color:#7a3b39; }
   #aviso.ok    { background:#1b3324; border-color:#2f6b41; }
   /* Ambar: salio algo, pero no lo que se pidio. Un fallback pintado de verde
      hace que una feature muerta se vea viva; paso exactamente eso. */
   #aviso.tibio { background:#3a3018; border-color:#7a6534; }
-  .leyenda { display:flex; flex-wrap:wrap; gap:8px; font-size:11.5px; color:var(--tenue); }
+  .leyenda { display:flex; flex-wrap:wrap; gap:var(--intra-2); font-size:11.5px; color:var(--tenue); }
   .leyenda i { width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:3px; }
   .ayuda { font-size:11.5px; color:var(--tenue); line-height:1.45; }
   .ayuda b { color:var(--texto); font-weight:600; }
@@ -91,31 +96,31 @@
   #traza .ev { display:flex; gap:7px; padding:2px 0; border-bottom:1px solid #232833; }
   #traza .k { color:var(--acento); flex:0 0 118px; }
   #traza .d { color:var(--tenue); word-break:break-word; }
-  #traza .intento { padding:6px 8px; margin-bottom:6px; border-radius:5px;
+  #traza .intento { padding:6px 8px; margin-bottom:6px; border-radius:var(--radio);
                     background:#141720; border:1px solid var(--linea); }
   #traza .mal { border-color:#7a3b39; }
   #traza .res-wrap { margin-bottom:8px; }
   #traza .res-hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
   #traza .res-btn { width:auto; padding:3px 7px; font-size:11px; }
-  #traza .res { background:#141720; border:1px solid var(--linea); border-radius:5px;
+  #traza .res { background:#141720; border:1px solid var(--linea); border-radius:var(--radio);
                 padding:7px 9px; white-space:pre-wrap; font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
                 font-size:11.5px; max-height:220px; overflow-y:auto; color:var(--texto); line-height:1.4; }
   #traza .gasto { color:var(--tenue); margin-bottom:8px; font-variant-numeric:tabular-nums; }
-  .titulo { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .titulo { display:flex; align-items:center; justify-content:space-between; gap:var(--intra-2); }
   .titulo button { width:auto; padding:4px 10px; font-size:12px; }
   #panelPlantillas { display:none; position:absolute; top:46px; right:12px; width:330px;
                      max-height:70vh; overflow-y:auto; z-index:20; background:var(--panel);
-                     border:1px solid var(--linea); border-radius:8px; padding:10px;
-                     box-shadow:0 12px 34px rgba(0,0,0,.55); }
+                     border:1px solid var(--linea); border-radius:8px; /* flotante sobre lienzo */
+                     padding:10px; box-shadow:0 12px 34px rgba(0,0,0,.55); }
   #panelPlantillas.abierto { display:block; }
-  #plantillas .pl { border:1px solid var(--linea); border-radius:6px; padding:8px 10px;
+  #plantillas .pl { border:1px solid var(--linea); border-radius:var(--radio); padding:8px 10px;
                     margin-bottom:7px; background:#141720; }
   #plantillas .pl b { font-size:12.5px; }
   #plantillas .pl p { margin:3px 0 6px; font-size:11.5px; color:var(--tenue); }
   #plantillas .meta { font-size:11px; color:var(--tenue); margin-bottom:6px;
                       display:flex; flex-wrap:wrap; gap:6px; }
   #plantillas .meta i { font-style:normal; border:1px solid var(--linea);
-                        border-radius:9px; padding:0 6px; }
+                        border-radius:999px; /* píldora */ padding:0 6px; }
   #plantillas .falta { color:#e0a0a0; border-color:#7a3b39; }
   #plantillas button { width:auto; padding:4px 9px; font-size:12px; }
   input.falta { border-color: #c9a227; }
@@ -125,9 +130,9 @@
     .nodo[data-estado="running"] rect { animation: none; }
   }
   #chatMensaje { resize:vertical; min-height:42px; max-height:140px; }
-  #chatHilo { display:flex; flex-direction:column; gap:8px; max-height:46vh;
+  #chatHilo { display:flex; flex-direction:column; gap:var(--intra-2); max-height:46vh;
               overflow-y:auto; }
-  #chatHilo .msg { padding:7px 10px; border-radius:7px; font-size:12.5px;
+  #chatHilo .msg { padding:7px 10px; border-radius:var(--radio); font-size:12.5px;
                    white-space:pre-wrap; word-break:break-word; }
   #chatHilo .yo { background:#233047; align-self:flex-end; max-width:88%; }
   #chatHilo .el { background:#141720; border:1px solid var(--linea);
@@ -136,7 +141,7 @@
   #chatHilo .pensando { color:var(--tenue); font-style:italic; }
   #chatSesion { margin:2px 0 4px; }
   #resumen { font-size:11.5px; color:var(--tenue); white-space:pre-wrap; }
-  pre.codigo { background:#141720; border:1px solid var(--linea); border-radius:5px;
+  pre.codigo { background:#141720; border:1px solid var(--linea); border-radius:var(--radio);
                padding:7px 9px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
                font-size:11px; max-height:180px; overflow-y:auto; color:var(--texto); white-space:pre-wrap; }
   body.modo-zen #panel, body.modo-zen #panelDerecho { display: none !important; }
@@ -225,7 +230,7 @@
   .seccion-card {
     background: var(--panel);
     border: 1px solid var(--linea);
-    border-radius: 8px;
+    border-radius: var(--radio);
     padding: 16px;
     box-shadow: 0 4px 16px rgba(0,0,0,0.25);
   }
@@ -238,7 +243,7 @@
   .card-intencion {
     background: #141720;
     border: 1px solid var(--linea);
-    border-radius: 6px;
+    border-radius: var(--radio);
     padding: 12px;
     cursor: pointer;
     transition: all .15s;
