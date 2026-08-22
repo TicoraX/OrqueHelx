@@ -213,6 +213,49 @@ for estado, variable in variables.items():
 print(f"7. los {len(variables)} estados que pinta la UI existen en el kanban, "
       "tienen variable propia y `blocked` se distingue de `todo`: OK")
 
+# --- 8. El selector de carpetas: las tres salidas -----------------------------
+# El navegador no puede dar una ruta absoluta (`showDirectoryPicker` da un
+# handle, `webkitdirectory` da rutas relativas), asi que el dialogo lo abre el
+# servidor. Eso mete un subproceso con GUI en el camino, y las tres salidas
+# tienen que ser distinguibles: elegiste algo, cancelaste, o esta maquina no
+# puede abrir ventanas. Confundir "cancelaste" con "fallo" es lo que hace que
+# una app te grite en rojo por apretar Escape.
+#
+# Con un `subprocess.run` de mentira: abrir un dialogo de verdad colgaria la
+# suite esperando a que un humano haga clic.
+import subprocess as _sp
+
+class _Falso:
+    def __init__(self, returncode=0, stdout="", stderr=""):
+        self.returncode, self.stdout, self.stderr = returncode, stdout, stderr
+
+_run_real = srv.subprocess.run
+try:
+    srv.subprocess.run = lambda *a, **k: _Falso(stdout=str(RAIZ) + "\n")
+    r_ok = srv._elegir_carpeta()
+    assert r_ok["ok"] and r_ok["ruta"] == str(RAIZ), r_ok
+    assert r_ok["stack"], "vuelve sin analizar: obliga a un segundo clic"
+
+    srv.subprocess.run = lambda *a, **k: _Falso(stdout="\n")
+    r_cancel = srv._elegir_carpeta()
+    assert r_cancel["ok"] is False and r_cancel.get("cancelado") is True, r_cancel
+
+    srv.subprocess.run = lambda *a, **k: _Falso(
+        returncode=1, stderr="_tkinter.TclError: no display name and no $DISPLAY")
+    r_sin = srv._elegir_carpeta()
+    assert r_sin["ok"] is False and not r_sin.get("cancelado"), r_sin
+    assert "DISPLAY" in r_sin["motivo"], \
+        f"el motivo real de Tk se pierde: {r_sin['motivo']}"
+
+    def _cuelga(*a, **k):
+        raise _sp.TimeoutExpired(cmd="dialogo", timeout=1)
+    srv.subprocess.run = _cuelga
+    r_timeout = srv._elegir_carpeta()
+    assert r_timeout["ok"] is False and r_timeout.get("cancelado") is True, r_timeout
+finally:
+    srv.subprocess.run = _run_real
+print("8. el selector distingue elegir, cancelar, sin-display y timeout: OK")
+
 # Los grafos que estos casos dejaron en ui/grafos.
 for f in (RAIZ / "ui" / "grafos").glob("auditoria-seguridad-cso-strix-*.json"):
     f.unlink(missing_ok=True)

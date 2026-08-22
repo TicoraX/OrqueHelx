@@ -1,4 +1,5 @@
 <!doctype html>
+<html lang="es">
 <meta charset="utf-8">
 <title>ORQUESTER Studio</title>
 <style>
@@ -427,6 +428,7 @@
       </div>
       <div class="fila" style="margin-bottom:8px;">
         <input id="inputWorkspaceApp" placeholder="Ruta absoluta a la carpeta del proyecto (ej: a:\Proyectos\mi-app)..." style="font-size:13px;" />
+        <button id="btnExaminarCarpeta" style="width:auto; white-space:nowrap; padding:6px 12px; font-size:12.5px;" title="Abrir el selector de carpetas del sistema">Examinar…</button>
         <button id="btnAnalizarWorkspaceApp" class="primario" style="width:auto; white-space:nowrap; padding:6px 14px; font-size:12.5px;">Abrir</button>
       </div>
       <div id="listaRecientesApp" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;"></div>
@@ -558,27 +560,27 @@
   </div>
 
   <div id="panelCuerpo">
-    <div id="aviso"></div>
+    <div id="aviso" role="status" aria-live="polite" aria-atomic="true"></div>
 
     <!-- Pestaña 1: Diseño del Flujo -->
     <div id="vista-diseno" class="tab-vista activa">
       <div>
-        <label>Board</label>
+        <label for="board">Board</label>
         <input id="board" value="mi-flujo">
       </div>
 
       <div>
-        <label>Tope de gasto <span class="tenue">— en US$, para todo el flujo</span></label>
+        <label for="presupuesto">Tope de gasto <span class="tenue">— en US$, para todo el flujo</span></label>
         <input id="presupuesto" placeholder="(sin tope)">
       </div>
 
       <div>
-        <label>Reglas del flujo <span class="tenue">— van a TODOS los nodos</span></label>
+        <label for="reglas">Reglas del flujo <span class="tenue">— van a TODOS los nodos</span></label>
         <textarea id="reglas" placeholder="Ej: no instales dependencias; no modifiques archivos; respondé en español."></textarea>
       </div>
 
       <div>
-        <label>Abrir un grafo guardado</label>
+        <label for="abrir">Abrir un grafo guardado</label>
         <div class="fila">
           <select id="abrir"><option value="">(elegir…)</option></select>
           <button id="borrarGrafo" style="width:auto; white-space:nowrap;">Borrar</button>
@@ -664,19 +666,19 @@
       <div id="editor" style="display:none; flex-direction:column; gap:8px;">
         <div>
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-            <label style="margin:0;">Título (el goal del nodo)</label>
+            <label for="titulo" style="margin:0;">Título (el goal del nodo)</label>
             <button id="btnOptimizarGoal" class="res-btn tenue" style="width:auto; padding:2px 8px; font-size:11px;">Optimizar</button>
           </div>
           <textarea id="titulo"></textarea>
         </div>
-        <div><label>Tipo</label>
+        <div><label for="tipo">Tipo</label>
           <select id="tipo">
             <option value="agente">Agente (se ejecuta)</option>
             <option value="nota">Nota (solo explica, no se ejecuta)</option>
           </select>
         </div>
         <div id="camposAgente" style="display:flex; flex-direction:column; gap:8px;">
-        <div><label>Ejecutor</label>
+        <div><label for="runtime">Ejecutor</label>
           <select id="runtime">
             <option value="hermes">Hermes (nativo)</option>
             <option value="claude-code">Claude Code</option>
@@ -684,15 +686,15 @@
             <option value="antigravity">Antigravity</option>
           </select>
         </div>
-        <div><label>Modelo <span class="tenue" id="pistaModelo"></span></label>
+        <div><label for="modeloLista">Modelo <span class="tenue" id="pistaModelo"></span></label>
           <select id="modeloLista" style="margin-bottom:6px;">
           <option value="">(el que use el CLI por defecto)</option>
         </select>
         <input id="modelo" placeholder="o escribilo a mano"></div>
-        <div><label>Esfuerzo <span class="tenue" id="pistaEsfuerzo"></span></label>
+        <div><label for="esfuerzo">Esfuerzo <span class="tenue" id="pistaEsfuerzo"></span></label>
           <select id="esfuerzo"><option value="">(el del CLI por defecto)</option></select></div>
         <div id="campoPresupuestoNodo" style="display:none;">
-          <label>Tope de gasto del nodo <span class="tenue">— en US$</span></label>
+          <label for="nodoPresupuesto">Tope de gasto del nodo <span class="tenue">— en US$</span></label>
           <input id="nodoPresupuesto" placeholder="(sin tope individual)">
         </div>
         <div>
@@ -705,7 +707,7 @@
             <label style="display:flex; align-items:center; gap:4px; margin:0;"><input type="checkbox" value="Write" checked style="width:auto;"> Write</label>
           </div>
         </div>
-        <div><label>Workspace <span class="tenue">— dónde corre el nodo</span></label>
+        <div><label for="workspace">Workspace <span class="tenue">— dónde corre el nodo</span></label>
           <input id="workspace" placeholder="(scratch: se borra al terminar)"></div>
         </div>
         <div id="boxTrazabilidadNodo" style="display:none; background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:6px 8px; font-size:11px; margin-top:4px;">
@@ -733,15 +735,15 @@
         <button id="chatNuevo" style="width:auto; white-space:nowrap;">Nueva</button>
       </div>
       <div>
-        <label>Modelo <span class="tenue" id="chatPistaModelo"></span></label>
+        <label for="chatModelo">Modelo <span class="tenue" id="chatPistaModelo"></span></label>
         <select id="chatModelo"><option value="">(el que use el CLI por defecto)</option></select>
       </div>
       <div>
-        <label>Esfuerzo</label>
+        <label for="chatEsfuerzo">Esfuerzo</label>
         <select id="chatEsfuerzo"><option value="">(el del CLI por defecto)</option></select>
       </div>
       <div>
-        <label>Workspace <span class="tenue">— dónde trabaja el agente</span></label>
+        <label for="chatWorkspace">Workspace <span class="tenue">— dónde trabaja el agente</span></label>
         <input id="chatWorkspace" placeholder="(el directorio del Studio)">
       </div>
       <div id="chatSesion" class="ayuda"></div>
@@ -755,7 +757,7 @@
     <!-- Pestaña 4: Observabilidad (Telemetría, Traza y Consumo) -->
     <div id="vista-obs" class="tab-vista">
       <div>
-        <label>Inspeccionar corrida histórica</label>
+        <label for="selBoardHistorial">Inspeccionar corrida histórica</label>
         <select id="selBoardHistorial"><option value="">(elegir corrida previa…)</option></select>
         <button id="btnGenerarReporte" style="margin-top:6px; width:100%; font-size:11.5px; padding:4px 8px;">Reporte de Auditoría</button>
       </div>
@@ -1541,8 +1543,8 @@ async function refrescarParams() {
     return;
   }
   caja.innerHTML = ps.map(p =>
-    `<div><label>${esc(p)}</label>
-       <input data-p="${esc(p)}" class="${faltan.has(p) ? "falta" : ""}" value="${esc(VALORES[p] || "")}"></div>`).join("");
+    `<div><label for="param-${esc(p)}">${esc(p)}</label>
+       <input id="param-${esc(p)}" data-p="${esc(p)}" class="${faltan.has(p) ? "falta" : ""}" value="${esc(VALORES[p] || "")}"></div>`).join("");
   for (const i of caja.querySelectorAll("input"))
     i.oninput = e => {
       VALORES[e.target.dataset.p] = e.target.value;
@@ -2814,6 +2816,13 @@ async function analizarWorkspaceApp(ruta) {
   $("#btnAnalizarWorkspaceApp").textContent = "Abrir";
   if (!ok || !datos) return avisar(datos?.error || "Error al analizar el workspace.", "error");
 
+  aplicarDiagnosticoWs(datos);
+}
+
+// Pintar el proyecto elegido. Vive aparte porque hay DOS caminos que traen un
+// workspace analizado --escribir la ruta y elegirla en el selector-- y duplicar
+// esto es como se desincronizan las dos mitades de una pantalla.
+function aplicarDiagnosticoWs(datos) {
   WORKSPACE_ACTUAL = datos.ruta;
   INFO_WS_ACTUAL = datos;
   $("#txtNombreWsActual").textContent = datos.nombre || datos.ruta;
@@ -2821,17 +2830,41 @@ async function analizarWorkspaceApp(ruta) {
   $("#inputWorkspaceApp").value = datos.ruta;
   guardarRecienteWs(datos.ruta);
 
-  // Mostrar diagnóstico
   $("#diagnosticoWsBox").style.display = "block";
   $("#diagNombreProyecto").textContent = datos.nombre;
   $("#diagStackBadge").textContent = datos.stack + (datos.frameworks?.length ? ` (${datos.frameworks.join(", ")})` : "");
   $("#diagGitTxt").textContent = datos.es_git
     ? `${datos.git_branch} ${datos.git_cambios_pendientes ? `(${datos.git_cambios_pendientes} cambios pendientes)` : "(limpio)"}`
     : "No es un repositorio Git";
+  // "No detectado" y no "pytest": el servidor ya dejo de inventar un comando
+  // que el proyecto no tiene, y la UI no lo puede reintroducir.
   $("#diagTestsTxt").textContent = datos.comando_tests || "No detectado";
 
-  avisar(`Proyecto '${datos.nombre}' cargado y analizado con éxito.`, "ok");
+  avisar(`Proyecto '${datos.nombre}' abierto: ${datos.stack}.`, "ok");
 }
+
+// Escribir a mano una ruta absoluta es la peor parte del flujo, y el navegador
+// no puede ayudar: ni `showDirectoryPicker()` ni `<input webkitdirectory>`
+// entregan la ruta absoluta que el motor necesita para el `cwd` del agente.
+// Como el Studio corre en la misma maquina, el dialogo lo abre el servidor.
+$("#btnExaminarCarpeta").onclick = async () => {
+  const boton = $("#btnExaminarCarpeta");
+  boton.disabled = true;
+  boton.textContent = "Elegí una carpeta…";
+  avisar("Abrí el selector de carpetas (puede quedar detrás de esta ventana).", "ok");
+  const { ok, datos } = await api("/api/workspace/elegir", {});
+  boton.disabled = false;
+  boton.textContent = "Examinar…";
+  if (!ok || !datos?.ok) {
+    // Cancelar no es un error: se calla y no se pisa lo que ya estaba escrito.
+    if (datos?.cancelado) return avisar("No elegiste ninguna carpeta.", "tibio");
+    return avisar((datos?.motivo || datos?.error || "No se pudo abrir el selector") +
+                  " — podés pegar la ruta a mano en el campo de al lado.", "error");
+  }
+  // Vuelve YA analizada, asi que se pinta lo mismo que hace `analizarWorkspaceApp`.
+  $("#inputWorkspaceApp").value = datos.ruta;
+  aplicarDiagnosticoWs(datos);
+};
 
 $("#btnAnalizarWorkspaceApp").onclick = () => analizarWorkspaceApp();
 $("#btnUsarRaizActual").onclick = async () => {

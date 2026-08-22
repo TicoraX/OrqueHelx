@@ -1530,6 +1530,58 @@ def _analizar_workspace(ruta: str) -> dict:
     }
 
 
+# El dialogo corre en un proceso APARTE, no en el hilo del handler. Tk es de un
+# solo hilo y `ThreadingHTTPServer` atiende cada pedido en el suyo: crear una
+# ventana ahi es una forma conocida de dejar el servidor clavado. Un hijo que
+# vive tres segundos no puede llevarse nada puesto.
+_DIALOGO = """
+import tkinter, tkinter.filedialog as fd
+r = tkinter.Tk()
+r.withdraw()
+r.attributes("-topmost", True)   # si no, sale DETRAS del navegador
+print(fd.askdirectory(title="Elegi la carpeta del proyecto") or "")
+r.destroy()
+"""
+
+
+def _elegir_carpeta(timeout: int = 300) -> dict:
+    """Abre el selector de carpetas del sistema y devuelve lo que se eligio.
+
+    El navegador no sirve para esto: ni `showDirectoryPicker()` ni
+    `<input webkitdirectory>` entregan la ruta absoluta --dan un handle o rutas
+    relativas-- y el motor necesita una ruta absoluta para el `cwd` del agente.
+    Como el Studio corre en la misma maquina que el usuario (`HOSTS_OK` son
+    127.0.0.1 y localhost), el que puede abrir el dialogo es el servidor.
+
+    Si no hay display --contenedor, sesion sin escritorio, Studio en otra
+    maquina-- se dice y listo: el campo de texto de al lado sigue existiendo y
+    es el camino que ya funcionaba.
+    """
+    try:
+        r = subprocess.run([sys.executable, "-c", _DIALOGO], capture_output=True,
+                           text=True, timeout=timeout, stdin=subprocess.DEVNULL,
+                           encoding="utf-8", errors="replace")
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "cancelado": True,
+                "motivo": "el dialogo quedo abierto demasiado tiempo"}
+    except Exception as e:
+        return {"ok": False, "motivo": f"no se pudo abrir el selector: {e}"}
+
+    if r.returncode != 0:
+        # Tipicamente `TclError: no display name`. El motivo del propio Tk es
+        # mas util que uno inventado por nosotros.
+        detalle = (r.stderr or "").strip().splitlines()[-1:] or ["sin detalle"]
+        return {"ok": False,
+                "motivo": f"esta maquina no puede abrir un selector de carpetas: {detalle[0]}"}
+
+    ruta = (r.stdout or "").strip()
+    if not ruta:
+        return {"ok": False, "cancelado": True, "motivo": "no se eligio ninguna carpeta"}
+    # Se devuelve YA analizada: elegir y que no pase nada obliga a un segundo
+    # clic para lo unico que uno iba a hacer despues.
+    return {"ok": True, **_analizar_workspace(ruta)}
+
+
 def _orquestar_intencion(cuerpo: dict) -> dict:
     """Una intencion + una carpeta -> un DAG compilado y, si se pide, corriendo.
 
@@ -1963,6 +2015,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self._responder(200, _generar_dataset_jsonl(b))
                 except Exception as e:
                     return self._fallo_400("error exportando dataset", e)
+            if self.path == "/api/workspace/elegir":
+                try:
+                    return self._responder(200, _elegir_carpeta())
+                except Exception as e:
+                    return self._fallo_400("error abriendo el selector", e)
             if self.path == "/api/workspace/analizar":
                 try:
                     return self._responder(200, _analizar_workspace(cuerpo.get("ruta", "")))
