@@ -1422,27 +1422,30 @@ def _analizar_workspace(ruta: str) -> dict:
         stack = "Go"
         comando_tests = "go test ./..."
 
-    # Detectar Git
-    es_git = False
-    git_branch = ""
-    git_cambios = 0
-    ultimo_commit = ""
-    try:
-        r = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=str(p),
-                           capture_output=True, text=True, timeout=3)
-        if r.returncode == 0 and "true" in r.stdout:
-            es_git = True
-            rb = subprocess.run(["git", "branch", "--show-current"], cwd=str(p),
-                                capture_output=True, text=True, timeout=3)
-            git_branch = rb.stdout.strip()
-            rc = subprocess.run(["git", "status", "--porcelain"], cwd=str(p),
-                                capture_output=True, text=True, timeout=3)
-            git_cambios = len([l for l in rc.stdout.splitlines() if l.strip()])
-            rl = subprocess.run(["git", "log", "-1", "--oneline"], cwd=str(p),
-                                capture_output=True, text=True, timeout=3)
-            ultimo_commit = rl.stdout.strip()
-    except Exception:
-        pass
+    # Detectar Git. Los `-c` no son decoracion: `git` lee el `.git/config` de la
+    # carpeta que se le apunta, y `core.fsmonitor` / `core.hooksPath` son
+    # comandos que ejecuta el propio git. Este endpoint se dispara con el boton
+    # "Abrir", ANTES de que nadie autorice correr un agente, asi que mirar una
+    # carpeta descargada no puede ejecutar lo que esa carpeta diga. Un `-c` de
+    # la linea de comandos le gana al config del repo.
+    SIN_HOOKS = ["-c", "core.fsmonitor=", "-c", "core.hooksPath=",
+                 "-c", "core.pager=cat", "-c", "protocol.ext.allow=never"]
+
+    def _git(*args) -> str:
+        """La salida de un `git` en esta carpeta, o vacio si no se pudo."""
+        try:
+            r = subprocess.run(["git", *SIN_HOOKS, *args], cwd=str(p),
+                               capture_output=True, text=True, timeout=3,
+                               stdin=subprocess.DEVNULL, encoding="utf-8",
+                               errors="replace")
+            return r.stdout.strip() if r.returncode == 0 else ""
+        except Exception:
+            return ""
+
+    es_git = _git("rev-parse", "--is-inside-work-tree") == "true"
+    git_branch = _git("branch", "--show-current") if es_git else ""
+    git_cambios = len(_git("status", "--porcelain").splitlines()) if es_git else 0
+    ultimo_commit = _git("log", "-1", "--oneline") if es_git else ""
 
     return {
         "ok": True,
@@ -1459,16 +1462,35 @@ def _analizar_workspace(ruta: str) -> dict:
 
 
 def _orquestar_intencion(cuerpo: dict) -> dict:
-    """Mapea una intencion a un DAG optimo, inyecta parametros del workspace y ejecuta."""
-    ws = cuerpo.get("workspace") or ""
+    """Una intencion + una carpeta -> un DAG compilado y, si se pide, corriendo.
+
+    Es el unico endpoint del modo App: elige la plantilla, le pone los valores
+    del workspace y lo lanza. Todo lo que hace ya existia suelto en el Studio
+    (`/api/plantilla`, `/api/compilar`, `/api/correr`); aca se encadena para
+    que el usuario no tenga que saber que existen.
+
+    Por eso NO reimplementa ninguno de los tres: sustituye con
+    `mcp.sustituir` (el mismo que usa `/api/compilar`, que ademas cubre TODOS
+    los campos de texto del nodo y no solo dos), compila con la firma real de
+    `compilador.compilar` y arranca con `_arrancar`, que es el que sabe atender
+    los nodos `hermes` y respetar el tope. La version anterior llamaba a
+    `compilar(..., conexion=..., tope_usd=...)`, parametros que no existen, y a
+    `_correr_dispatcher_board`, una funcion que no existe: con `ejecutar=True`
+    esto devolvia 400 SIEMPRE, o sea que el modo App nunca ejecuto nada.
+    """
+    ws = (cuerpo.get("workspace") or "").strip()
     info_ws = _analizar_workspace(ws) if ws else {}
     ruta_ws = info_ws.get("ruta") or ws or str(RAIZ)
-    cmd_tests = info_ws.get("comando_tests") or "pytest"
 
     intencion = (cuerpo.get("intencion") or "").lower().strip()
     prompt = (cuerpo.get("prompt") or "").strip()
     ejecutar = bool(cuerpo.get("ejecutar", True))
-    tope_usd = float(cuerpo["tope_usd"]) if cuerpo.get("tope_usd") else None
+    try:
+        tope_usd = float(cuerpo["tope_usd"]) if str(cuerpo.get("tope_usd") or "").strip() else None
+    except (TypeError, ValueError):
+        raise ValueError(f"tope invalido: {cuerpo.get('tope_usd')!r}")
+    if tope_usd is not None and tope_usd <= 0:
+        raise ValueError("el tope de gasto tiene que ser > 0")
 
     mapa_plantillas = {
         "seguridad": "auditoria-seguridad-cso-strix",
@@ -1481,69 +1503,83 @@ def _orquestar_intencion(cuerpo: dict) -> dict:
         "documentar": "documentar-cambios",
     }
 
+    degradado, motivo = False, ""
     nom_pl = mapa_plantillas.get(intencion)
     if nom_pl:
-        pl_path = PLANTILLAS / f"{nom_pl}.json"
-        if not pl_path.exists():
-            raise ValueError(f"Plantilla '{nom_pl}' no encontrada")
+        pl_path = _ruta_segura(nom_pl, PLANTILLAS, "plantilla")
+        if not pl_path.is_file():
+            raise ValueError(f"no existe la plantilla '{nom_pl}'")
         g = json.loads(pl_path.read_text(encoding="utf-8"))
+    elif prompt:
+        # Sin `dry_run` fijo: estaba hardcodeado en True, asi que este camino
+        # NUNCA le hablaba a un agente y devolvia siempre la misma plantilla de
+        # tres nodos con la frase del usuario pegada adentro. Ahora se le pide
+        # de verdad, y si no hay con quien hablar se DICE (`degradado`) en vez
+        # de presentar el fallback como un diseno.
+        res_ia = _generar_grafo(prompt, runtime=cuerpo.get("runtime") or "claude-code",
+                                dry_run=bool(cuerpo.get("dry_run")))
+        g = res_ia.get("grafo")
+        degradado, motivo = bool(res_ia.get("degradado")), res_ia.get("motivo") or ""
+        nom_pl = "sintesis-ia"
     else:
-        if prompt:
-            res_ia = _generar_grafo(prompt, runtime="claude-code", dry_run=True)
-            g = res_ia.get("grafo")
-            nom_pl = "sintesis-ia"
-        else:
-            nom_pl = "revision-de-repo"
-            g = json.loads((PLANTILLAS / f"{nom_pl}.json").read_text(encoding="utf-8"))
+        nom_pl = "revision-de-repo"
+        g = json.loads((PLANTILLAS / f"{nom_pl}.json").read_text(encoding="utf-8"))
 
-    # Reemplazo de marcadores
-    valores_params = {
+    # Solo los marcadores que el grafo PIDE. `sustituir` falla nombrando el que
+    # falte, que es mejor que dejar pasar un `{{modulo}}` literal al cwd de un
+    # agente, y mejor que rellenar a ciegas ocho claves que quiza no use.
+    disponibles = {
         "repo": ruta_ws,
         "ruta": ruta_ws,
-        "comando_tests": cmd_tests,
-        "modulo": prompt or info_ws.get("nombre") or "modulo-principal",
-        "feature": prompt or "nueva-funcionalidad",
-        "pregunta": prompt or f"Explicar arquitectura de {info_ws.get('nombre', 'este repositorio')}",
-        "sintoma": prompt or "Comportamiento inesperado o falla observada",
+        "comando_tests": info_ws.get("comando_tests") or "pytest",
+        "modulo": prompt or info_ws.get("nombre") or "el modulo principal",
+        "feature": prompt or "la funcionalidad pedida",
+        "pregunta": prompt or f"Explicar la arquitectura de {info_ws.get('nombre') or 'este repositorio'}",
+        "sintoma": prompt or "comportamiento inesperado observado",
         "commits": str(cuerpo.get("commits") or 5),
     }
-
-    for n in g.get("nodos", []):
-        for k_p, v_p in valores_params.items():
-            if n.get("titulo"):
-                n["titulo"] = n["titulo"].replace(f"{{{{{k_p}}}}}", str(v_p))
-            if n.get("workspace"):
-                n["workspace"] = n["workspace"].replace(f"{{{{{k_p}}}}}", str(v_p))
+    pedidos = mcp.parametros(g)
+    faltan = [p for p in pedidos if p not in disponibles]
+    if faltan:
+        raise ValueError(f"la plantilla '{nom_pl}' pide parametros que el modo App "
+                         f"no sabe completar: {faltan}")
+    g = mcp.sustituir(g, {p: disponibles[p] for p in pedidos})
 
     board_slug = f"{nom_pl}-{int(time.time()) % 100000}"
     g["board"] = board_slug
+    for n in g.get("nodos", []):
+        # El workspace es lo que hace que el agente vea el repo del usuario y no
+        # el scratch vacio de Hermes (SS4.1). Una plantilla puede no declararlo.
+        if not compilador.es_nota(n) and not n.get("workspace"):
+            n["workspace"] = ruta_ws
 
     compilador.validar(g, capacidades=False)
-
-    try:
-        pos = disposicion.ordenar(g)
+    for nid, xy in disposicion.ordenar(g).items():
         for n in g.get("nodos", []):
-            if n["id"] in pos:
-                n["x"] = pos[n["id"]]["x"]
-                n["y"] = pos[n["id"]]["y"]
-    except Exception:
-        pass
+            if n["id"] == nid:
+                n["x"], n["y"] = xy["x"], xy["y"]
 
-    f_g = GRAFOS / f"{board_slug}.json"
-    f_g.write_text(json.dumps(g, indent=2, ensure_ascii=False), encoding="utf-8")
-
+    arranque = None
     if ejecutar:
-        compilador.compilar(g, board=board_slug, conexion=None, tope_usd=tope_usd)
-        _correr_dispatcher_board(board_slug, tope_usd=tope_usd)
+        # Compilar ANTES de guardar: si el preflight de capacidades rechaza el
+        # grafo, el .json ya escrito quedaba de huerfano en `ui/grafos` con un
+        # board que no existe en ningun lado.
+        compilador.compilar(g, board=board_slug)
+        arranque = _arrancar(board_slug, tope_usd)
+    _archivo(board_slug).write_text(json.dumps(g, indent=2, ensure_ascii=False),
+                                    encoding="utf-8")
 
     return {
         "ok": True,
         "board": board_slug,
         "plantilla": nom_pl,
+        "degradado": degradado,
+        "motivo": motivo,
         "workspace_analizado": info_ws,
         "grafo": g,
         "total_nodos": len(g.get("nodos", [])),
-        "ejecutando": ejecutar
+        "ejecutando": bool(arranque and arranque.get("ok")),
+        "arranque": arranque,
     }
 
 

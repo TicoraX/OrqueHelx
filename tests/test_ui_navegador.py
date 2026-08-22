@@ -18,6 +18,11 @@ del navegador, no del producto, y `tests/correr.py` distingue OMITIDO de OK.
 import os, shutil, socket, subprocess, sys, tempfile, time
 from pathlib import Path
 
+# La salida del guion trae los iconos del timeline. Una consola cp1252 no sabe
+# escribirlos y el test moria con UnicodeEncodeError en el `print`, no en un
+# assert: la falla parecia del producto y era de la terminal.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 RAIZ = Path(__file__).resolve().parent.parent
 GUION = Path(__file__).resolve().parent / "ui_navegador.mjs"
 TOKEN = "token-de-prueba-navegador"

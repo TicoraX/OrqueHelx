@@ -2711,6 +2711,13 @@ async function lanzarOrquestacionApp(intencion, promptTexto) {
   avisar("Orquestando agentes y compilando grafo...", "ok");
   const { ok, datos } = await api("/api/orquestar-intencion", cuerpo);
   if (!ok || !datos) return avisar(datos?.error || "Error al orquestar.", "error");
+  // Que el agente no haya diseñado nada se DICE. Un flujo armado con la
+  // plantilla de emergencia se ve igual que uno diseñado, y es lo unico que el
+  // usuario del modo App tiene para saber que paso por atras.
+  if (datos.degradado) avisar(`Sin diseño de un agente: ${datos.motivo}`, "tibio");
+  if (datos.arranque && datos.arranque.ok === false) {
+    avisar(`El grafo quedo compilado pero no arranco: ${datos.arranque.motivo}`, "tibio");
+  }
 
   // Actualizar datos del grafo en Studio
   if (datos.grafo) {
@@ -2728,7 +2735,7 @@ async function lanzarOrquestacionApp(intencion, promptTexto) {
 
   if (APP_INTERVAL_ID) clearInterval(APP_INTERVAL_ID);
   APP_INTERVAL_ID = setInterval(() => monitorearProgresoApp(datos.board), 2000);
-  monitorearProgresoApp(datos.board);
+  monitorearProgresoApp(datos.board);          // sin esperar los primeros 2s
 }
 
 document.querySelectorAll(".card-intencion").forEach(card => {
@@ -2750,32 +2757,60 @@ async function monitorearProgresoApp(board) {
     api(`/api/estado?board=${encodeURIComponent(board)}`)
   ]);
 
-  if (okTel && datosTel) {
-    const pct = datosTel.progreso_porcentaje || 0;
+  // Las claves salen de lo que los endpoints DEVUELVEN, no de como suenan.
+  // Estaban todas mal: `/api/telemetria` anida en `resumen` y `/api/estado`
+  // devuelve `titulo`/`estado`/`resumen`, no `title`/`status`/`result`. Nueve
+  // de nueve campos daban `undefined`, asi que la barra vivia en 0%, el
+  // timeline mostraba todo pendiente para siempre, el entregable no aparecia
+  // nunca y el `setInterval` no paraba jamas (comparaba `undefined === 0`).
+  if (okTel && datosTel && datosTel.resumen) {
+    const r = datosTel.resumen;
+    const pct = r.progreso_pct || 0;
     $("#appBarraProgreso").style.width = `${pct}%`;
-    $("#appProgresoSubtxt").textContent = `${pct}% completado (${datosTel.hechas}/${datosTel.total_tareas} nodos) · ${datosTel.tiempo_total_humano}`;
-    if (datosTel.en_progreso === 0 && datosTel.hechas === datosTel.total_tareas && datosTel.total_tareas > 0) {
+    const gasto = (datosTel.consumo || {}).total || {};
+    $("#appProgresoSubtxt").textContent =
+      `${pct}% completado (${r.terminados}/${r.total} nodos)` +
+      (r.fallidos ? ` · ${r.fallidos} con problemas` : "") +
+      (gasto.costo_usd ? ` · US$ ${gasto.costo_usd.toFixed(4)}` : "");
+    // Se corta cuando el board dejo de avanzar, no solo cuando esta completo:
+    // un nodo bloqueado nunca llega a `terminados === total` y el sondeo
+    // quedaba latiendo cada 2s hasta que alguien recargara la pagina.
+    if (r.total > 0 && !datosTel.corriendo && r.activos === 0 && r.listos === 0) {
       if (APP_INTERVAL_ID) { clearInterval(APP_INTERVAL_ID); APP_INTERVAL_ID = null; }
+      if (r.fallidos) avisar(`La corrida termino con ${r.fallidos} nodo(s) sin resolver.`, "tibio");
     }
   }
 
   if (okEst && datosEst && datosEst.tareas) {
     const tareas = datosEst.tareas;
     const timeline = $("#appTimelineNodos");
+    // `failed` no es un estado del kanban: un fallo terminal cae en `triage` y
+    // uno del dispatcher en `blocked`. Pintar por un estado inexistente es no
+    // pintar nunca el unico caso que el usuario necesita ver.
+    const ICONO = {
+      done: '<span style="color:var(--done);">✓</span>',
+      running: '<span style="color:var(--running);">●</span>',
+      blocked: '<span style="color:var(--failed);">✗</span>',
+      triage: '<span style="color:var(--failed);">✗</span>',
+    };
     timeline.innerHTML = Object.entries(tareas).map(([id, t]) => {
-      const st = t.status || "todo";
-      const icon = st === "done" ? '<span style="color:var(--done);">✓</span>' : (st === "running" ? '<span style="color:var(--running);">●</span>' : (st === "failed" ? '<span style="color:var(--failed);">✗</span>' : '<span style="color:var(--tenue);">○</span>'));
-      return `<div class="timeline-nodo-app ${st}">
-        <span>${icon} <b>${esc(id)}</b> <span style="color:var(--tenue); font-size:11px;">(${esc(t.runtime || "hermes")})</span></span>
-        <span style="font-size:10.5px; color:var(--tenue);">${esc(t.title || "").slice(0, 50)}…</span>
+      const st = t.estado || "todo";
+      const icon = ICONO[st] || '<span style="color:var(--tenue);">○</span>';
+      // El runtime viaja como sufijo del carril (`orquester-external:opencode`).
+      const rt = (t.assignee || "").includes(":") ? t.assignee.split(":")[1] : (t.assignee || "hermes");
+      const titulo = t.titulo || "";
+      return `<div class="timeline-nodo-app ${esc(st)}">
+        <span>${icon} <b>${esc(titulo.slice(0, 46) || id)}</b> <span style="color:var(--tenue); font-size:11px;">(${esc(rt)})</span></span>
+        <span style="font-size:10.5px; color:var(--tenue);">${esc(st)}</span>
       </div>`;
     }).join("");
 
-    // Buscar el entregable del último nodo completado
-    const nodosHechos = Object.values(tareas).filter(t => t.status === "done" && t.result);
-    if (nodosHechos.length) {
-      const ultimo = nodosHechos[nodosHechos.length - 1];
-      $("#appEntregableRender").innerHTML = renderMarkdown(ultimo.result);
+    // El entregable del ultimo nodo terminado. `resumen` es lo que `_estado`
+    // devuelve del `result` de la card (recortado a 400: para el texto entero
+    // esta el boton de Reporte Completo).
+    const hechos = Object.values(tareas).filter(t => t.estado === "done" && (t.resumen || "").trim());
+    if (hechos.length) {
+      $("#appEntregableRender").innerHTML = renderMarkdown(hechos[hechos.length - 1].resumen);
     }
   }
 }

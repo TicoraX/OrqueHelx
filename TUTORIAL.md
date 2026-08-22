@@ -436,7 +436,7 @@ No hay duplicación: el kanban no es nuestro (`ARQUITECTURA.md` §10.2).
 Todos, en un comando, desde la raíz del repo:
 
 ```bash
-uv run --python 3.11 --with jsonschema --with pyyaml python tests/correr.py
+uv run --python 3.11 --with jsonschema --with pyyaml --with pyflakes python tests/correr.py
 ```
 
 **Las dos `--with` no son opcionales.** `jsonschema` y `pyyaml` son
@@ -457,7 +457,7 @@ cd apps/api && npm run build
 Uno solo, si estás iterando:
 
 ```bash
-uv run --python 3.11 --with jsonschema --with pyyaml python tests/test_compilador.py
+uv run --python 3.11 --with jsonschema --with pyyaml --with pyflakes python tests/test_compilador.py
 ```
 
 Los que aceptan `--e2e` además ejecutan agentes de verdad y tardan minutos:

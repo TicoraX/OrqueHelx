@@ -35,6 +35,13 @@ const ok = (c, m) => { console.log((c ? '  OK   ' : '  FALLA ') + m); if (!c) fa
 // lo mismo en vez de asumir que el panel esta siempre a la vista.
 const aDiseno = () => p.click('.tab[data-tab="diseno"]');
 
+// El overhaul folder-first hizo que el Studio arranque en modo App, y todo lo
+// que este guion verifica vive en el modo Studio. Se entra como entra el
+// usuario, por el boton de la barra, en vez de asumir cual es la vista inicial.
+await p.click('#btnModoStudio');
+await p.waitForFunction(() => document.body.classList.contains('modo-studio-activo'),
+                        null, { timeout: 5000 });
+
 ok(errores.length === 0, `sin errores de JS al cargar${errores.length ? ': ' + errores[0] : ''}`);
 
 // 1. Con un grafo cargado, Refinar se ofrece; sin nodos, no.
@@ -131,6 +138,69 @@ await p.waitForFunction(
   null, { timeout: 5000 });
 const cls = await p.getAttribute('#aviso', 'class');
 ok(cls === 'tibio', `la degradacion se pinta en ambar, no en verde (class="${cls}")`);
+
+// 7. Modo App: el timeline y la barra leen las claves que el servidor manda.
+// Las nueve que leia el overhaul no existian (`hechas`, `total_tareas`,
+// `status`, `title`, `result`...), asi que la barra vivia en 0%, todo nodo
+// figuraba pendiente para siempre y el entregable no aparecia nunca. Las
+// respuestas van mockeadas con la forma REAL de `/api/telemetria` y
+// `/api/estado`: si alguien vuelve a inventar un nombre de campo, esto lo dice.
+await p.route('**/api/orquestar-intencion', r => r.fulfill({ status: 200,
+  contentType: 'application/json', body: JSON.stringify({
+    ok: true, board: 'demo-app', plantilla: 'revision-de-repo', degradado: false,
+    motivo: '', total_nodos: 2, ejecutando: true, arranque: { ok: true },
+    grafo: { board: 'demo-app', aristas: [['a','b']], nodos: [
+      { id: 'a', titulo: 'Leer el repo', runtime: 'opencode', x: 40, y: 40 },
+      { id: 'b', titulo: 'Escribir el informe', runtime: 'opencode', x: 40, y: 200 }]}})}));
+await p.route('**/api/telemetria**', r => r.fulfill({ status: 200,
+  contentType: 'application/json', body: JSON.stringify({
+    board: 'demo-app', corriendo: true,
+    resumen: { total: 2, terminados: 1, fallidos: 0, activos: 1, listos: 0,
+               progreso_pct: 50.0, estados: { done: 1, running: 1 } },
+    consumo: { total: { costo_usd: 0.1234 } }, nodos: [] })}));
+await p.route('**/api/estado**', r => r.fulfill({ status: 200,
+  contentType: 'application/json', body: JSON.stringify({ corriendo: true, tareas: {
+    t_a: { titulo: 'Leer el repo', estado: 'done',
+           assignee: 'orquester-external:opencode', resumen: '# Informe\n\nSalio bien.' },
+    t_b: { titulo: 'Escribir el informe', estado: 'running',
+           assignee: 'orquester-external:opencode', resumen: '' } }})}));
+
+await p.click('#btnModoApp');
+await p.evaluate(() => { WORKSPACE_ACTUAL = 'A:/Proyectos/ORQUESTER'; });
+await p.fill('#inputPromptApp', 'revisá el repo');
+await p.click('#btnEjecutarPromptApp');
+await p.waitForFunction(
+  () => document.querySelector('#appTimelineNodos').children.length === 2,
+  null, { timeout: 5000 });
+
+const app = await p.evaluate(() => ({
+  ancho: document.querySelector('#appBarraProgreso').style.width,
+  sub: document.querySelector('#appProgresoSubtxt').textContent,
+  linea: document.querySelector('#appTimelineNodos').textContent,
+  entregable: document.querySelector('#appEntregableRender').textContent,
+}));
+ok(app.ancho === '50%', `la barra usa el progreso real (${app.ancho})`);
+ok(!/undefined|NaN/.test(app.sub), `el subtitulo no dice undefined ("${app.sub}")`);
+ok(app.sub.includes('1/2'), `cuenta los nodos terminados ("${app.sub}")`);
+ok(app.sub.includes('0.1234'), `informa el gasto ("${app.sub}")`);
+ok(app.linea.includes('Leer el repo') && app.linea.includes('opencode'),
+   `el timeline muestra titulo y runtime de verdad ("${app.linea.slice(0, 80)}")`);
+ok(app.linea.includes('done') && app.linea.includes('running'),
+   `cada nodo muestra SU estado, no todos el mismo ("${app.linea.replace(/\s+/g, ' ').slice(0, 90)}")`);
+ok(app.entregable.includes('Salio bien'), 'el entregable del nodo terminado aparece');
+
+// Y el sondeo se corta cuando el board deja de avanzar, en vez de latir para
+// siempre: antes comparaba `undefined === 0` y no paraba nunca.
+await p.unroute('**/api/telemetria**');
+await p.route('**/api/telemetria**', r => r.fulfill({ status: 200,
+  contentType: 'application/json', body: JSON.stringify({
+    board: 'demo-app', corriendo: false,
+    resumen: { total: 2, terminados: 2, fallidos: 0, activos: 0, listos: 0,
+               progreso_pct: 100.0, estados: { done: 2 } },
+    consumo: { total: { costo_usd: 0.2 } }, nodos: [] })}));
+await p.waitForFunction(() => APP_INTERVAL_ID === null, null, { timeout: 8000 })
+  .then(() => ok(true, 'el sondeo se detiene cuando el board termina'))
+  .catch(() => ok(false, 'el sondeo sigue latiendo con el board terminado'));
 
 ok(errores.length === 0, `sin errores de JS en toda la corrida${errores.length ? ': ' + errores[0] : ''}`);
 if (process.argv[3]) await p.screenshot({ path: process.argv[3], fullPage: false });

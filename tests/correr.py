@@ -1,6 +1,6 @@
 """Correr la suite entera en esta maquina, en un comando.
 
-    uv run --python 3.11 --with jsonschema --with pyyaml python tests/correr.py
+    uv run --python 3.11 --with jsonschema --with pyyaml --with pyflakes python tests/correr.py
 
 Existe porque la unica forma documentada era `tests/linux.sh`, que necesita
 Docker y solo cubre siete tests. Correrlos a mano con el Python del PATH da
@@ -16,7 +16,7 @@ from pathlib import Path
 AQUI = Path(__file__).resolve().parent
 # `--with` de uv, no `pip install`: el docstring de cada modulo ya declara estas
 # dos como dependencias duras y asi no se toca el Python del sistema.
-COMANDO = ("uv run --python 3.11 --with jsonschema --with pyyaml "
+COMANDO = ("uv run --python 3.11 --with jsonschema --with pyyaml --with pyflakes "
            "python tests/correr.py")
 # El mas lento (`test_ui_navegador`) tarda ~40s con el navegador incluido; 600
 # es techo, no presupuesto.
@@ -25,7 +25,7 @@ TIMEOUT_S = 600
 
 def _faltan() -> list[str]:
     ausentes = []
-    for mod in ("jsonschema", "yaml"):
+    for mod in ("jsonschema", "yaml", "pyflakes"):
         try:
             __import__(mod)
         except ImportError:
