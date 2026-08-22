@@ -124,6 +124,21 @@ try:
     b.matar_procesos_activos("board-d")
     print("6. matar_proceso_task corta solo la tarea indicada: OK")
 
+    # --- 7. Parar un nodo que no existe lo DICE ------------------------------
+    # `_parar_nodo` devolvia `ok: True` fijo: sobre un task_id inexistente --o
+    # vacio, que es lo que llega si el cuerpo no lo trae-- el Studio anunciaba
+    # "nodo detenido" sin haber tocado nada. Su hermano `_parar_board` ya lo
+    # decia bien; esto es la misma honestidad, propagada.
+    sys.path.insert(0, str(RAIZ / "ui"))
+    sys.path.insert(0, str(RAIZ / "compiler"))
+    import server as srv
+
+    for _tid, _esperado in (("t_no_existe", "no existe"), ("", "falta el task_id")):
+        _r = srv._parar_nodo("orquester", _tid)
+        assert _r["ok"] is False, f"dijo que paro algo que no existe: {_r}"
+        assert _esperado in _r["motivo"], f"el motivo no explica nada: {_r}"
+    print("7. parar un nodo inexistente devuelve ok=False con motivo: OK")
+
     print("\nOK: parar una corrida corta esa corrida y ninguna otra.")
 finally:
     for p in abiertos:

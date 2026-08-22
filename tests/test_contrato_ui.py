@@ -239,7 +239,7 @@ AFUERA = {
     "/api/workspaces/limpiar": "borra el scratch de todos los boards",
     "/api/snapshot/restaurar": "pisa el grafo abierto",
     "/api/guardar-plantilla": "escribe en el catalogo del usuario y no hay endpoint para borrarla",
-    "/api/boards": "no lo lee nadie en la UI (QA-2026-08-20 D3): endpoint muerto",
+    "/api/boards": "no lo lee nadie en la UI: endpoint muerto desde que existe",
     "/api/telemetria": "punto 1: su forma se contrasta contra el mock del navegador",
     "/api/estado": "punto 1: su forma se contrasta contra el mock del navegador",
     "/api/eventos": "stream SSE para observabilidad en vivo de task_events",

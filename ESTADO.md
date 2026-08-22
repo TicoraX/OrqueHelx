@@ -3,13 +3,13 @@
 > Generado por `contexto/estado.py`. **No editar a mano**: se sobrescribe.
 > Un traspaso escrito a mano queda viejo y nadie se entera.
 
-**Fase:** producto en uso
+**Fase:** con pendientes
 
 ## Dónde está el código
 
-- Commit `15a4402` — fix(app): el modo App no ejecutaba nada y el timeline no mostraba nada real
+- Commit `4ca69eb` — feat(dispatcher,ui): parada granular por task_id, streaming SSE y catalogo de skills locales
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 0
+- Árbol limpio: **no** · sin pushear: 1
 
 ## Runtime prestado
 
@@ -21,7 +21,7 @@
 ## Verificación
 
 - `ARQUITECTURA.md` §10: **70 afirmaciones**, 1 pendiente(s)
-- 19 tests: api_rbac, auth_studio, capacidades, chat, compilador, concurrencia_reintentos, consumo, contract, dag_heterogeneo, dag_rombo, disposicion, dos_dispatchers, esfuerzo_presupuesto, mcp_export, modo_app, pin_hermes, rebanada_vertical, ui_expansion, ui_navegador
+- 22 tests: api_rbac, auth_studio, capacidades, chat, compilador, concurrencia_reintentos, consumo, contract, contrato_ui, dag_heterogeneo, dag_rombo, disposicion, dos_dispatchers, esfuerzo_presupuesto, guardarrailes, mcp_export, modo_app, parada, pin_hermes, rebanada_vertical, ui_expansion, ui_navegador
 
 ## Decisiones tomadas (no re-litigar sin motivo nuevo)
 
@@ -47,11 +47,11 @@
 
 ## Bloqueos
 
-- ninguno
+- hay cambios sin commitear
+- 1 commit(s) sin pushear
 
 ## Qué sigue
 
-- 39 commit(s) pusheados y sin mergear a master (rama de trabajo)
 - `docker compose up -d db` si vas a usar multiusuario
 - §10 tiene 1 afirmación(es) pendiente(s)
 - conectar el Studio a la API multiusuario (hoy le habla directo al motor)

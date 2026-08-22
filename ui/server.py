@@ -146,12 +146,18 @@ def _parar_nodo(board: str, task_id: str) -> dict:
             bloqueado = True
     except Exception:
         pass
+    # `ok` refleja si se hizo ALGO, igual que en `_parar_board`. Decia `True`
+    # fijo: sobre un task_id inexistente --o vacio, que es lo que llega si el
+    # cuerpo no lo trae-- el Studio anunciaba "nodo detenido" sin haber tocado
+    # nada. Un boton que siempre dice que si no informa, decora.
     return {
-        "ok": True,
+        "ok": muerto or bloqueado,
         "board": board,
         "task_id": task_id,
         "proceso_matado": muerto,
         "tarea_bloqueada": bloqueado,
+        "motivo": "" if (muerto or bloqueado) else
+                  (f"no existe la card {task_id}" if task_id else "falta el task_id"),
     }
 
 # board -> tope de gasto con el que se arranco. El Studio tiene que mostrar el
