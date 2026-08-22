@@ -12,6 +12,17 @@
 //   node tests/ui_navegador.mjs <url> <png-de-salida>
 
 import { chromium } from 'playwright';
+import { readFileSync } from 'node:fs';
+
+// Las respuestas mockeadas viven en un JSON compartido con la suite de Python.
+// Antes estaban escritas aca adentro y el comentario decia "con la forma REAL":
+// una intencion que nada verificaba. `tests/test_contrato_ui.py` las compara
+// ahora contra lo que el Studio devuelve de verdad, asi que un mock que se
+// quede viejo falla en vez de hacer pasar a la UI contra una fantasia.
+const FIJAS = JSON.parse(readFileSync(
+  new URL('./fixtures/respuestas_ui.json', import.meta.url), 'utf-8'));
+const servir = cuerpo => r => r.fulfill({
+  status: 200, contentType: 'application/json', body: JSON.stringify(cuerpo) });
 // `destino` y no `URL`: `URL` es un global de Node y sombrearlo se cobra caro
 // el dia que alguien quiera usarlo aca adentro.
 const destino = process.argv[2];
@@ -34,6 +45,34 @@ const ok = (c, m) => { console.log((c ? '  OK   ' : '  FALLA ') + m); if (!c) fa
 // la de "Nodo". Volver a Diseño es lo que hace el usuario, asi que el test hace
 // lo mismo en vez de asumir que el panel esta siempre a la vista.
 const aDiseno = () => p.click('.tab[data-tab="diseno"]');
+
+// La forma en que se ve una clave que el servidor no manda.
+//
+// Los nueve campos inventados del modo App no rompian nada: la UI leia
+// `datos.hechas`, recibia `undefined`, y lo pintaba. Ningun linter mira eso y
+// ninguna assertion puntual lo caza salvo que alguien piense de antemano en
+// ESA clave. Barrer el texto visible si: es una sola red para las nueve y para
+// las que vengan. `sinBasura` recorre lo que se esta mostrando y devuelve el
+// primer elemento delator, con su id, para que el mensaje diga donde mirar.
+const sinBasura = zona => p.evaluate(sel => {
+  const raiz = document.querySelector(sel);
+  if (!raiz) return { falta: sel };
+  // `\b` solo alrededor de las palabras: `[object Object]` abre y cierra
+  // con caracteres que no son de palabra, y con el borde puesto no matcheaba.
+  const malo = /\b(?:undefined|NaN)\b|\[object Object\]/;
+  const paseo = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT);
+  for (let n = paseo.nextNode(); n; n = paseo.nextNode()) {
+    // Solo lo que el usuario ve: un nodo en una rama oculta no engania a nadie,
+    // y el <template>/<script> de la pagina no es texto renderizado.
+    const padre = n.parentElement;
+    if (!padre || !padre.offsetParent || padre.closest('script, style')) continue;
+    const t = (n.textContent || '').trim();
+    if (malo.test(t)) {
+      return { texto: t.slice(0, 80), donde: padre.id || padre.className || padre.tagName };
+    }
+  }
+  return null;
+}, zona);
 
 // El overhaul folder-first hizo que el Studio arranque en modo App, y todo lo
 // que este guion verifica vive en el modo Studio. Se entra como entra el
@@ -164,27 +203,12 @@ ok(zoom.barraTop >= zoom.finCabecera,
 // Las nueve que leia el overhaul no existian (`hechas`, `total_tareas`,
 // `status`, `title`, `result`...), asi que la barra vivia en 0%, todo nodo
 // figuraba pendiente para siempre y el entregable no aparecia nunca. Las
-// respuestas van mockeadas con la forma REAL de `/api/telemetria` y
-// `/api/estado`: si alguien vuelve a inventar un nombre de campo, esto lo dice.
-await p.route('**/api/orquestar-intencion', r => r.fulfill({ status: 200,
-  contentType: 'application/json', body: JSON.stringify({
-    ok: true, board: 'demo-app', plantilla: 'revision-de-repo', degradado: false,
-    motivo: '', total_nodos: 2, ejecutando: true, arranque: { ok: true },
-    grafo: { board: 'demo-app', aristas: [['a','b']], nodos: [
-      { id: 'a', titulo: 'Leer el repo', runtime: 'opencode', x: 40, y: 40 },
-      { id: 'b', titulo: 'Escribir el informe', runtime: 'opencode', x: 40, y: 200 }]}})}));
-await p.route('**/api/telemetria**', r => r.fulfill({ status: 200,
-  contentType: 'application/json', body: JSON.stringify({
-    board: 'demo-app', corriendo: true,
-    resumen: { total: 2, terminados: 1, fallidos: 0, activos: 1, listos: 0,
-               progreso_pct: 50.0, estados: { done: 1, running: 1 } },
-    consumo: { total: { costo_usd: 0.1234 } }, nodos: [] })}));
-await p.route('**/api/estado**', r => r.fulfill({ status: 200,
-  contentType: 'application/json', body: JSON.stringify({ corriendo: true, tareas: {
-    t_a: { titulo: 'Leer el repo', estado: 'done',
-           assignee: 'orquester-external:opencode', resumen: '# Informe\n\nSalio bien.' },
-    t_b: { titulo: 'Escribir el informe', estado: 'running',
-           assignee: 'orquester-external:opencode', resumen: '' } }})}));
+// respuestas salen de `fixtures/respuestas_ui.json`, que `test_contrato_ui.py`
+// contrasta contra el Studio de verdad: si alguien vuelve a inventar un nombre
+// de campo --en la UI o en el mock-- una de las dos suites lo dice.
+await p.route('**/api/orquestar-intencion', servir(FIJAS['/api/orquestar-intencion']));
+await p.route('**/api/telemetria**', servir(FIJAS['/api/telemetria']));
+await p.route('**/api/estado**', servir(FIJAS['/api/estado']));
 
 await p.click('#btnModoApp');
 await p.evaluate(() => { WORKSPACE_ACTUAL = 'A:/Proyectos/ORQUESTER'; });
@@ -210,15 +234,14 @@ ok(app.linea.includes('done') && app.linea.includes('running'),
    `cada nodo muestra SU estado, no todos el mismo ("${app.linea.replace(/\s+/g, ' ').slice(0, 90)}")`);
 ok(app.entregable.includes('Salio bien'), 'el entregable del nodo terminado aparece');
 
+const basuraApp = await sinBasura('#vistaApp');
+ok(basuraApp === null,
+   `el modo App no muestra ninguna clave sin resolver${basuraApp ? `: "${basuraApp.texto}" en ${basuraApp.donde}` : ''}`);
+
 // Y el sondeo se corta cuando el board deja de avanzar, en vez de latir para
 // siempre: antes comparaba `undefined === 0` y no paraba nunca.
 await p.unroute('**/api/telemetria**');
-await p.route('**/api/telemetria**', r => r.fulfill({ status: 200,
-  contentType: 'application/json', body: JSON.stringify({
-    board: 'demo-app', corriendo: false,
-    resumen: { total: 2, terminados: 2, fallidos: 0, activos: 0, listos: 0,
-               progreso_pct: 100.0, estados: { done: 2 } },
-    consumo: { total: { costo_usd: 0.2 } }, nodos: [] })}));
+await p.route('**/api/telemetria**', servir(FIJAS['/api/telemetria/terminado']));
 await p.waitForFunction(() => APP_INTERVAL_ID === null, null, { timeout: 8000 })
   .then(() => ok(true, 'el sondeo se detiene cuando el board termina'))
   .catch(() => ok(false, 'el sondeo sigue latiendo con el board terminado'));
@@ -291,6 +314,10 @@ ok(normalizada[1] === 'C:\\Users\\santi\\mi proyecto',
    `decodifica file:/// y los %20 (${normalizada[1]})`);
 ok(normalizada[2] === '/home/user/repo',
    `toma solo la primera linea de una lista de URIs (${normalizada[2]})`);
+
+const basuraStudio = await sinBasura('body');
+ok(basuraStudio === null,
+   `el Studio tampoco muestra claves sin resolver${basuraStudio ? `: "${basuraStudio.texto}" en ${basuraStudio.donde}` : ''}`);
 
 ok(errores.length === 0, `sin errores de JS en toda la corrida${errores.length ? ': ' + errores[0] : ''}`);
 if (process.argv[3]) await p.screenshot({ path: process.argv[3], fullPage: false });
