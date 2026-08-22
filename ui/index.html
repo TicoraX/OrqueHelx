@@ -2,10 +2,17 @@
 <meta charset="utf-8">
 <title>ORQUESTER Studio</title>
 <style>
+  /* Neutros con sesgo FRIO deliberado (azulado, ~230deg): es una consola que se
+     mira de noche al lado de una terminal, y un gris neutro puro al lado de una
+     terminal azulada se ve sucio. Los seis colores de estado NO son decorativos:
+     son los estados de `kanban_db.VALID_STATUSES`. */
   :root {
     --bg:#14161a; --panel:#1c1f26; --linea:#2c313b; --texto:#e6e8ec;
     --tenue:#8b93a1; --acento:#5b9dd9;
-    --todo:#4a5160; --ready:#c9a227; --running:#3d8bcd; --done:#3f9d52; --failed:#c0504d; --triage:#d1743a;
+    --todo:#4a5160; --ready:#c9a227; --running:#3d8bcd; --done:#3f9d52; --bloqueado:#c0504d; --triage:#d1743a;
+    --hundido:#141720; --control:#232833; --sobre-acento:#0d1117;
+    --acento-claro:#7dd3fc; --peligro-texto:#e0706d; --control-frio:#1e293b;
+    --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
     /* Dos registros. Intra: lo que vive junto adentro de un control o grupo.
        Ritmo: lo que separa secciones que se leen aparte. */
     --intra-1:4px; --intra-2:8px;
@@ -24,6 +31,12 @@
   ::-webkit-scrollbar-thumb { background: var(--linea); border-radius: var(--radio); }
   ::-webkit-scrollbar-thumb:hover { background: #3b4250; }
   ::-webkit-scrollbar-track { background: transparent; }
+  /* Segundo rol tipografico: DATO. Un id de card (`t_ae2d7ec6`), un slug de
+     board y un monto no son prosa, y en una sans se leen mal justo cuando hay
+     que compararlos de un vistazo. La necesidad ya estaba: habia dos
+     `tabular-nums` sueltos y `.res` ya usaba monoespaciada. */
+  .dato { font-family: var(--mono); font-variant-numeric: tabular-nums;
+          font-size: .92em; letter-spacing: -.01em; }
   #lienzo { flex:1; cursor:crosshair; }
   aside { width:340px; border-left:1px solid var(--linea); background:var(--panel);
           display:flex; flex-direction:column; height:100vh; overflow:hidden; }
@@ -42,15 +55,15 @@
   .tab-vista { display:none; flex-direction:column; gap:var(--ritmo-1); }
   .tab-vista.activa { display:flex; }
 
-  #panelFooter { padding:12px 16px; border-top:1px solid var(--linea); background:#171a20;
+  #panelFooter { padding:12px 16px; border-top:1px solid var(--linea); background:var(--hundido);
                  flex-shrink:0; display:flex; flex-direction:column; gap:var(--intra-2); }
 
   label { display:block; font-size:12px; color:var(--tenue); margin-bottom:4px; }
   input, select, textarea, button {
-    width:100%; padding:7px 9px; background:#141720; color:var(--texto);
+    width:100%; padding:7px 9px; background:var(--hundido); color:var(--texto);
     border:1px solid var(--linea); border-radius:var(--radio); font:inherit; }
   textarea { resize:vertical; min-height:56px; }
-  button { cursor:pointer; background:#232833; transition: transform 60ms ease-out, border-color 120ms ease-out; }
+  button { cursor:pointer; background:var(--control); transition: transform 60ms ease-out, border-color 120ms ease-out; }
   button:hover:not(:disabled) { border-color:var(--acento); }
   /* 60ms: el receipt de un click tiene que sentirse en el pointer-down, no
      despues. Mas lento se percibe como lag, no como respuesta. */
@@ -66,9 +79,9 @@
     border-radius: 4px;
   }
   .card-intencion:active { transform: scale(.99); }
-  button.primario { background:var(--acento); border-color:var(--acento); color:#0d1117; font-weight:600; }
-  button.peligro { border-color:#7a3b39; color:#e0706d; }
-  button.peligro:hover:not(:disabled) { border-color:#c0504d; background:#2d1a1b; }
+  button.primario { background:var(--acento); border-color:var(--acento); color:var(--sobre-acento); font-weight:600; }
+  button.peligro { border-color:#7a3b39; color:var(--peligro-texto); }
+  button.peligro:hover:not(:disabled) { border-color:var(--bloqueado); background:#2d1a1b; }
   .fila { display:flex; gap:var(--intra-2); }
   #aviso { padding:9px 11px; border-radius:var(--radio); font-size:12.5px; white-space:pre-wrap;
            display:none; border:1px solid; }
@@ -88,24 +101,24 @@
   .nodo .rt { font-size:10px; opacity:.9; }
   #consumo { font-size:12px; }
   #consumo .linea { display:flex; justify-content:space-between; padding:2px 0; }
-  #consumo .val { color:var(--texto); font-variant-numeric:tabular-nums; }
+  #consumo .val { color:var(--texto); font-variant-numeric:tabular-nums; font-family:var(--mono); }
   #consumo .et { color:var(--tenue); }
   #consumo .nota { color:var(--tenue); font-size:11px; margin-top:6px;
                    border-top:1px solid var(--linea); padding-top:6px; }
   #traza { font-size:11.5px; max-height:360px; overflow-y:auto; }
-  #traza .ev { display:flex; gap:7px; padding:2px 0; border-bottom:1px solid #232833; }
-  #traza .k { color:var(--acento); flex:0 0 118px; }
+  #traza .ev { display:flex; gap:7px; padding:2px 0; border-bottom:1px solid var(--control); }
+  #traza .k { color:var(--acento); flex:0 0 118px; font-family:var(--mono); font-variant-numeric:tabular-nums; }
   #traza .d { color:var(--tenue); word-break:break-word; }
   #traza .intento { padding:6px 8px; margin-bottom:6px; border-radius:var(--radio);
-                    background:#141720; border:1px solid var(--linea); }
+                    background:var(--hundido); border:1px solid var(--linea); }
   #traza .mal { border-color:#7a3b39; }
   #traza .res-wrap { margin-bottom:8px; }
   #traza .res-hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
   #traza .res-btn { width:auto; padding:3px 7px; font-size:11px; }
-  #traza .res { background:#141720; border:1px solid var(--linea); border-radius:var(--radio);
-                padding:7px 9px; white-space:pre-wrap; font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+  #traza .res { background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio);
+                padding:7px 9px; white-space:pre-wrap; font-family:var(--mono);
                 font-size:11.5px; max-height:220px; overflow-y:auto; color:var(--texto); line-height:1.4; }
-  #traza .gasto { color:var(--tenue); margin-bottom:8px; font-variant-numeric:tabular-nums; }
+  #traza .gasto { color:var(--tenue); margin-bottom:8px; font-variant-numeric:tabular-nums; font-family:var(--mono); }
   .titulo { display:flex; align-items:center; justify-content:space-between; gap:var(--intra-2); }
   .titulo button { width:auto; padding:4px 10px; font-size:12px; }
   #panelPlantillas { display:none; position:absolute; top:46px; right:12px; width:330px;
@@ -114,7 +127,7 @@
                      padding:10px; box-shadow:0 12px 34px rgba(0,0,0,.55); }
   #panelPlantillas.abierto { display:block; }
   #plantillas .pl { border:1px solid var(--linea); border-radius:var(--radio); padding:8px 10px;
-                    margin-bottom:7px; background:#141720; }
+                    margin-bottom:7px; background:var(--hundido); }
   #plantillas .pl b { font-size:12.5px; }
   #plantillas .pl p { margin:3px 0 6px; font-size:11.5px; color:var(--tenue); }
   #plantillas .meta { font-size:11px; color:var(--tenue); margin-bottom:6px;
@@ -135,14 +148,14 @@
   #chatHilo .msg { padding:7px 10px; border-radius:var(--radio); font-size:12.5px;
                    white-space:pre-wrap; word-break:break-word; }
   #chatHilo .yo { background:#233047; align-self:flex-end; max-width:88%; }
-  #chatHilo .el { background:#141720; border:1px solid var(--linea);
-                  font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+  #chatHilo .el { background:var(--hundido); border:1px solid var(--linea);
+                  font-family:var(--mono); }
   #chatHilo .mal { background:#3a1d1d; border:1px solid #7a3b39; }
   #chatHilo .pensando { color:var(--tenue); font-style:italic; }
   #chatSesion { margin:2px 0 4px; }
   #resumen { font-size:11.5px; color:var(--tenue); white-space:pre-wrap; }
-  pre.codigo { background:#141720; border:1px solid var(--linea); border-radius:var(--radio);
-               padding:7px 9px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+  pre.codigo { background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio);
+               padding:7px 9px; font-family:var(--mono);
                font-size:11px; max-height:180px; overflow-y:auto; color:var(--texto); white-space:pre-wrap; }
   body.modo-zen #panel, body.modo-zen #panelDerecho { display: none !important; }
   body.modo-zen #barraCanvasFlotante { right: 16px; top: 12px; }
@@ -337,7 +350,7 @@
     <span>ORQUESTER</span>
     <div id="badgeWorkspaceActual" class="badge-ws">
       <span>Proyecto:</span>
-      <b id="txtNombreWsActual" style="color:var(--acento); max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Sin seleccionar</b>
+      <b id="txtNombreWsActual" class="dato" style="color:var(--acento); max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Sin seleccionar</b>
     </div>
   </div>
   <div style="display:flex; align-items:center; gap:8px;">
@@ -420,7 +433,7 @@
     <div id="seccionEjecucionApp" class="seccion-card" style="display:none;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
         <div>
-          <h2 style="margin:0; color:var(--acento);">Ejecución en Curso: <span id="appBoardTitulo" style="color:#fff;">-</span></h2>
+          <h2 style="margin:0; color:var(--acento);">Ejecución en Curso: <span id="appBoardTitulo" class="dato" style="color:#fff;">-</span></h2>
           <div id="appProgresoSubtxt" style="font-size:11.5px; color:var(--tenue); margin-top:2px;">Iniciando agentes...</div>
         </div>
         <button id="btnVerEnStudio" style="width:auto; font-size:11.5px; padding:3px 10px; background:#223042;">Ver en Studio ↗</button>
@@ -639,10 +652,10 @@
         <div><label>Workspace <span class="tenue">— dónde corre el nodo</span></label>
           <input id="workspace" placeholder="(scratch: se borra al terminar)"></div>
         </div>
-        <div id="boxTrazabilidadNodo" style="display:none; background:#141720; border:1px solid var(--linea); border-radius:5px; padding:6px 8px; font-size:11px; margin-top:4px;">
+        <div id="boxTrazabilidadNodo" style="display:none; background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:6px 8px; font-size:11px; margin-top:4px;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <b>Linaje & Impacto:</b>
-            <span id="nodoImpactoBadge" style="color:var(--acento); font-weight:bold;">0%</span>
+            <span id="nodoImpactoBadge" class="dato" style="color:var(--acento); font-weight:bold;">0%</span>
           </div>
           <div id="nodoLinajeTxt" style="color:var(--tenue); font-size:10.5px; margin-top:3px;"></div>
         </div>
@@ -691,7 +704,7 @@
         <button id="btnGenerarReporte" style="margin-top:6px; width:100%; font-size:11.5px; padding:4px 8px;">Reporte de Auditoría</button>
       </div>
 
-      <div id="bloqueTelemetria" style="display:none; background:#141720; border:1px solid var(--linea); border-radius:6px; padding:10px; margin-bottom:12px;">
+      <div id="bloqueTelemetria" style="display:none; background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:10px; margin-bottom:12px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
           <h2 style="margin:0; font-size:12px; text-transform:uppercase; letter-spacing:0.5px; color:var(--acento);">Telemetría en Vivo</h2>
           <span id="teleProgresoTxt" style="font-size:11px; font-weight:bold; color:var(--texto);">0%</span>
@@ -710,8 +723,8 @@
           <span><i style="background:var(--ready)"></i>lista</span>
           <span><i style="background:var(--running)"></i>corriendo</span>
           <span><i style="background:var(--done)"></i>hecha</span>
-          <span><i style="background:var(--failed)"></i>falló</span>
-          <span><i style="background:#d1743a"></i>triage</span>
+          <span><i style="background:var(--bloqueado)"></i>bloqueada</span>
+          <span><i style="background:var(--triage)"></i>triage</span>
         </div>
       </div>
 
@@ -2119,7 +2132,7 @@ $("#btnLintGrafo").onclick = async () => {
   }
 
   const itemsHtml = hallazgos.map(h => {
-    const col = h.tipo === "advertencia" ? "var(--failed)" : (h.tipo === "optimizacion" ? "#74c0fc" : "#ffd43b");
+    const col = h.tipo === "advertencia" ? "var(--bloqueado)" : (h.tipo === "optimizacion" ? "#74c0fc" : "#ffd43b");
     return `<div style="border-left:3px solid ${col}; background:rgba(255,255,255,0.03); padding:8px 12px; margin:6px 0; border-radius:0 4px 4px 0; font-size:12px;">
       <b>[${esc(h.tipo.toUpperCase())}]</b> ${esc(h.mensaje)}
     </div>`;
@@ -2143,18 +2156,18 @@ function renderMarkdown(md) {
   if (!md) return '<div class="d">Sin contenido</div>';
   let html = esc(md);
   html = html.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (m, lang, code) => {
-    return `<pre style="background:#13161f; border:1px solid var(--linea); border-radius:6px; padding:10px; margin:8px 0; overflow:auto; font-family:ui-monospace,monospace; font-size:12px; line-height:1.4;"><code>${code}</code></pre>`;
+    return `<pre style="background:#13161f; border:1px solid var(--linea); border-radius:6px; padding:10px; margin:8px 0; overflow:auto; font-family:var(--mono); font-size:12px; line-height:1.4;"><code>${code}</code></pre>`;
   });
   html = html.replace(/^### (.*?)$/gm, '<h4 style="margin:12px 0 4px; font-size:13px; color:#fff;">$1</h4>');
   html = html.replace(/^## (.*?)$/gm, '<h3 style="margin:16px 0 6px; font-size:14px; color:#fff; border-bottom:1px solid var(--linea); padding-bottom:3px;">$1</h3>');
   html = html.replace(/^# (.*?)$/gm, '<h2 style="margin:20px 0 8px; font-size:16px; color:#fff; border-bottom:1px solid var(--linea); padding-bottom:4px;">$1</h2>');
   html = html.replace(/^> \[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\n([\s\S]*?)(?=\n\n|\n[^\>]|$)/gm, (m, tipo, texto) => {
-    const col = tipo === "WARNING" || tipo === "CAUTION" ? "var(--failed)" : (tipo === "TIP" ? "var(--done)" : "var(--acento)");
+    const col = tipo === "WARNING" || tipo === "CAUTION" ? "var(--bloqueado)" : (tipo === "TIP" ? "var(--done)" : "var(--acento)");
     return `<div style="border-left:3px solid ${col}; background:rgba(255,255,255,0.03); padding:8px 12px; margin:8px 0; border-radius:0 4px 4px 0;"><b>${tipo}:</b> ${texto.replace(/^> /gm, '')}</div>`;
   });
   html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
   html = html.replace(/\*(.*?)\*/g, '<i>$1</i>');
-  html = html.replace(/`([^`]+)`/g, '<code style="background:#1c202a; padding:2px 4px; border-radius:3px; font-size:11.5px; font-family:ui-monospace,monospace;">$1</code>');
+  html = html.replace(/`([^`]+)`/g, '<code style="background:#1c202a; padding:2px 4px; border-radius:3px; font-size:11.5px; font-family:var(--mono);">$1</code>');
   html = html.replace(/^- (.*?)$/gm, '<li style="margin-left:18px; margin-bottom:3px;">$1</li>');
   html = html.replace(/\n\n/g, '<div style="height:8px;"></div>');
   return html;
@@ -2235,7 +2248,7 @@ $("#btnDiffSnapshot").onclick = async () => {
       htmlCambios += `<div style="margin:4px 0; color:var(--done);"><b>+ Nodos agregados:</b> ${datos.nodos_agregados.map(esc).join(", ")}</div>`;
     }
     if (datos.nodos_eliminados && datos.nodos_eliminados.length) {
-      htmlCambios += `<div style="margin:4px 0; color:var(--failed);"><b>- Nodos eliminados:</b> ${datos.nodos_eliminados.map(esc).join(", ")}</div>`;
+      htmlCambios += `<div style="margin:4px 0; color:var(--bloqueado);"><b>- Nodos eliminados:</b> ${datos.nodos_eliminados.map(esc).join(", ")}</div>`;
     }
     if (datos.nodos_modificados && datos.nodos_modificados.length) {
       const mods = datos.nodos_modificados.map(m => {
@@ -2248,7 +2261,7 @@ $("#btnDiffSnapshot").onclick = async () => {
       htmlCambios += `<div style="margin:4px 0; color:var(--done);"><b>+ Aristas nuevas:</b> ${datos.aristas_agregadas.map(([p, h]) => `${esc(p)}→${esc(h)}`).join(", ")}</div>`;
     }
     if (datos.aristas_eliminadas && datos.aristas_eliminadas.length) {
-      htmlCambios += `<div style="margin:4px 0; color:var(--failed);"><b>- Aristas eliminadas:</b> ${datos.aristas_eliminadas.map(([p, h]) => `${esc(p)}→${esc(h)}`).join(", ")}</div>`;
+      htmlCambios += `<div style="margin:4px 0; color:var(--bloqueado);"><b>- Aristas eliminadas:</b> ${datos.aristas_eliminadas.map(([p, h]) => `${esc(p)}→${esc(h)}`).join(", ")}</div>`;
     }
   }
 
@@ -2295,7 +2308,7 @@ $("#btnEjecutarDoctor").onclick = async () => {
   const plat = datos.plataforma || {};
   const bins = datos.binarios || {};
   const binHtml = Object.entries(bins).map(([nombre, info]) => {
-    const icon = info.disponible ? '<span style="color:var(--done);">✓</span>' : '<span style="color:var(--failed);">✗</span>';
+    const icon = info.disponible ? '<span style="color:var(--done);">✓</span>' : '<span style="color:var(--bloqueado);">✗</span>';
     const ver = info.version ? `<span style="color:var(--tenue); font-size:10.5px;">(${esc(info.version)})</span>` : '';
     return `<div style="display:flex; justify-content:space-between; padding:2px 0;"><span>${icon} <b>${nombre}</b></span> ${ver}</div>`;
   }).join("");
@@ -2532,7 +2545,7 @@ async function cargarTelemetria() {
   const r = datos.resumen;
   $("#teleProgresoTxt").textContent = `${r.progreso_pct}% (${r.terminados}/${r.total})`;
   $("#teleProgresoBarra").style.width = `${r.progreso_pct}%`;
-  if (r.fallidos > 0) $("#teleProgresoBarra").style.background = "var(--failed)";
+  if (r.fallidos > 0) $("#teleProgresoBarra").style.background = "var(--bloqueado)";
   else if (r.activos > 0) $("#teleProgresoBarra").style.background = "var(--running)";
   else if (r.progreso_pct === 100) $("#teleProgresoBarra").style.background = "var(--done)";
   else $("#teleProgresoBarra").style.background = "var(--acento)";
@@ -2541,7 +2554,7 @@ async function cargarTelemetria() {
     <span><b>${r.activos}</b> corriendo</span>
     <span><b>${r.listos}</b> listos</span>
     <span><b>${r.terminados}</b> hechos</span>
-    <span style="${r.fallidos ? 'color:var(--failed); font-weight:bold;' : ''}"><b>${r.fallidos}</b> fallos</span>
+    <span style="${r.fallidos ? 'color:var(--bloqueado); font-weight:bold;' : ''}"><b>${r.fallidos}</b> fallos</span>
   `;
 
   // Gráfico visual SVG de distribución por ejecutor
@@ -2590,7 +2603,7 @@ async function cargarConsumo() {
   if (!t || !t.intentos) { caja.style.display = "none"; return; }
   caja.style.display = "block";
   const fila = (et, val) =>
-    `<div class="linea"><span class="et">${et}</span><span class="val">${val}</span></div>`;
+    `<div class="linea"><span class="et">${et}</span><span class="val dato">${val}</span></div>`;
   const costo = t.con_costo
     ? `US$ ${t.costo_usd.toFixed(4)}` : "—";
 
@@ -2603,7 +2616,7 @@ async function cargarConsumo() {
   if (pres && pres > 0) {
     const costoActual = t.con_costo ? t.costo_usd : 0;
     const pct = (costoActual / pres) * 100;
-    const col = pct > 100 ? "var(--failed)" : (pct >= 75 ? "var(--ready)" : "var(--acento)");
+    const col = pct > 100 ? "var(--bloqueado)" : (pct >= 75 ? "var(--ready)" : "var(--acento)");
     const anchoBarra = Math.min(pct, 100);
     barraHtml = `
       <div style="margin-top:8px; padding-top:6px; border-top:1px solid var(--linea);">
@@ -2871,8 +2884,8 @@ async function monitorearProgresoApp(board) {
     const ICONO = {
       done: '<span style="color:var(--done);">✓</span>',
       running: '<span style="color:var(--running);">●</span>',
-      blocked: '<span style="color:var(--failed);">✗</span>',
-      triage: '<span style="color:var(--failed);">✗</span>',
+      blocked: '<span style="color:var(--bloqueado);">✗</span>',
+      triage: '<span style="color:var(--bloqueado);">✗</span>',
     };
     timeline.innerHTML = Object.entries(tareas).map(([id, t]) => {
       const st = t.estado || "todo";
@@ -2881,7 +2894,7 @@ async function monitorearProgresoApp(board) {
       const rt = (t.assignee || "").includes(":") ? t.assignee.split(":")[1] : (t.assignee || "hermes");
       const titulo = t.titulo || "";
       return `<div class="timeline-nodo-app ${esc(st)}">
-        <span>${icon} <b>${esc(titulo.slice(0, 46) || id)}</b> <span style="color:var(--tenue); font-size:11px;">(${esc(rt)})</span></span>
+        <span>${icon} <b class="dato">${esc(titulo.slice(0, 46) || id)}</b> <span style="color:var(--tenue); font-size:11px;">(${esc(rt)})</span></span>
         <span style="font-size:10.5px; color:var(--tenue);">${esc(st)}</span>
       </div>`;
     }).join("");
