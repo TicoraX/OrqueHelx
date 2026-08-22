@@ -13,7 +13,7 @@
     },
     {
       "id": "cirugia_minimalista",
-      "titulo": "Aplicar diffs quirúrgicos en {{repo}} para podar la complejidad detectada en el paso anterior. Reemplazar código redundante por funciones estándar, eliminando al menos 20-40% de líneas superfluas sin alterar la lógica de negocio.",
+      "titulo": "Aplicar diffs quirúrgicos en {{repo}} para podar ÚNICAMENTE la complejidad detectada en el paso anterior. Reemplazar código redundante por funciones estándar sin alterar la lógica de negocio. Reportar el total de líneas netas eliminadas como MEDICIÓN, no como meta: no hay cuota mínima, y si no hay bloat justificable no se borra nada. Borrar código en uso para llegar a un número es un fallo del refactor, no un éxito.",
       "runtime": "opencode",
       "workspace": "{{repo}}",
       "x": 40,

@@ -21,6 +21,11 @@ Aca se cubren las dos, sin gastar un centavo en agentes:
      espiados: se comprueba que se los llama, y con que. Un espia falla igual
      que el original ante una firma equivocada, y no lanza ningun CLI.
 
+Y de yapa el otro riesgo del modo folder-first: que ABRIR una carpeta ajena no
+sea ejecutarla. Se arma un repo hostil de verdad, con un filtro de contenido
+propio, y se comprueba que `git status` crudo si lo dispara y que
+`_analizar_workspace` no.
+
     uv run --python 3.11 --with jsonschema --with pyyaml --with pyflakes \\
         python tests/test_modo_app.py
 """
@@ -123,6 +128,57 @@ for malo in ("-1", "0", "abc"):
     except ValueError:
         pass
 print("5. topes de gasto invalidos rechazados antes de compilar: OK")
+
+# --- 6. Mirar una carpeta no ejecuta lo que esa carpeta diga ------------------
+# `git` corre comandos que salen del `.git/config` del repo que se le apunta:
+# `core.fsmonitor` en cualquier operacion, y el filtro `clean` que elija el
+# `.gitattributes` cuando `git status` decide si un archivo cambio. Este
+# endpoint se dispara con el boton "Abrir", ANTES de que nadie autorice correr
+# un agente, asi que abrir una carpeta descargada no puede ser ejecucion.
+#
+# Se arma un repo hostil de verdad y se comprueba las dos mitades: que `git
+# status` crudo SI ejecuta el filtro (si no, el test no probaria nada) y que
+# pasando por `_analizar_workspace` no, sin perder la deteccion.
+import shutil, subprocess, tempfile
+
+if not shutil.which("git"):
+    print("6. repo hostil: salteado, no hay `git` en el PATH")
+else:
+    hostil = Path(tempfile.mkdtemp()) / "hostil"
+    hostil.mkdir()
+    testigo = hostil / "EJECUTADO"
+
+    def _g(*args, **kw):
+        return subprocess.run(["git", *args], cwd=str(hostil), capture_output=True,
+                              text=True, timeout=15, **kw)
+
+    _g("init", "-q", ".")
+    _g("config", "user.email", "prueba@local")
+    _g("config", "user.name", "prueba")
+    (hostil / "a.txt").write_text("contenido\n", encoding="utf-8")
+    (hostil / ".gitattributes").write_text("* filter=malo\n", encoding="utf-8")
+    _g("add", "-A")
+    _g("-c", "filter.malo.clean=cat", "commit", "-qm", "base")
+    # El filtro deja un archivo testigo al correr. Un `touch` no le hace nada a
+    # nadie; lo que importa es que se pueda ver si git lo ejecuto.
+    _g("config", "filter.malo.clean",
+       f'sh -c "touch {testigo.as_posix()}; cat"')
+    # MISMO tamano que el original a proposito: con tamanos distintos git puede
+    # concluir que el archivo cambio sin leer el contenido, y entonces no corre
+    # el filtro y el test no probaria nada. Igualados, tiene que compararlos.
+    (hostil / "a.txt").write_text("contenidX\n", encoding="utf-8")
+
+    testigo.unlink(missing_ok=True)
+    _g("status", "--porcelain")
+    assert testigo.exists(),         "el repo hostil no dispara el filtro ni con `git status` crudo: el test no prueba nada"
+
+    testigo.unlink(missing_ok=True)
+    info = srv._analizar_workspace(str(hostil))
+    assert not testigo.exists(),         "_analizar_workspace ejecuto el filtro que definia la carpeta ajena"
+    assert info["es_git"] and info["git_cambios_pendientes"] == 1,         f"se blindo pero dejo de detectar: {info}"
+    print("6. abrir una carpeta hostil no ejecuta sus filtros de git, y sigue "
+          "detectando el cambio: OK")
+    shutil.rmtree(hostil.parent, ignore_errors=True)
 
 # Los grafos que estos casos dejaron en ui/grafos.
 for f in (RAIZ / "ui" / "grafos").glob("auditoria-seguridad-cso-strix-*.json"):

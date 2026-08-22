@@ -1145,7 +1145,11 @@ def _generar_dataset_jsonl(board: str = None) -> dict:
                 rt = "hermes"
                 if t.assignee and ":" in t.assignee:
                     rt = t.assignee.split(":", 1)[1]
-                gasto = (por_nodo.get(t.id, {}) or {}).get("costo_usd") or 0.0
+                # `None` y no `0.0`: un backend por suscripcion no informa
+                # medidor, y contarlo como gratis corre el promedio de un dataset
+                # que existe justo para medir costo. `_consumo` ya distingue los
+                # dos casos; el exportador los aplastaba en uno.
+                gasto = (por_nodo.get(t.id, {}) or {}).get("costo_usd")
                 dur = None
                 if t.started_at and t.completed_at:
                     try:
@@ -1412,15 +1416,14 @@ def _analizar_workspace(ruta: str) -> dict:
         else:
             comando_tests = comando_tests or "python -m unittest"
 
-    # Detectar Rust
-    if (p / "Cargo.toml").exists():
-        stack = "Rust"
-        comando_tests = "cargo test"
-
-    # Detectar Go
-    if (p / "go.mod").exists():
-        stack = "Go"
-        comando_tests = "go test ./..."
+    # Rust y Go SUMAN, no pisan: un repo con backend en Go y frontend en Node
+    # se reportaba como "Go" a secas, y peor, el `comando_tests` que ya se habia
+    # elegido quedaba sobreescrito. Un monorepo es el caso normal, no el raro.
+    for marcador, nombre, cmd in (("Cargo.toml", "Rust", "cargo test"),
+                                  ("go.mod", "Go", "go test ./...")):
+        if (p / marcador).exists():
+            stack = nombre if stack == "Desconocido" else f"{stack} + {nombre}"
+            comando_tests = comando_tests or cmd
 
     # Detectar Git. Los `-c` no son decoracion: `git` lee el `.git/config` de la
     # carpeta que se le apunta, y `core.fsmonitor` / `core.hooksPath` son
@@ -1431,10 +1434,10 @@ def _analizar_workspace(ruta: str) -> dict:
     SIN_HOOKS = ["-c", "core.fsmonitor=", "-c", "core.hooksPath=",
                  "-c", "core.pager=cat", "-c", "protocol.ext.allow=never"]
 
-    def _git(*args) -> str:
+    def _git(*args, extra=()) -> str:
         """La salida de un `git` en esta carpeta, o vacio si no se pudo."""
         try:
-            r = subprocess.run(["git", *SIN_HOOKS, *args], cwd=str(p),
+            r = subprocess.run(["git", *SIN_HOOKS, *extra, *args], cwd=str(p),
                                capture_output=True, text=True, timeout=3,
                                stdin=subprocess.DEVNULL, encoding="utf-8",
                                errors="replace")
@@ -1442,9 +1445,32 @@ def _analizar_workspace(ruta: str) -> dict:
         except Exception:
             return ""
 
+    def _sin_filtros() -> list:
+        """Neutraliza los filtros de contenido que el repo tenga definidos.
+
+        `core.fsmonitor` no era el unico comando que git ejecuta solo: para
+        decidir si un archivo esta modificado, `git status` corre el filtro
+        `clean` que el `.gitattributes` del repo elija, y el comando de ese
+        filtro sale del `.git/config` del repo. Los nombres no se pueden
+        adivinar, pero SI se pueden leer: `git config --get-regexp` solo lee, y
+        cada driver encontrado se pisa con `cat` (identidad) por linea de
+        comandos, que le gana al config del repo.
+        """
+        salida = []
+        for linea in _git("config", "--local", "--name-only", "--get-regexp",
+                          r"^filter\..*\.(clean|smudge|process)$").splitlines():
+            clave = linea.strip()
+            # `cat` (identidad) para clean/smudge, que esperan un comando que
+            # copie stdin a stdout; vacio para `process`, que se apaga asi.
+            salida += ["-c", f"{clave}=cat" if clave.endswith(("clean", "smudge"))
+                       else f"{clave}="]
+        return salida
+
     es_git = _git("rev-parse", "--is-inside-work-tree") == "true"
     git_branch = _git("branch", "--show-current") if es_git else ""
-    git_cambios = len(_git("status", "--porcelain").splitlines()) if es_git else 0
+    # El unico de los cuatro que corre filtros de contenido.
+    git_cambios = (len(_git("status", "--porcelain", extra=_sin_filtros()).splitlines())
+                   if es_git else 0)
     ultimo_commit = _git("log", "-1", "--oneline") if es_git else ""
 
     return {
@@ -1453,7 +1479,10 @@ def _analizar_workspace(ruta: str) -> dict:
         "ruta": str(p),
         "stack": stack,
         "frameworks": frameworks,
-        "comando_tests": comando_tests or "pytest",
+        # Vacio si no se detecto ninguno. Estaba con `or "pytest"`, asi que a un
+        # repo de Node sin script de test se le decia al agente que corriera
+        # pytest: un comando que no existe ahi, presentado como el correcto.
+        "comando_tests": comando_tests,
         "es_git": es_git,
         "git_branch": git_branch or "main",
         "git_cambios_pendientes": git_cambios,
@@ -1531,7 +1560,10 @@ def _orquestar_intencion(cuerpo: dict) -> dict:
     disponibles = {
         "repo": ruta_ws,
         "ruta": ruta_ws,
-        "comando_tests": info_ws.get("comando_tests") or "pytest",
+        # Si no se detecto, se le dice al agente que lo averigue el, en vez de
+        # mandarle un comando inventado que va a fallar.
+        "comando_tests": (info_ws.get("comando_tests")
+                          or "(averigualo vos: no se detecto un comando de tests)"),
         "modulo": prompt or info_ws.get("nombre") or "el modulo principal",
         "feature": prompt or "la funcionalidad pedida",
         "pregunta": prompt or f"Explicar la arquitectura de {info_ws.get('nombre') or 'este repositorio'}",
@@ -1545,7 +1577,11 @@ def _orquestar_intencion(cuerpo: dict) -> dict:
                          f"no sabe completar: {faltan}")
     g = mcp.sustituir(g, {p: disponibles[p] for p in pedidos})
 
-    board_slug = f"{nom_pl}-{int(time.time()) % 100000}"
+    # Sufijo aleatorio y no `int(time.time()) % 100000`: dos orquestaciones de
+    # la misma plantilla en el mismo segundo compartian board, y la segunda
+    # compilaba sus cards ADENTRO de la corrida de la primera. Es el mismo bug
+    # que ya tenian los ids de snapshot (test 36b).
+    board_slug = f"{nom_pl}-{secrets.token_hex(3)}"
     g["board"] = board_slug
     for n in g.get("nodos", []):
         # El workspace es lo que hace que el agente vea el repo del usuario y no

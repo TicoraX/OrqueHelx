@@ -751,7 +751,9 @@ try:
         for campo in ("task_id", "board", "title", "status", "prompt",
                       "gasto_usd", "entregable", "summary"):
             assert campo in fila, f"al registro le falta '{campo}': {fila}"
-        assert isinstance(fila["gasto_usd"], (int, float)), fila
+        # `None` es un valor legitimo: significa "este backend no informa
+        # medidor", que no es lo mismo que "salio gratis".
+        assert fila["gasto_usd"] is None or isinstance(fila["gasto_usd"], (int, float)), fila
     print(f"46. /api/exportar-dataset exporta las {esperados} cards del board: OK")
 
     # --- 47. /api/workspace/analizar detecta stack, git y tests ---

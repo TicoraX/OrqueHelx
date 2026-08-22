@@ -180,6 +180,12 @@
     color: #0e1017;
   }
   #vistaApp {
+    /* Oculto por defecto: `body` no tiene ninguna de las dos clases de modo
+       hasta que corre el script del final, y sin esto la vista App (fixed,
+       z-index 50, pantalla completa) se pintaba arriba del lienzo en CADA
+       carga. Un usuario de Studio veia el modo App de refilon en cada F5.
+       `body.modo-app-activo #vistaApp` lo devuelve a `block`. */
+    display: none;
     position: fixed;
     top: 44px; left: 0; right: 0; bottom: 0;
     overflow-y: auto;
@@ -1363,12 +1369,19 @@ function refrescarEditor() {
         ULTIMA_TRAZA = claveTraza;
         api("/api/trazabilidad-grafo", { nodo: sel, grafo: grafo }).then(({ ok, datos }) => {
           const box = $("#boxTrazabilidadNodo");
-          if (ok && datos && sel === n.id) {
+          // `sel` se lee AL RESOLVER, `n.id` es el nodo que pidio esta
+          // respuesta: si ya no coinciden, la respuesta llego tarde y no es
+          // sobre lo que el usuario mira. Antes se caia al `else` y apagaba la
+          // caja del nodo NUEVO; con el cache encima, no se volvia a pedir y la
+          // trazabilidad quedaba en blanco hasta tocar el cableado.
+          if (sel !== n.id) return;
+          if (ok && datos) {
             box.style.display = "block";
             $("#nodoImpactoBadge").textContent = `${datos.impacto_pct}% impacto`;
             $("#nodoLinajeTxt").textContent = `Ancestros: ${datos.ancestros.length} · Downstreams bloqueados: ${datos.descendientes.length}`;
-          } else if (box) {
+          } else {
             box.style.display = "none";
+            ULTIMA_TRAZA = null;          // que un fallo se pueda reintentar
           }
         }).catch(() => { ULTIMA_TRAZA = null; });
       }
@@ -2693,7 +2706,14 @@ $("#btnUsarRaizActual").onclick = async () => {
   }
 };
 
+// Un clic mas mientras el anterior viaja compila OTRO board y arranca OTRO
+// dispatcher sobre la misma carpeta: dos agentes escribiendo en el mismo repo.
+// El boton no alcanza como candado porque las tarjetas de intencion llaman a
+// esto directo.
+let ORQUESTANDO = false;
+
 async function lanzarOrquestacionApp(intencion, promptTexto) {
+  if (ORQUESTANDO) return avisar("Ya hay una orquestacion en curso.", "tibio");
   if (!WORKSPACE_ACTUAL) {
     const r = ($("#inputWorkspaceApp").value || "").trim();
     if (!r) return avisar("Primero selecciona y analiza una carpeta de proyecto.", "error");
@@ -2709,7 +2729,15 @@ async function lanzarOrquestacionApp(intencion, promptTexto) {
   };
 
   avisar("Orquestando agentes y compilando grafo...", "ok");
-  const { ok, datos } = await api("/api/orquestar-intencion", cuerpo);
+  ORQUESTANDO = true;
+  let ok, datos;
+  try {
+    ({ ok, datos } = await api("/api/orquestar-intencion", cuerpo));
+  } finally {
+    // En `finally`: si la llamada explota, el candado tiene que soltarse igual
+    // o el modo App queda inutilizable hasta recargar.
+    ORQUESTANDO = false;
+  }
   if (!ok || !datos) return avisar(datos?.error || "Error al orquestar.", "error");
   // Que el agente no haya diseñado nada se DICE. Un flujo armado con la
   // plantilla de emergencia se ve igual que uno diseñado, y es lo unico que el
