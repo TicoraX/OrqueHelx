@@ -70,7 +70,30 @@ Si lo exponés a la red, el token deja de ser una formalidad. Pensalo dos veces.
 
 ## 2. Diseñar el flujo
 
-En el canvas:
+### Que lo diseñe un agente
+
+En el panel **Diseño**, bajo *✨ Diseñar flujo con IA*:
+
+- **Crear** — describís el flujo en una línea y un agente devuelve el grafo.
+  Pisa el lienzo entero, así que es para empezar.
+- **Refinar** — aparece cuando ya hay un grafo. Describís **el cambio**, no el
+  flujo: *"agregale un nodo de lint que corra en paralelo con los tests"*. Lo
+  que ya estaba se conserva, incluidas las posiciones que hayas acomodado a
+  mano; solo se ubican los nodos nuevos. Si no te gusta, `Ctrl+Z`.
+
+Refinar **continúa la conversación**: el segundo pedido sabe de qué flujo venís
+hablando, así que "y ahora sacale el de report" funciona sin volver a explicar
+nada. La sesión la guarda el CLI (por la API viaja solo el id) y se descarta al
+abrir otro grafo.
+
+Si no hay ningún CLI de agente instalado, **Crear** cae a una plantilla de tres
+nodos y **Refinar** deja el grafo intacto — en los dos casos el aviso sale en
+ámbar diciendo por qué. Un fallback pintado de verde es una feature muerta que
+se ve viva.
+
+El botón **Ordenar** re-acomoda todo por topología cuando el lienzo quedó feo.
+
+### A mano, en el canvas
 
 | Gesto | Qué hace |
 |---|---|
@@ -410,14 +433,31 @@ No hay duplicación: el kanban no es nuestro (`ARQUITECTURA.md` §10.2).
 
 ## 9. Los tests
 
+Todos, en un comando, desde la raíz del repo:
+
 ```bash
-cd hermes-agent
-uv run --python 3.11 --with jsonschema python ../tests/test_contract.py
-uv run --python 3.11 --with jsonschema python ../tests/test_dag_rombo.py
-uv run --python 3.11 --with jsonschema python ../tests/test_dos_dispatchers.py
-uv run --python 3.11 --with jsonschema python ../tests/test_compilador.py
-uv run --python 3.11 --with jsonschema python ../tests/test_concurrencia_reintentos.py
-uv run --python 3.11 --with jsonschema python ../tests/test_mcp_export.py
+uv run --python 3.11 --with jsonschema --with pyyaml --with pyflakes python tests/correr.py
+```
+
+**Las dos `--with` no son opcionales.** `jsonschema` y `pyyaml` son
+dependencias duras: sin ellas cuatro tests fallan con errores que parecen del
+código y no lo son. `tests/correr.py` lo detecta antes de correr nada y te da
+el comando; si igual corrés un test suelto con el Python del PATH, es lo que te
+va a pasar.
+
+El runner distingue **OMITIDO** de **OK**: `test_api_rbac` sale con código 0
+cuando se saltea por falta de Postgres, así que mirar solo el exit code cuenta
+como verde algo que no corrió. Para que corra de verdad:
+
+```bash
+docker compose up -d db
+cd apps/api && npm run build
+```
+
+Uno solo, si estás iterando:
+
+```bash
+uv run --python 3.11 --with jsonschema --with pyyaml --with pyflakes python tests/test_compilador.py
 ```
 
 Los que aceptan `--e2e` además ejecutan agentes de verdad y tardan minutos:

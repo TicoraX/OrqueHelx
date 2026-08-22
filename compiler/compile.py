@@ -17,7 +17,7 @@ Formato del grafo (el que edita la UI):
       "aristas": [["a", "b"]]
     }
 """
-import sys
+import math, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hermes-agent"))
@@ -125,6 +125,32 @@ def validar(grafo: dict, *, capacidades: bool = True) -> None:
     for n in nodos:
         esf = (n.get("esfuerzo") or "").strip()
         rt = n.get("runtime", "hermes")
+        if not es_nota(n) and n.get("presupuesto_usd") is not None:
+            crudo = n["presupuesto_usd"]
+            try:
+                # `bool` aparte: `float(True)` es 1.0 y pasaria como un tope de
+                # US$ 1 que nadie escribio. `math.isfinite` aparte: `inf` pasa
+                # el `> 0` y da un tope que no puede alcanzarse nunca, o sea un
+                # tope que se cree puesto y no lo esta (SS10.5).
+                if isinstance(crudo, bool):
+                    raise ValueError()
+                val = float(crudo)
+                if not math.isfinite(val) or val <= 0:
+                    raise ValueError()
+            except (ValueError, TypeError):
+                raise ErrorDeGrafo(
+                    f"nodo '{n['id']}': presupuesto '{crudo}' invalido "
+                    "(debe ser un numero finito > 0)")
+        if not es_nota(n) and n.get("herramientas") is not None:
+            herr = n["herramientas"]
+            validas = {"Read", "Grep", "Glob", "Bash", "Write"}
+            # `isinstance(h, str)` primero: `h not in validas` con una lista
+            # adentro tira TypeError (unhashable) en vez de ErrorDeGrafo, y eso
+            # sale del compilador como un 500 en lugar del mensaje al canvas.
+            if not isinstance(herr, (list, tuple, set)) or                     any(not isinstance(h, str) or h not in validas for h in herr):
+                raise ErrorDeGrafo(
+                    f"nodo '{n['id']}': herramientas '{herr}' invalidas. "
+                    f"Validas: {sorted(validas)}")
         if not esf or es_nota(n) or rt not in ESFUERZO:
             continue
         if esf not in ESFUERZO[rt][1]:
@@ -216,9 +242,173 @@ def compilar(grafo: dict, *, board: str = None) -> dict[str, str]:
                 # el nuestro y lo pasa como --effort/--variant. Un campo, dos
                 # consumidores, igual que el modelo.
                 **({"reasoning_effort": nodo["esfuerzo"]} if nodo.get("esfuerzo") else {}),
+                # `skills` SOLO en un nodo `claude-code`, que es el unico
+                # runtime que aplica los permisos (`--allowedTools` en
+                # `backends.run_backend`). En un nodo `hermes` este campo
+                # significa otra cosa --carga de contexto para un worker
+                # nativo, `loop.py` lo explica-- y meterle `["Read","Bash"]` le
+                # pedia a Hermes que cargara skills con esos nombres en una
+                # card que SI va a lanzar.
+                #
+                # ponytail: en `opencode` y `agy` las herramientas del nodo
+                # siguen sin aplicarse; sus CLIs no tienen un flag equivalente.
+                # Que no viajen es mejor que viajar a un campo que hace otra
+                # cosa, pero el hueco sigue: el Studio deja marcarlas y no
+                # rigen. Cerrarlo es rechazarlas en `validar`, y eso invalida
+                # grafos ya guardados: va aparte.
+                **({"skills": list(nodo["herramientas"])}
+                   if nodo.get("herramientas") and nodo.get("runtime") == "claude-code"
+                   else {}),
                 **({"provider_override": nodo["proveedor"]} if nodo.get("proveedor") else {}),
+                **({"tenant": f"budget:{nodo['presupuesto_usd']}"} if nodo.get("presupuesto_usd") else {}),
             )
         except ValueError as e:
             # SS4: traducir el error del kanban a algo que el canvas pueda pintar.
             raise ErrorDeGrafo(f"nodo '{nodo['id']}': {e}") from e
     return ids
+
+
+def analizar(grafo: dict) -> list[dict]:
+    """Linter estático de grafos DAG: detecta antipatrones, aristas redundantes y riesgos."""
+    hallazgos = []
+    nodos = [n for n in (grafo.get("nodos") or []) if not es_nota(n)]
+    if not nodos:
+        return hallazgos
+
+    ids = {n["id"] for n in nodos}
+    aristas = [(p, h) for p, h in (grafo.get("aristas") or []) if p in ids and h in ids]
+
+    padres = {i: set() for i in ids}
+    hijos = {i: set() for i in ids}
+    for p, h in aristas:
+        padres[h].add(p)
+        hijos[p].add(h)
+
+    # 1. Nodos aislados en flujos multipaso
+    if len(nodos) > 1:
+        for n in nodos:
+            nid = n["id"]
+            if not padres[nid] and not hijos[nid]:
+                hallazgos.append({
+                    "tipo": "aviso",
+                    "codigo": "nodo_aislado",
+                    "nodo": nid,
+                    "mensaje": f"El nodo '{nid}' está aislado: no tiene dependencias ni dependientes.",
+                })
+
+    # 2. Fan-in alto (más de 4 dependencias directas)
+    for nid, ps in padres.items():
+        if len(ps) > 4:
+            hallazgos.append({
+                "tipo": "aviso",
+                "codigo": "fan_in_alto",
+                "nodo": nid,
+                "mensaje": f"El nodo '{nid}' espera {len(ps)} dependencias directas concurrentes.",
+            })
+
+    # 3. Redundancia transitiva en aristas
+    def _alcanzable_indirecto(origen, destino, visitados=None):
+        if visitados is None:
+            visitados = set()
+        visitados.add(origen)
+        for inter in hijos.get(origen, set()):
+            if inter == destino:
+                continue
+            if inter not in visitados:
+                if destino in hijos.get(inter, set()) or _alcanzable_indirecto(inter, destino, visitados):
+                    return True
+        return False
+
+    for p, h in aristas:
+        if _alcanzable_indirecto(p, h):
+            hallazgos.append({
+                "tipo": "optimizacion",
+                "codigo": "arista_redundante",
+                "arista": [p, h],
+                "mensaje": f"La arista '{p} -> {h}' es redundante porque existe un camino indirecto alternativo.",
+            })
+
+    # 4. Esfuerzo alto sin tope individual
+    for n in nodos:
+        nid = n["id"]
+        esf = n.get("esfuerzo")
+        pres = n.get("presupuesto_usd")
+        if esf in ("high", "xhigh", "max", "ultra") and not pres:
+            hallazgos.append({
+                "tipo": "consejo",
+                "codigo": "esfuerzo_sin_tope",
+                "nodo": nid,
+                "mensaje": f"El nodo '{nid}' usa esfuerzo '{esf}' sin tope de gasto individual configurado.",
+            })
+
+    # 5. Runtimes no instalados en el entorno
+    try:
+        ausentes = faltantes({n.get("runtime", "hermes") for n in nodos})
+        for n in nodos:
+            rt = n.get("runtime", "hermes")
+            if rt in ausentes:
+                hallazgos.append({
+                    "tipo": "advertencia",
+                    "codigo": "runtime_no_disponible",
+                    "nodo": n["id"],
+                    "mensaje": f"El runtime '{rt}' del nodo '{n['id']}' no está instalado en este entorno.",
+                })
+    except Exception:
+        pass
+
+    return hallazgos
+
+
+def trazabilidad(grafo: dict, nodo_id: str) -> dict:
+    """Calcula ancestros, descendientes e impacto de un nodo en el DAG."""
+    nodos = [n for n in (grafo.get("nodos") or []) if not es_nota(n)]
+    ids = {n["id"] for n in nodos}
+    if nodo_id not in ids:
+        raise ErrorDeGrafo(f"nodo '{nodo_id}' no encontrado en el grafo")
+
+    aristas = [(p, h) for p, h in (grafo.get("aristas") or []) if p in ids and h in ids]
+    padres = {i: set() for i in ids}
+    hijos = {i: set() for i in ids}
+    for p, h in aristas:
+        padres[h].add(p)
+        hijos[p].add(h)
+
+    def _recorrer_ancestros(nid):
+        visitados = set()
+        pila = list(padres.get(nid, set()))
+        while pila:
+            if len(visitados) > 10_000:
+                raise ValueError("grafo demasiado grande para analizar trazabilidad")
+            actual = pila.pop()
+            if actual not in visitados:
+                visitados.add(actual)
+                pila.extend(p for p in padres.get(actual, set()) if p not in visitados)
+        return visitados
+
+    def _recorrer_descendientes(nid):
+        visitados = set()
+        pila = list(hijos.get(nid, set()))
+        while pila:
+            if len(visitados) > 10_000:
+                raise ValueError("grafo demasiado grande para analizar trazabilidad")
+            actual = pila.pop()
+            if actual not in visitados:
+                visitados.add(actual)
+                pila.extend(h for h in hijos.get(actual, set()) if h not in visitados)
+        return visitados
+
+    ancestros = sorted(list(_recorrer_ancestros(nodo_id)))
+    descendientes = sorted(list(_recorrer_descendientes(nodo_id)))
+    total_ejecutables = len(nodos)
+    impacto_pct = round((len(descendientes) / max(1, total_ejecutables - 1)) * 100, 1) if total_ejecutables > 1 else 0.0
+
+    return {
+        "ok": True,
+        "nodo": nodo_id,
+        "ancestros": ancestros,
+        "descendientes": descendientes,
+        "padres_directos": sorted(list(padres.get(nodo_id, set()))),
+        "hijos_directos": sorted(list(hijos.get(nodo_id, set()))),
+        "total_impactados": len(descendientes),
+        "impacto_pct": impacto_pct,
+    }

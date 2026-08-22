@@ -11,8 +11,111 @@ Las reglas de abajo salieron de la fase de verificacion, no del gusto:
     invoque el binario y que no)
   - denylist de flags de bypass de permisos
 """
-import json, os, re, shutil, subprocess, tempfile
+import json, os, re, shutil, subprocess, tempfile, threading
 from pathlib import Path
+
+# Los subprocesos de agente en vuelo, POR BOARD. La clave no es un adorno: dos
+# boards pueden estar corriendo a la vez --es el escenario de ARQUITECTURA SS12 y
+# el que cubre `test_dos_dispatchers`-- y sin ella, parar uno mataba los agentes
+# del otro. Verificado con dos procesos registrados y un solo pedido de parada:
+# morian los dos.
+_PROCESOS_LOCK = threading.Lock()
+_PROCESOS_ACTIVOS: dict[str, set] = {}
+_PROCESOS_POR_TASK: dict[tuple[str | None, str], subprocess.Popen] = {}
+
+# En que board esta trabajando ESTE hilo. `threading.local` y no un parametro
+# nuevo: entre `tick` --que es quien sabe el board-- y `Popen` hay cuatro
+# llamadas, y sumarle un argumento a las cuatro para un dato que solo usa la
+# ultima es peor que dejarlo en el hilo. Un hilo sin marcar (el chat del Studio,
+# que no pertenece a ningun board) cae en `None` y no lo alcanza ninguna parada
+# de board, que es lo correcto.
+_HILO = threading.local()
+
+
+def marcar_board(board: str | None):
+    """Decir en que board trabaja este hilo, para que su Popen quede fichado."""
+    _HILO.board = board
+
+
+def marcar_tarea(task_id: str | None):
+    """Decir en que tarea trabaja este hilo."""
+    _HILO.task_id = task_id
+
+
+def registrar_proceso(p: subprocess.Popen):
+    with _PROCESOS_LOCK:
+        b = getattr(_HILO, "board", None)
+        t = getattr(_HILO, "task_id", None)
+        _PROCESOS_ACTIVOS.setdefault(b, set()).add(p)
+        if t:
+            _PROCESOS_POR_TASK[(b, t)] = p
+
+
+def desregistrar_proceso(p: subprocess.Popen):
+    with _PROCESOS_LOCK:
+        for board, vivos in list(_PROCESOS_ACTIVOS.items()):
+            vivos.discard(p)
+            # Y la clave vacia tambien: si no, el diccionario junta una entrada
+            # por board que haya corrido alguna vez en la vida del proceso.
+            if not vivos:
+                _PROCESOS_ACTIVOS.pop(board, None)
+        for clave, proc in list(_PROCESOS_POR_TASK.items()):
+            if proc == p:
+                _PROCESOS_POR_TASK.pop(clave, None)
+
+
+def matar_proceso_task(board: str | None, task_id: str) -> bool:
+    """Cortar el proceso de una tarea especifica si esta en vuelo."""
+    with _PROCESOS_LOCK:
+        p = _PROCESOS_POR_TASK.get((board, task_id))
+    if p is not None:
+        try:
+            if p.poll() is None:
+                p.kill()
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def matar_procesos_activos(board: str | None = None):
+    """Cortar los agentes en vuelo. Con `board`, solo los de ese board.
+
+    Sin `board` mata todo: es el apagado del proceso entero, no la parada de una
+    corrida. Quien para UNA corrida tiene que pasar el suyo.
+    """
+    with _PROCESOS_LOCK:
+        if board is None:
+            procs = [p for vivos in _PROCESOS_ACTIVOS.values() for p in vivos]
+        else:
+            procs = list(_PROCESOS_ACTIVOS.get(board, ()))
+    muertos = 0
+    for p in procs:
+        try:
+            if p.poll() is None:
+                # `kill` a secas y no `terminate` seguido de `kill` sin esperar
+                # nada en el medio: asi el SIGTERM no le daba ni un ciclo al CLI
+                # para cerrar, o sea que la cortesia era decorativa. Esto se
+                # llama desde "parar YA": que lo diga el codigo.
+                p.kill()
+                muertos += 1
+        except Exception:
+            pass
+    return muertos
+
+# SS5: jsonschema es dependencia DURA, y por eso se importa aca arriba. Estaba
+# adentro de `_validar`, y cuando faltaba el ModuleNotFoundError salia envuelto
+# en un BackendError con el nombre del CLI adelante: "opencode:
+# ModuleNotFoundError". No matchea `_PERMANENTES`, asi que el nodo se
+# reintentaba dos veces culpando a un agente que habia respondido bien.
+# Una dependencia ausente tiene que romper una vez, al arrancar, y decir la verdad.
+try:
+    import jsonschema
+except ImportError:                       # pragma: no cover - solo sin la dep
+    raise SystemExit(
+        "falta `jsonschema`, que es dependencia dura (SS5): sin ella la "
+        "validacion del contrato se saltea y los guardrails quedan inertes.\n"
+        "  uv run --python 3.11 --with jsonschema --with pyyaml python <lo que ibas a correr>")
 
 # El AgentAdapterOutput de SS5.
 CONTRATO = {
@@ -41,7 +144,22 @@ FLAGS_PROHIBIDOS = {
 
 
 class BackendError(RuntimeError):
-    """El backend no devolvio algo que cumpla el contrato."""
+    """El backend no devolvio algo que cumpla el contrato.
+
+    `permanente` dice si reintentar tiene sentido. Va ACA y no en una lista de
+    substrings del lado del dispatcher: esa lista ya se desincronizo una vez
+    (el catch paso de FileNotFoundError a OSError, el mensaje cambio, y un
+    workspace inexistente se reintentaba dos veces como transitorio), y volvia
+    a pasar con cualquier excepcion nueva del parser. Quien LEVANTA el error
+    sabe si se arregla solo; quien lee el texto, no.
+    """
+    permanente = False
+
+
+class ErrorPermanente(BackendError):
+    """No se arregla reintentando: falta un binario, un flag prohibido, un
+    runtime que no existe. Reintentar solo gasta tiempo y cuota."""
+    permanente = True
 
 
 def _texto_de_jsonl(stdout: str) -> str:
@@ -267,7 +385,7 @@ def _resolver_argv(argv: list[str]) -> list[str]:
         None,
     ) or shutil.which(argv[0])
     if ruta is None:
-        raise BackendError(f"no esta en el PATH: {argv[0]}")
+        raise ErrorPermanente(f"no esta en el PATH: {argv[0]}")
     ext = os.path.splitext(ruta)[1].lower()
     if ext in (".cmd", ".bat"):
         # Un .cmd se enruta por cmd.exe, que **parte el argumento en el primer
@@ -294,9 +412,6 @@ def _resolver_argv(argv: list[str]) -> list[str]:
 
 
 def _validar(obj: dict) -> dict:
-    # SS5: jsonschema es dependencia dura. Sin el, la validacion se saltea en
-    # silencio y los guardrails quedan inertes.
-    import jsonschema
     jsonschema.validate(obj, CONTRATO)
     return obj
 
@@ -324,9 +439,9 @@ def _flags_extra(runtime: str, esfuerzo: str = None,
     if esfuerzo:
         flag, validos = ESFUERZO.get(runtime, (None, ()))
         if not flag:
-            raise BackendError(f"{runtime} no acepta esfuerzo por invocacion")
+            raise ErrorPermanente(f"{runtime} no acepta esfuerzo por invocacion")
         if esfuerzo not in validos:
-            raise BackendError(
+            raise ErrorPermanente(
                 f"{runtime} no acepta esfuerzo '{esfuerzo}'. Validos: {list(validos)}")
         extra += [flag, esfuerzo]
     if presupuesto is not None and TOPE_GASTO.get(runtime):
@@ -401,7 +516,7 @@ def chat_backend(runtime: str, mensaje: str, *, sesion: str = None,
     `cwd`: es el mismo agente con las mismas barandas, solo que sin contrato.
     """
     if runtime not in CHAT:
-        raise BackendError(f"runtime desconocido para chat: {runtime}")
+        raise ErrorPermanente(f"runtime desconocido para chat: {runtime}")
     construir_argv, parser = CHAT[runtime]
     argv = construir_argv(mensaje, sesion, modelo)
     if herramientas and runtime == "claude-code":
@@ -436,25 +551,40 @@ def _correr(runtime: str, argv: list[str], *, timeout: int, cwd: str = None):
     """
     prohibidos = FLAGS_PROHIBIDOS.intersection(argv)
     if prohibidos:
-        raise BackendError(f"flags de bypass prohibidos: {sorted(prohibidos)}")
+        raise ErrorPermanente(f"flags de bypass prohibidos: {sorted(prohibidos)}")
     try:
-        return subprocess.run(
-            _resolver_argv(argv), capture_output=True, text=True, timeout=timeout,
-            encoding="utf-8", errors="replace",
-            # stdin cerrado, SIEMPRE. Sin esto el CLI hereda el stdin del padre
-            # y puede quedarse leyendolo — y cuando el padre es el servidor MCP,
-            # ese stdin **es el canal JSON-RPC**: el agente se come los mensajes
-            # del protocolo y las dos partes se cuelgan. Verificado: opencode
-            # responde en 9s suelto y colgaba >600s lanzado desde el servidor.
+        proc = subprocess.Popen(
+            _resolver_argv(argv),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
             stdin=subprocess.DEVNULL,
             cwd=cwd,
+        )
+        registrar_proceso(proc)
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        finally:
+            desregistrar_proceso(proc)
+        return subprocess.CompletedProcess(
+            args=argv,
+            returncode=proc.returncode,
+            stdout=stdout or "",
+            stderr=stderr or "",
         )
     except OSError as e:
         # OSError y no solo FileNotFoundError: un `cwd` inexistente tira
         # NotADirectoryError, y sin atraparlo se escapaba del pool de hilos y
         # mataba el tick entero por un nodo mal configurado.
-        raise BackendError(f"no se pudo lanzar {runtime}: {e}") from e
+        raise ErrorPermanente(f"no se pudo lanzar {runtime}: {e}") from e
     except subprocess.TimeoutExpired as e:
+        try:
+            proc.kill()
+            proc.communicate()
+        except Exception:
+            pass
         raise BackendError(f"{runtime} excedio {timeout}s") from e
 
 
@@ -479,7 +609,7 @@ def run_backend(runtime: str, goal: str, *, timeout: int = 600,
     uno ausente.
     """
     if runtime not in BACKENDS:
-        raise BackendError(f"runtime desconocido: {runtime}")
+        raise ErrorPermanente(f"runtime desconocido: {runtime}")
     construir_argv, parser = BACKENDS[runtime]
 
     # El goal nombra el backend y lleva el contrato en texto. Para opencode es

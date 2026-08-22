@@ -1,7 +1,8 @@
 import {
   Injectable, UnauthorizedException, ConflictException, BadRequestException,
+  HttpException, HttpStatus,
 } from '@nestjs/common';
-import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import * as argon2 from 'argon2';
 import { Prisma } from './prisma.service';
 
@@ -10,11 +11,73 @@ import { Prisma } from './prisma.service';
 const hashToken = (t: string) => createHash('sha256').update(t).digest('hex');
 const DIAS = 7;
 
+// Freno de fuerza bruta. Vive ACA y no en `GuardiaAuth` por dos motivos:
+// el guard hace `return true` por `@Publico()` antes de mirar nada, y login y
+// registro son justamente las publicas; y solo el servicio sabe si el intento
+// FALLO — un login que anda no tiene por que gastar cuota.
+// Sin `@nestjs/throttler`: es una dependencia nueva para veinte lineas.
+const VENTANA_MS = 15 * 60 * 1000;
+const MAX_FALLOS = 10;
+// Techo duro del mapa: con IPv6 el espacio de claves es infinito y un atacante
+// lo llena a voluntad. Un rate limiter que se come la RAM ES el DoS que evita.
+const MAX_CLAVES = 10_000;
+
 @Injectable()
 export class AuthService {
   constructor(private readonly db: Prisma) {}
 
-  async registrar(email: string, password: string, nombre?: string) {
+  private readonly fallos = new Map<string, number[]>();
+
+  /** Rechaza si esta clave ya agoto sus intentos fallidos en la ventana.
+   *
+   * Ojo con la clave: `req.ip` es el peer del socket salvo que se active
+   * `trust proxy`. Detras de un proxy TODOS comparten IP y veinte intentos
+   * bloquean a todo el mundo; con `trust proxy` a ciegas, `X-Forwarded-For` es
+   * falsificable y el limite se evade con una cabecera. Se deja explicito:
+   * esta API escucha en 127.0.0.1 y NO confia en proxies. Si algun dia va
+   * detras de uno, hay que decidirlo aca a proposito.
+   */
+  private frenar(clave: string) {
+    const ahora = Date.now();
+    const previos = (this.fallos.get(clave) || []).filter(t => ahora - t < VENTANA_MS);
+    if (previos.length) this.fallos.set(clave, previos);
+    else this.fallos.delete(clave);
+    if (previos.length >= MAX_FALLOS) {
+      throw new HttpException('demasiados intentos, probá en unos minutos',
+                              HttpStatus.TOO_MANY_REQUESTS);
+    }
+  }
+
+  private anotarFallo(clave: string) {
+    // Poda antes de insertar: sin esto el mapa solo crece.
+    if (this.fallos.size >= MAX_CLAVES) {
+      const corte = Date.now() - VENTANA_MS;
+      for (const [k, ts] of this.fallos) {
+        if (!ts.some(t => t > corte)) this.fallos.delete(k);
+      }
+      // Si tras podar sigue lleno, se desaloja UNA entrada: la que tiene el
+      // fallo mas viejo. Un `clear()` aca seria la evasion misma del freno —
+      // el atacante llena el mapa y de paso resetea su propio contador.
+      while (this.fallos.size >= MAX_CLAVES) {
+        let vieja: string | null = null;
+        let masViejo = Infinity;
+        for (const [k, ts] of this.fallos) {
+          const ultimo = ts[ts.length - 1] ?? 0;
+          if (ultimo < masViejo) { masViejo = ultimo; vieja = k; }
+        }
+        if (vieja === null) break;
+        this.fallos.delete(vieja);
+      }
+    }
+    const previos = this.fallos.get(clave) || [];
+    this.fallos.set(clave, [...previos, Date.now()]);
+  }
+
+  async registrar(email: string, password: string, nombre?: string, ip = 'desconocida') {
+    // En registro se cuenta CADA intento, no solo los fallidos: el abuso aca es
+    // la creacion masiva de cuentas, que sale bien. Diez por IP cada 15 min.
+    this.frenar(`registro:${ip}`);
+    this.anotarFallo(`registro:${ip}`);
     email = (email || '').trim().toLowerCase();
     if (!email.includes('@')) throw new BadRequestException('email invalido');
     // 12 y no 8: esto ejecuta agentes con shell en la maquina del servidor.
@@ -29,7 +92,9 @@ export class AuthService {
     return { id: user.id, email: user.email };
   }
 
-  async login(email: string, password: string) {
+  async login(email: string, password: string, ip = 'desconocida') {
+    const clave = `login:${ip}`;
+    this.frenar(clave);
     email = (email || '').trim().toLowerCase();
     const user = await this.db.user.findUnique({ where: { email } });
     // Se verifica igual cuando el usuario no existe, con un hash señuelo, para
@@ -38,7 +103,10 @@ export class AuthService {
     const hash = user?.passwordHash ??
       '$argon2id$v=19$m=65536,t=3,p=4$c2XcnyTPZ4YQyz4bfxvbHA$Ky3kO0GVJYQKqmM6bZ0mYQZ7GxDkFmVQBEbLBs9wYUE';
     const ok = await argon2.verify(hash, password || '').catch(() => false);
-    if (!ok || !user) throw new UnauthorizedException('credenciales invalidas');
+    if (!ok || !user) {
+      this.anotarFallo(clave);
+      throw new UnauthorizedException('credenciales invalidas');
+    }
 
     const token = randomBytes(32).toString('base64url');
     const expiraEn = new Date(Date.now() + DIAS * 864e5);
@@ -67,12 +135,4 @@ export class AuthService {
       .delete({ where: { tokenHash: hashToken(token) } })
       .catch(() => {});
   }
-}
-
-// Comparacion en tiempo constante para secretos que no pasan por argon2
-// (el token interno del motor).
-export function igualSeguro(a: string, b: string) {
-  const x = Buffer.from(a || '');
-  const y = Buffer.from(b || '');
-  return x.length === y.length && timingSafeEqual(x, y);
 }

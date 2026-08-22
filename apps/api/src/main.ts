@@ -3,6 +3,15 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 
 async function main() {
+  // Sin token, TODA llamada al motor devuelve 404 — y ese 404 esta diseñado a
+  // proposito para no explicar nada (`_autorizado` en ui/server.py). Un aviso
+  // en consola no alcanza: el servicio arranca, escucha, y no puede cumplir su
+  // unica funcion. Se cae aca, con el motivo.
+  if (!process.env.ORQUESTER_TOKEN) {
+    throw new Error('falta ORQUESTER_TOKEN: sin el, la API no puede hablarle al ' +
+                    'motor y toda llamada responde 404. Es el mismo valor que ' +
+                    'arranca el Studio (ui/server.py).');
+  }
   const app = await NestFactory.create(AppModule, { logger: ['error', 'warn'] });
   app.setGlobalPrefix('api');
 

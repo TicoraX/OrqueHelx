@@ -185,6 +185,112 @@ def faltantes(runtimes) -> list[str]:
                    if rt in t and not t[rt]["disponible"]})
 
 
+def doctor() -> dict:
+    """Diagnóstico integral de salud, runtimes, SQLite y entorno de ORQUESTER."""
+    import platform, sqlite3
+
+    sqlite_ver = sqlite3.sqlite_version
+    # La version segura es 3.51.3, no 3.51: comparando solo (mayor, menor) un
+    # 3.51.0 pasaba como sano y es una de las que tiene el bug de WAL-reset
+    # (ARQUITECTURA.md SS10). `sqlite_version_info` ya es la tupla, sin parsear.
+    wal_seguro = sqlite3.sqlite_version_info >= (3, 51, 3)
+
+    binarios = {}
+    todos_bin = {
+        "claude": ["claude", "--version"],
+        "opencode": ["opencode", "--version"],
+        "antigravity": ["agy", "--version"],
+        "hermes": ["hermes", "--version"],
+        "node": ["node", "--version"],
+        "docker": ["docker", "--version"],
+    }
+
+    for nombre, argv in todos_bin.items():
+        presente = bool(shutil.which(argv[0]))
+        version = None
+        # Que el binario EXISTA y que RESPONDA son dos cosas distintas, y este
+        # diagnostico las daba por la misma: un CLI a medio instalar que salia
+        # con error se informaba como "disponible", que es la palabra que uno
+        # viene a buscar aca justamente cuando algo no anda.
+        operable = False
+        detalle = None
+        if presente:
+            try:
+                p = subprocess.run(argv, capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL)
+                out = (p.stdout or p.stderr or "").strip()
+                operable = p.returncode == 0
+                version = out.splitlines()[0] if out else None
+                if not operable:
+                    detalle = f"`{' '.join(argv)}` salio {p.returncode}"
+            except Exception as e:
+                detalle = f"{type(e).__name__}: {e}"
+        binarios[nombre] = {
+            "disponible": presente,
+            "operable": operable,
+            "version": version,
+            "problema": detalle,
+            "ruta": shutil.which(argv[0]) or None,
+        }
+
+    runtimes_disponibles = sum(1 for b in ("claude", "opencode", "antigravity", "hermes") if binarios[b]["disponible"])
+
+    return {
+        "ok": runtimes_disponibles > 0,
+        "plataforma": {
+            "os": platform.system(),
+            "release": platform.release(),
+            "python": platform.python_version(),
+            "sqlite_version": sqlite_ver,
+            "wal_seguro": wal_seguro,
+        },
+        "binarios": binarios,
+        "runtimes_activos": runtimes_disponibles,
+    }
+
+
+def secretos_status() -> dict:
+    """Inspección segura de credenciales y API keys configuradas en el entorno."""
+    import os
+
+    claves = [
+        ("ANTHROPIC_API_KEY", "Anthropic", "Claude Code / Hermes"),
+        ("OPENAI_API_KEY", "OpenAI", "OpenCode / Hermes"),
+        ("DEEPSEEK_API_KEY", "DeepSeek", "OpenCode / DeepSeek-V3"),
+        ("GEMINI_API_KEY", "Google Gemini", "Antigravity"),
+        ("GROQ_API_KEY", "Groq", "Hermes Fast Inference"),
+        ("OPENROUTER_API_KEY", "OpenRouter", "OpenCode / Multi-Model"),
+        ("GITHUB_TOKEN", "GitHub", "MCP / Git Tools"),
+        ("GH_TOKEN", "GitHub CLI", "GitHub CLI auth"),
+    ]
+
+    salida = []
+    for var, proveedor, uso in claves:
+        val = os.environ.get(var, "").strip()
+        presente = bool(val)
+        enmascarado = None
+        if presente:
+            if len(val) <= 8:
+                enmascarado = "***"
+            else:
+                # Solo el prefijo. Los ultimos caracteres no ayudan a saber QUE
+                # clave esta puesta y son entropia regalada a quien mire.
+                enmascarado = f"{val[:4]}..."
+        salida.append({
+            "variable": var,
+            "proveedor": proveedor,
+            "uso": uso,
+            "presente": presente,
+            "enmascarado": enmascarado,
+        })
+
+    return {
+        "ok": True,
+        "total_configuradas": sum(1 for c in salida if c["presente"]),
+        "total_revisadas": len(salida),
+        "secretos": salida,
+    }
+
+
 if __name__ == "__main__":
     import json
     print(json.dumps(tabla(), indent=2, ensure_ascii=False))

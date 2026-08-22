@@ -103,18 +103,22 @@ print(f"6. fallo permanente: estado={tp.status} kind={tp.block_kind}")
 assert tp.status == "blocked" and tp.block_kind == "capability", tp
 assert p not in loop.reintentar(conn), "un `capability` NO se reintenta"
 
-# --- 6. El clasificador coincide con los mensajes que backends produce ---
-# Se desincronizaron una vez: el mensaje cambio de "binario no encontrado" a
-# "no se pudo lanzar" y `_PERMANENTES` quedo buscando una cadena que ya nadie
-# emitia, asi que un fallo permanente se reintentaba dos veces al pedo.
+# --- 6. Lo permanente lo declara quien levanta el error, no una lista de texto ---
+# Antes esto se decidia buscando substrings del mensaje en `loop._PERMANENTES`,
+# y se desincronizo dos veces: el mensaje cambio de "binario no encontrado" a
+# "no se pudo lanzar" (un fallo permanente se reintentaba dos veces al pedo), y
+# despues un `ModuleNotFoundError` nuestro se reintento culpando al agente.
+# Ahora es un atributo de la excepcion y no puede quedar apuntando a un texto
+# que ya nadie emite.
 import inspect
-# `_correr` incluido: las reglas de invocacion (y sus mensajes de error) se
-# mudaron ahi al unificarlas con el chat. Este assert lo detecto solo.
-fuente = (inspect.getsource(b.run_backend) + inspect.getsource(b._resolver_argv)
-          + inspect.getsource(b._correr))
-for frase in loop._PERMANENTES:
-    assert frase in fuente, f"'{frase}' no lo emite nadie en backends.py"
-print("7. cada frase de _PERMANENTES existe de verdad en backends: OK")
+assert issubclass(b.ErrorPermanente, b.BackendError)
+assert b.ErrorPermanente("x").permanente is True
+assert b.BackendError("x").permanente is False, "el default tiene que ser reintentable"
+# Y ningun `raise BackendError` en el modulo puede estar en el lugar de uno
+# permanente: los cinco sitios que lo son ya usan la subclase.
+fuente = inspect.getsource(b)
+assert fuente.count("ErrorPermanente(f") >= 5, "faltan sitios marcados como permanentes"
+print("7. lo permanente es un atributo de la excepcion, no una lista de texto: OK")
 
 # Y un cwd inexistente (OSError, no FileNotFoundError) debe ser permanente.
 b.BACKENDS["opencode"] = (lambda g, e: ["python", "-c", "print(1)"], b._primer_objeto)
@@ -124,5 +128,46 @@ loop.ejecutar_una(conn, w, timeout=60)
 tw = k.get_task(conn, w)
 print(f"8. cwd inexistente: estado={tw.status} kind={tw.block_kind}")
 assert tw.block_kind == "capability", f"un cwd invalido no se arregla reintentando: {tw.block_kind}"
+
+
+# --- 9. El latido abre la MISMA base que la conexion que reclamo ---
+# Abria `k.connect()` a secas, que resuelve al board `default`, y cada board es
+# su propia SQLite: en cualquier board que no fuera el default la card no estaba
+# ahi, `heartbeat_claim` devolvia False en silencio (nadie miraba el retorno) y
+# el latido no latia. Y es la UNICA proteccion que tiene la card: nuestro
+# `claim_lock` es "orquester" a secas, no `host:pid`, asi que la extension por
+# PID vivo de `release_stale_claims` nunca nos aplica.
+h = k.create_task(conn, title="con latido", assignee=loop.carril("opencode"))
+assert k.claim_task(conn, h, claimer=loop.CLAIMER) is not None
+assert Path(loop._archivo_de(conn)) == db, loop._archivo_de(conn)
+
+c_bien = _connect(db_path=Path(loop._archivo_de(conn)))
+assert k.heartbeat_claim(c_bien, h, claimer=loop.CLAIMER) is True, \
+    "el latido no encuentra la card en la base que la reclamo"
+c_bien.close()
+
+# Y el camino viejo —otra base— falla, callado. Por eso ahora se mira el retorno.
+# Sin `k.init_db`: esta parcheado `k.connect` y `init_db` lo llama posicional.
+# `connect` auto-inicializa el esquema en la primera conexion, asi que alcanza.
+otra = Path(tempfile.mkdtemp()) / "otra.db"
+c_mal = _connect(db_path=otra)
+assert k.heartbeat_claim(c_mal, h, claimer=loop.CLAIMER) is False, \
+    "una base ajena no deberia poder extender este claim"
+c_mal.close()
+print("9. el latido late contra la base de la card, y avisa si la pierde: OK")
+
+# --- 10. `_queda_trabajo` cuenta las cards `ready` ---
+# Contaba `todo`, `running` y `blocked` pero no `ready`. Con el tope de gasto
+# agotado, `tick` devuelve [] habiendo cards listas y el loop se cerraba como si
+# el flujo hubiera terminado, en vez de por presupuesto.
+limpia = Path(tempfile.mkdtemp()) / "ready.db"
+c_r = _connect(db_path=limpia)
+assert loop._queda_trabajo(c_r) is False, "una base vacia no tiene trabajo"
+r = k.create_task(c_r, title="lista para arrancar", assignee=loop.carril("opencode"))
+c_r.execute("UPDATE tasks SET status='ready' WHERE id=?", (r,))
+c_r.commit()
+assert loop._queda_trabajo(c_r) is True, "no conto una card en `ready`"
+c_r.close()
+print("10. una card `ready` cuenta como trabajo pendiente: OK")
 
 print("\nOK: paralelismo acotado y reintentos que terminan.")

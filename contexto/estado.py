@@ -113,6 +113,17 @@ def _git(*a: str) -> str:
                           cwd=RAIZ).stdout.strip()
 
 
+def _upstream() -> str:
+    """El remoto que sigue esta rama, o `origin/master` si no sigue a ninguno.
+
+    Una rama recien creada no tiene upstream, y ahi `origin/master` es la
+    comparacion correcta: todo lo que tenga encima esta, efectivamente, sin
+    pushear a ningun lado.
+    """
+    return _git("rev-parse", "--abbrev-ref", "--symbolic-full-name",
+                "@{upstream}") or "origin/master"
+
+
 def sondear(_: Contexto) -> Contexto:
     """Mirar el sistema real. Nada de esto se escribe a mano: se mide."""
     pin = dict(l.split("=", 1) for l in
@@ -130,7 +141,13 @@ def sondear(_: Contexto) -> Contexto:
         # sin esto el traspaso siempre se reporta sucio por su propia causa.
         "arbol_limpio": not [l for l in _git("status", "--porcelain").splitlines()
                              if l and "ESTADO.md" not in l],
+        # Contra el upstream de ESTA rama, no contra `origin/master` fijo. Con
+        # master fijo, en una rama de trabajo esto mide "sin MERGEAR" y reporta
+        # un bloqueo que no existe: catorce commits pusheados y en su PR se
+        # anunciaban como catorce sin pushear.
         "sin_pushear": len([x for x in _git("log", "--oneline",
+                                            f"{_upstream()}..HEAD").splitlines() if x]),
+        "sin_mergear": len([x for x in _git("log", "--oneline",
                                             "origin/master..HEAD").splitlines() if x]),
         "afirmaciones": int(m.group(1)) if m else 0,
         "pendientes_10": int(m.group(2)) if m else 0,
@@ -162,6 +179,10 @@ def revisar(estado: Contexto) -> Contexto:
         bloqueos.append("hay cambios sin commitear")
     if s["sin_pushear"]:
         bloqueos.append(f"{s['sin_pushear']} commit(s) sin pushear")
+    elif s["sin_mergear"]:
+        # No es un bloqueo: es una rama de trabajo con su PR abierto.
+        siguiente.append(f"{s['sin_mergear']} commit(s) pusheados y sin mergear "
+                         f"a master (rama de trabajo)")
     if not s["clon_en_el_pin"]:
         bloqueos.append("el clon de Hermes no está en el commit del pin: "
                         "revalidar la suite o volver al pin")
@@ -174,6 +195,17 @@ def revisar(estado: Contexto) -> Contexto:
 
     if s["pendientes_10"]:
         siguiente.append(f"§10 tiene {s['pendientes_10']} afirmación(es) pendiente(s)")
+    # OJO: esta lista está escrita a mano dentro de un archivo cuyo docstring
+    # dice "Generado, no escrito: un traspaso a mano miente". Ya mintió: durante
+    # semanas anunció como pendientes dos cosas que estaban construidas.
+    #   - "chat que DISEÑA el grafo": `/api/generar-grafo` existía y llamaba a un
+    #     agente, pero leía `res["respuesta"]` y el chat devuelve `res["texto"]`,
+    #     así que caía SIEMPRE a una plantilla fija. Estaba roto, no ausente.
+    #   - "presupuesto por NODO": `compile.py` ya escribía `tenant=budget:N`,
+    #     `loop.ejecutar_una` ya hacía `min(global, nodo)` y
+    #     `test_esfuerzo_presupuesto` ya lo cubría. Estaba hecho.
+    # Antes de agregar algo acá: buscarlo en el código. Y antes de tacharlo,
+    # también.
     siguiente += [
         # La expansión del Studio está cerrada: abrir un grafo guardado, pasarle
         # parámetros, elegir workspace, parar una corrida, zoom/paneo, deshacer,
@@ -181,11 +213,9 @@ def revisar(estado: Contexto) -> Contexto:
         # `tests/test_ui_expansion.py`; lo del lienzo, con Playwright.
         # El Studio está completo para uso local: plantillas, chat, esfuerzo,
         # tope de gasto, auto-layout y atajos. Lo que queda es producto, no UI.
-        "chat que DISEÑA el grafo (hoy el chat ejecuta; la otra mitad de la "
-        "bifurcación es que el agente escriba el grafo en el lienzo)",
-        "presupuesto por NODO además del global (hoy el tope es del flujo entero)",
         "conectar el Studio a la API multiusuario (hoy le habla directo al motor)",
         "medición empírica del cumplimiento del output_schema (diferida a propósito)",
+        "tabla de rutas en ui/server.py: 34 endpoints en dos cadenas de `if`",
     ]
     return {"bloqueos": bloqueos, "siguiente": siguiente,
             "fase": "producto en uso" if not bloqueos else "con pendientes"}

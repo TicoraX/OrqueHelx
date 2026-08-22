@@ -8,7 +8,7 @@ Parametrización: los `{{marcadores}}` que aparezcan en el título o el cuerpo d
 un nodo se vuelven los parámetros de la tool. No hay que declararlos aparte —
 escribir el goal ya es declarar la interfaz.
 """
-import os, re, shutil, subprocess, sys, time
+import re, sys, time
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -17,7 +17,7 @@ for sub in ("hermes-agent", "dispatcher", "compiler"):
 
 import hermes_cli.kanban_db as k
 import compile as compilador
-import loop as dispatcher
+import corrida
 
 _MARCADOR = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
 
@@ -59,19 +59,32 @@ def sustituir(grafo: dict, valores: dict) -> dict:
         # con string lo interpretaria como referencia de grupo.
         return _MARCADOR.sub(lambda m: str(valores.get(m.group(1), m.group(0))), txt or "")
 
-    return {**grafo,
+    resultado = {**grafo,
             "nodos": [{clave: _sub(valor) if isinstance(valor, str) else valor
                        for clave, valor in n.items()}
                       for n in grafo.get("nodos") or []]}
-
-
-def _hermes_bin() -> str | None:
-    """El binario de Hermes, si esta. Solo hace falta con nodos `runtime: hermes`."""
-    return (os.environ.get("ORQUESTER_HERMES_BIN")
-            or shutil.which("hermes")
-            or next((str(p) for p in [
-                Path(os.environ.get("LOCALAPPDATA", "")) /
-                "hermes/hermes-agent/venv/Scripts/hermes.exe"] if p.is_file()), None))
+    # El `workspace` es el `cwd` del agente, y aca es donde un valor de AFUERA
+    # entra al grafo: por el servidor MCP lo elige un IDE ajeno, no el autor.
+    # Un `..` en el medio saca al agente del arbol que el grafo declaraba.
+    #
+    # Se saco de esta guarda un `not Path(ws).resolve().is_absolute()` que
+    # estaba muerto: `resolve()` SIEMPRE devuelve una ruta absoluta, asi que esa
+    # mitad de la condicion era `not True` en los tres casos posibles
+    # (verificado con una ruta absoluta, una con '..' y una relativa).
+    #
+    # Una ruta ABSOLUTA no se rechaza, y no es un descuido: `{{workspace}}` con
+    # el valor de la carpeta elegida es EL caso de uso del modo App, y ahi el
+    # valor absoluto es lo correcto. Se probo rechazarlo --"un parametro no
+    # puede volver absoluto un workspace relativo"-- y rompe el flujo normal
+    # del Studio: `test_modo_app` y `test_ui_expansion` fallan en el camino
+    # feliz. No hay arbol declarado del que salirse; lo que se acota es el
+    # `..`, que si es una forma de escapar de una ruta que el autor escribio.
+    for n in resultado.get("nodos") or []:
+        ws = n.get("workspace") or ""
+        if ws and ".." in Path(ws).parts:
+            raise ValueError(
+                f"workspace invalido tras sustituir: {ws!r} sale del arbol con '..'")
+    return resultado
 
 
 def ejecutar(grafo: dict, valores: dict, *, timeout: int = 900) -> dict:
@@ -88,31 +101,31 @@ def ejecutar(grafo: dict, valores: dict, *, timeout: int = 900) -> dict:
     # nuestro (§12). Si el grafo los usa y el binario no esta, se avisa en vez
     # de colgarse esperando una card que nadie va a levantar.
     usa_hermes = any(n.get("runtime", "hermes") == "hermes" for n in concreto["nodos"])
-    hermes = _hermes_bin() if usa_hermes else None
-    if usa_hermes and not hermes:
+    if usa_hermes and not corrida.hermes_bin():
         return {"error": "el grafo tiene nodos `runtime: hermes` y no se encontro el "
                          "binario de Hermes. Configura ORQUESTER_HERMES_BIN.",
                 "board": board}
 
-    conn = k.connect(board=board)
-    limite = time.monotonic() + timeout
-    while time.monotonic() < limite:
-        if hermes:
-            # `stdin=DEVNULL` por el mismo motivo que en `backends.run_backend`:
-            # cuando el padre es el servidor MCP, el stdin heredado es el canal
-            # JSON-RPC. Y aca es peor: esta dentro del bucle de polling, asi que
-            # se repetiria en cada vuelta.
-            subprocess.run([hermes, "kanban", "--board", board, "dispatch"],
-                           capture_output=True, timeout=180,
-                           stdin=subprocess.DEVNULL)
-        dispatcher.tick(conn, board=board)
-        tareas = [k.get_task(conn, t) for t in ids.values()]
-        if all(t.status in ("done", "blocked", "triage", "failed", "cancelled")
-               for t in tareas):
-            break
-        time.sleep(3)
+    # El bucle es el mismo que usan el Studio y el CLI. Aca habia una copia, y
+    # ya habia divergido: se quedo con el `subprocess.run(timeout=180)` que
+    # frenaba tres minutos el carril propio cuando Hermes se colgaba.
+    #
+    # `listo` espera por LAS cards de esta invocacion, no por el board entero.
+    # `failed` y `cancelled` estaban en esta lista y no existen en
+    # `VALID_STATUSES`: eran ramas muertas, y estados fantasma ya costaron
+    # cuatro bugs en este repo.
+    corrida.correr(
+        board, timeout=timeout,
+        listo=lambda c: all(k.get_task(c, t).status in ("done", "blocked", "triage")
+                            for t in ids.values()))
 
-    tareas = {nid: k.get_task(conn, tid) for nid, tid in ids.items()}
+    # La conexion se abre DESPUES de la corrida y se cierra: la de antes
+    # quedaba viva por invocacion de la tool, en un proceso de larga vida.
+    conn = k.connect(board=board)
+    try:
+        tareas = {nid: k.get_task(conn, tid) for nid, tid in ids.items()}
+    finally:
+        conn.close()
     # Las hojas son la salida del flujo: los nodos de los que nadie depende.
     con_hijos = {p for p, _ in (concreto.get("aristas") or [])}
     hojas = [nid for nid in ids if nid not in con_hijos]

@@ -1,15 +1,43 @@
 <!doctype html>
+<html lang="es">
 <meta charset="utf-8">
 <title>ORQUESTER Studio</title>
 <style>
+  /* Neutros con sesgo FRIO deliberado (azulado, ~230deg): es una consola que se
+     mira de noche al lado de una terminal, y un gris neutro puro al lado de una
+     terminal azulada se ve sucio. Los seis colores de estado NO son decorativos:
+     son los estados de `kanban_db.VALID_STATUSES`. */
   :root {
     --bg:#14161a; --panel:#1c1f26; --linea:#2c313b; --texto:#e6e8ec;
     --tenue:#8b93a1; --acento:#5b9dd9;
-    --todo:#4a5160; --ready:#c9a227; --running:#3d8bcd; --done:#3f9d52; --failed:#c0504d; --triage:#d1743a;
+    --todo:#4a5160; --ready:#c9a227; --running:#3d8bcd; --done:#3f9d52; --bloqueado:#c0504d; --triage:#d1743a; --review:#8e6bc0;
+    --hundido:#141720; --control:#232833; --sobre-acento:#0d1117;
+    --acento-claro:#7dd3fc; --peligro-texto:#e0706d; --control-frio:#1e293b;
+    --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
+    /* Dos registros. Intra: lo que vive junto adentro de un control o grupo.
+       Ritmo: lo que separa secciones que se leen aparte. */
+    --intra-1:4px; --intra-2:8px;
+    --ritmo-1:14px; --ritmo-2:24px;
+    --radio:6px;
   }
   * { box-sizing:border-box; }
   body { margin:0; height:100vh; display:flex; background:var(--bg); color:var(--texto);
          font:14px/1.5 ui-sans-serif,system-ui,sans-serif; }
+  ::selection { background: color-mix(in oklab, var(--acento) 35%, transparent); }
+  input, textarea { caret-color: var(--acento); }
+  /* Firefox y Chromium. El panel scrollea mucho y la barra por defecto es del
+     sistema, o sea de otro producto. */
+  * { scrollbar-width: thin; scrollbar-color: var(--linea) transparent; }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: var(--linea); border-radius: var(--radio); }
+  ::-webkit-scrollbar-thumb:hover { background: #3b4250; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  /* Segundo rol tipografico: DATO. Un id de card (`t_ae2d7ec6`), un slug de
+     board y un monto no son prosa, y en una sans se leen mal justo cuando hay
+     que compararlos de un vistazo. La necesidad ya estaba: habia dos
+     `tabular-nums` sueltos y `.res` ya usaba monoespaciada. */
+  .dato { font-family: var(--mono); font-variant-numeric: tabular-nums;
+          font-size: .92em; letter-spacing: -.01em; }
   #lienzo { flex:1; cursor:crosshair; }
   aside { width:340px; border-left:1px solid var(--linea); background:var(--panel);
           display:flex; flex-direction:column; height:100vh; overflow:hidden; }
@@ -17,37 +45,53 @@
   h1 { font-size:15px; margin:0 0 10px; letter-spacing:.02em; display:flex; align-items:center; justify-content:space-between; }
   h2 { font-size:11px; text-transform:uppercase; letter-spacing:.08em;
        color:var(--tenue); margin:0 0 6px; font-weight:600; }
-  .tabs { display:flex; gap:4px; }
+  .tabs { display:flex; gap:var(--intra-1); }
   .tab { padding:6px 8px; background:transparent; border:none; border-bottom:2px solid transparent;
          border-radius:0; color:var(--tenue); cursor:pointer; font-size:12px; font-weight:600;
          width:auto; flex:1; text-align:center; transition:color .15s, border-color .15s; }
   .tab:hover { color:var(--texto); border-color:transparent; background:rgba(255,255,255,0.03); }
   .tab.activa { color:var(--acento); border-bottom-color:var(--acento); }
 
-  #panelCuerpo { flex:1; overflow-y:auto; padding:14px 16px; display:flex; flex-direction:column; gap:14px; }
-  .tab-vista { display:none; flex-direction:column; gap:14px; }
+  #panelCuerpo { flex:1; overflow-y:auto; padding:14px 16px; display:flex; flex-direction:column; gap:var(--ritmo-2); }
+  .tab-vista { display:none; flex-direction:column; gap:var(--ritmo-1); }
   .tab-vista.activa { display:flex; }
 
-  #panelFooter { padding:12px 16px; border-top:1px solid var(--linea); background:#171a20;
-                 flex-shrink:0; display:flex; flex-direction:column; gap:8px; }
+  #panelFooter { padding:12px 16px; border-top:1px solid var(--linea); background:var(--hundido);
+                 flex-shrink:0; display:flex; flex-direction:column; gap:var(--intra-2); }
 
   label { display:block; font-size:12px; color:var(--tenue); margin-bottom:4px; }
   input, select, textarea, button {
-    width:100%; padding:7px 9px; background:#141720; color:var(--texto);
-    border:1px solid var(--linea); border-radius:6px; font:inherit; }
+    width:100%; padding:7px 9px; background:var(--hundido); color:var(--texto);
+    border:1px solid var(--linea); border-radius:var(--radio); font:inherit; }
   textarea { resize:vertical; min-height:56px; }
-  button { cursor:pointer; background:#232833; }
+  button { cursor:pointer; background:var(--control); transition: transform 60ms ease-out, border-color 120ms ease-out; }
   button:hover:not(:disabled) { border-color:var(--acento); }
+  /* 60ms: el receipt de un click tiene que sentirse en el pointer-down, no
+     despues. Mas lento se percibe como lag, no como respuesta. */
+  button:not(:disabled):active { transform: scale(.97); }
   button:disabled { opacity:.45; cursor:default; }
-  button.primario { background:var(--acento); border-color:var(--acento); color:#0d1117; font-weight:600; }
-  button.peligro { border-color:#7a3b39; color:#e0706d; }
-  button.peligro:hover:not(:disabled) { border-color:#c0504d; background:#2d1a1b; }
-  .fila { display:flex; gap:8px; }
-  #aviso { padding:9px 11px; border-radius:6px; font-size:12.5px; white-space:pre-wrap;
+  /* Un solo anillo para todo lo enfocable. `:focus-visible` y no `:focus`:
+     el anillo aparece con teclado y no en cada clic del mouse. */
+  button:focus-visible, input:focus-visible, select:focus-visible,
+  textarea:focus-visible, .tab:focus-visible, .card-intencion:focus-visible,
+  .chip-reciente:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--acento);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  .card-intencion:active { transform: scale(.99); }
+  button.primario { background:var(--acento); border-color:var(--acento); color:var(--sobre-acento); font-weight:600; }
+  button.peligro { border-color:#7a3b39; color:var(--peligro-texto); }
+  button.peligro:hover:not(:disabled) { border-color:var(--bloqueado); background:#2d1a1b; }
+  .fila { display:flex; gap:var(--intra-2); }
+  #aviso { padding:9px 11px; border-radius:var(--radio); font-size:12.5px; white-space:pre-wrap;
            display:none; border:1px solid; }
   #aviso.error { background:#3a1d1d; border-color:#7a3b39; }
   #aviso.ok    { background:#1b3324; border-color:#2f6b41; }
-  .leyenda { display:flex; flex-wrap:wrap; gap:8px; font-size:11.5px; color:var(--tenue); }
+  /* Ambar: salio algo, pero no lo que se pidio. Un fallback pintado de verde
+     hace que una feature muerta se vea viva; paso exactamente eso. */
+  #aviso.tibio { background:#3a3018; border-color:#7a6534; }
+  .leyenda { display:flex; flex-wrap:wrap; gap:var(--intra-2); font-size:11.5px; color:var(--tenue); }
   .leyenda i { width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:3px; }
   .ayuda { font-size:11.5px; color:var(--tenue); line-height:1.45; }
   .ayuda b { color:var(--texto); font-weight:600; }
@@ -58,63 +102,439 @@
   .nodo .rt { font-size:10px; opacity:.9; }
   #consumo { font-size:12px; }
   #consumo .linea { display:flex; justify-content:space-between; padding:2px 0; }
-  #consumo .val { color:var(--texto); font-variant-numeric:tabular-nums; }
+  #consumo .val { color:var(--texto); font-variant-numeric:tabular-nums; font-family:var(--mono); }
   #consumo .et { color:var(--tenue); }
   #consumo .nota { color:var(--tenue); font-size:11px; margin-top:6px;
                    border-top:1px solid var(--linea); padding-top:6px; }
   #traza { font-size:11.5px; max-height:360px; overflow-y:auto; }
-  #traza .ev { display:flex; gap:7px; padding:2px 0; border-bottom:1px solid #232833; }
-  #traza .k { color:var(--acento); flex:0 0 118px; }
+  #traza .ev { display:flex; gap:7px; padding:2px 0; border-bottom:1px solid var(--control); }
+  #traza .k { color:var(--acento); flex:0 0 118px; font-family:var(--mono); font-variant-numeric:tabular-nums; }
   #traza .d { color:var(--tenue); word-break:break-word; }
-  #traza .intento { padding:6px 8px; margin-bottom:6px; border-radius:5px;
-                    background:#141720; border:1px solid var(--linea); }
+  #traza .intento { padding:6px 8px; margin-bottom:6px; border-radius:var(--radio);
+                    background:var(--hundido); border:1px solid var(--linea); }
   #traza .mal { border-color:#7a3b39; }
   #traza .res-wrap { margin-bottom:8px; }
   #traza .res-hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
   #traza .res-btn { width:auto; padding:3px 7px; font-size:11px; }
-  #traza .res { background:#141720; border:1px solid var(--linea); border-radius:5px;
-                padding:7px 9px; white-space:pre-wrap; font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+  #traza .res { background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio);
+                padding:7px 9px; white-space:pre-wrap; font-family:var(--mono);
                 font-size:11.5px; max-height:220px; overflow-y:auto; color:var(--texto); line-height:1.4; }
-  #traza .gasto { color:var(--tenue); margin-bottom:8px; font-variant-numeric:tabular-nums; }
-  .titulo { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  #traza .gasto { color:var(--tenue); margin-bottom:8px; font-variant-numeric:tabular-nums; font-family:var(--mono); }
+  .titulo { display:flex; align-items:center; justify-content:space-between; gap:var(--intra-2); }
   .titulo button { width:auto; padding:4px 10px; font-size:12px; }
   #panelPlantillas { display:none; position:absolute; top:46px; right:12px; width:330px;
                      max-height:70vh; overflow-y:auto; z-index:20; background:var(--panel);
-                     border:1px solid var(--linea); border-radius:8px; padding:10px;
-                     box-shadow:0 12px 34px rgba(0,0,0,.55); }
+                     border:1px solid var(--linea); border-radius:8px; /* flotante sobre lienzo */
+                     padding:10px; box-shadow:0 12px 34px rgba(0,0,0,.55); }
   #panelPlantillas.abierto { display:block; }
-  #plantillas .pl { border:1px solid var(--linea); border-radius:6px; padding:8px 10px;
-                    margin-bottom:7px; background:#141720; }
+  #plantillas .pl { border:1px solid var(--linea); border-radius:var(--radio); padding:8px 10px;
+                    margin-bottom:7px; background:var(--hundido); }
   #plantillas .pl b { font-size:12.5px; }
   #plantillas .pl p { margin:3px 0 6px; font-size:11.5px; color:var(--tenue); }
   #plantillas .meta { font-size:11px; color:var(--tenue); margin-bottom:6px;
                       display:flex; flex-wrap:wrap; gap:6px; }
   #plantillas .meta i { font-style:normal; border:1px solid var(--linea);
-                        border-radius:9px; padding:0 6px; }
+                        border-radius:999px; /* píldora */ padding:0 6px; }
   #plantillas .falta { color:#e0a0a0; border-color:#7a3b39; }
   #plantillas button { width:auto; padding:4px 9px; font-size:12px; }
   input.falta { border-color: #c9a227; }
   .nodo[data-estado="running"] rect { animation: pulso 1.6s ease-in-out infinite; }
   @keyframes pulso { 50% { stroke-opacity: .45; } }
+  .nodo.arrastrando rect { filter: drop-shadow(0 4px 10px rgba(0,0,0,.5)); }
+  .nodo rect { transition: filter 80ms ease-out; }
+
+  @keyframes avisoEntrar {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  #aviso { animation: avisoEntrar 140ms ease-out; }
+
+  @keyframes panelPlantillasEntrar {
+    from { opacity: 0; transform: scale(.98); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  #panelPlantillas.abierto {
+    display: block;
+    transform-origin: top right;
+    animation: panelPlantillasEntrar 140ms ease-out;
+  }
+
+  @keyframes modalBackdropEntrar {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes modalCajaEntrar {
+    from { opacity: 0; transform: scale(.98); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  #modalEntregable[style*="display: flex"],
+  #modalEntregable[style*="display:flex"] {
+    animation: modalBackdropEntrar 180ms ease-out;
+  }
+  #modalEntregable > div {
+    animation: modalCajaEntrar 180ms ease-out;
+  }
+
+  .barra-progreso-fill {
+    width: 100%; transform-origin: left; transform: scaleX(0);
+    transition: transform 180ms ease-out;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .nodo[data-estado="running"] rect { animation: none; }
+    #aviso, #panelPlantillas.abierto, #modalEntregable, #modalEntregable > div { animation: none !important; }
+    button, .card-intencion, .barra-progreso-fill, .nodo rect { transition: none !important; }
   }
   #chatMensaje { resize:vertical; min-height:42px; max-height:140px; }
-  #chatHilo { display:flex; flex-direction:column; gap:8px; max-height:46vh;
+  #chatHilo { display:flex; flex-direction:column; gap:var(--intra-2); max-height:46vh;
               overflow-y:auto; }
-  #chatHilo .msg { padding:7px 10px; border-radius:7px; font-size:12.5px;
+  #chatHilo .msg { padding:7px 10px; border-radius:var(--radio); font-size:12.5px;
                    white-space:pre-wrap; word-break:break-word; }
   #chatHilo .yo { background:#233047; align-self:flex-end; max-width:88%; }
-  #chatHilo .el { background:#141720; border:1px solid var(--linea);
-                  font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+  #chatHilo .el { background:var(--hundido); border:1px solid var(--linea);
+                  font-family:var(--mono); }
   #chatHilo .mal { background:#3a1d1d; border:1px solid #7a3b39; }
   #chatHilo .pensando { color:var(--tenue); font-style:italic; }
   #chatSesion { margin:2px 0 4px; }
   #resumen { font-size:11.5px; color:var(--tenue); white-space:pre-wrap; }
-  pre.codigo { background:#141720; border:1px solid var(--linea); border-radius:5px;
-               padding:7px 9px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+  pre.codigo { background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio);
+               padding:7px 9px; font-family:var(--mono);
                font-size:11px; max-height:180px; overflow-y:auto; color:var(--texto); white-space:pre-wrap; }
+  body.modo-zen #panel, body.modo-zen #panelDerecho { display: none !important; }
+  /* El `top` vivia en el atributo `style=` del div, y una declaracion inline le
+     gana a cualquier selector: las dos reglas de abajo que lo corrigen por modo
+     NUNCA se aplicaban. Resultado: la barra quedaba en `top:12px`, o sea 32 de
+     sus 34px detras del header de 44px, y los botones de zoom eran inclicables
+     desde que existe la barra superior. Medido en el navegador, no deducido.
+     Flota sobre el lienzo, asi que le toca sombra y no escalon tonal. */
+  #barraCanvasFlotante {
+    position: fixed; top: 56px; left: 12px; z-index: 20;
+    display: flex; gap: var(--intra-1);
+    background: rgba(20, 23, 32, .85); backdrop-filter: blur(8px);
+    border: 1px solid var(--linea); border-radius: var(--radio);
+    padding: 3px 6px; box-shadow: 0 4px 12px rgba(0, 0, 0, .4);
+  }
+  body.modo-zen #barraCanvasFlotante { left: 12px; top: 12px; }
+
+  /* Velo de arrastre. Sin una senal visible, soltar algo sobre la ventana es
+     una apuesta: no sabes si te va a escuchar. Se pinta sobre todo, incluso
+     sobre el modal, porque el arrastre es lo unico que esta pasando. */
+  #velo {
+    display: none; position: fixed; inset: 0; z-index: 200;
+    background: rgba(20, 23, 32, .82); backdrop-filter: blur(3px);
+    align-items: center; justify-content: center; pointer-events: none;
+  }
+  body.arrastrando-algo #velo { display: flex; }
+  #velo .caja {
+    border: 2px dashed var(--acento); border-radius: var(--radio);
+    padding: 22px 30px; text-align: center; background: var(--panel);
+    max-width: 460px;
+  }
+  #velo b { display: block; font-size: 15px; margin-bottom: 6px; }
+  #velo span { font-size: 12.5px; color: var(--tenue); line-height: 1.5; }
+  body.modo-zen #barraSuperiorApp { display: none !important; }
+  body.modo-zen #lienzo { margin-top: 0 !important; }
+
+  /* Dual Mode (App vs Studio) */
+  #barraSuperiorApp {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 44px;
+    background: rgba(14, 16, 23, 0.95);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--linea);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 16px;
+    z-index: 100;
+  }
+  .app-logo {
+    font-weight: 700;
+    font-size: 14.5px;
+    letter-spacing: 0.5px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .badge-ws {
+    background: #181c26;
+    border: 1px solid var(--linea);
+    border-radius: 14px;
+    padding: 2px 10px;
+    font-size: 11px;
+    color: var(--tenue);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .modo-selector {
+    display: flex;
+    background: #141720;
+    border: 1px solid var(--linea);
+    border-radius: 6px;
+    padding: 2px;
+    gap: 2px;
+  }
+  .btn-modo {
+    padding: 3px 12px;
+    font-size: 11px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    background: transparent;
+    color: var(--tenue);
+    font-weight: 600;
+    width: auto;
+  }
+  .btn-modo.activo {
+    background: var(--acento);
+    color: #0e1017;
+  }
+  #vistaApp {
+    /* Oculto por defecto: `body` no tiene ninguna de las dos clases de modo
+       hasta que corre el script del final, y sin esto la vista App (fixed,
+       z-index 50, pantalla completa) se pintaba arriba del lienzo en CADA
+       carga. Un usuario de Studio veia el modo App de refilon en cada F5.
+       `body.modo-app-activo #vistaApp` lo devuelve a `block`. */
+    display: none;
+    position: fixed;
+    top: 44px; left: 0; right: 0; bottom: 0;
+    overflow-y: auto;
+    background: #0e1017;
+    padding: 24px 16px 60px;
+    z-index: 50;
+  }
+  .app-contenedor {
+    max-width: 840px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .seccion-card {
+    background: var(--panel);
+    border: 1px solid var(--linea);
+    border-radius: var(--radio);
+    padding: 16px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  }
+  .grid-intenciones {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .card-intencion {
+    background: var(--hundido);
+    border: 1px solid var(--linea);
+    border-radius: var(--radio);
+    padding: 12px;
+    cursor: pointer;
+    transition: border-color 140ms ease-out, background 140ms ease-out, transform 60ms ease-out;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .card-intencion:hover {
+    border-color: var(--acento);
+    background: #191e2b;
+    transform: translateY(-1px);
+  }
+  .card-intencion.seleccionada {
+    border-color: var(--acento);
+    background: #182233;
+    box-shadow: 0 0 0 1px var(--acento);
+  }
+  .card-intencion b {
+    font-size: 12.5px;
+    color: var(--texto);
+  }
+  .card-intencion p {
+    margin: 0;
+    font-size: 11px;
+    color: var(--tenue);
+    line-height: 1.35;
+  }
+  .chip-reciente {
+    background: var(--hundido);
+    border: 1px solid var(--linea);
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: 11px;
+    color: var(--tenue);
+    cursor: pointer;
+    display: inline-block;
+  }
+  .chip-reciente:hover {
+    border-color: var(--acento);
+    color: var(--texto);
+  }
+  .timeline-nodo-app {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 8px;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    background: var(--sobre-acento);
+    border: 1px solid rgba(255,255,255,0.03);
+    font-size: 12px;
+  }
+  .timeline-nodo-app.running {
+    border-color: var(--running);
+    background: #141e2b;
+  }
+  .timeline-nodo-app.done {
+    border-color: rgba(63,157,82,0.4);
+  }
+  .timeline-nodo-app.blocked,
+  .timeline-nodo-app.triage {
+    border-color: rgba(192,80,77,0.5);
+  }
+  body.modo-app-activo #vistaApp { display: block; }
+  body.modo-app-activo #lienzo,
+  body.modo-app-activo #barraCanvasFlotante,
+  body.modo-app-activo #panel { display: none !important; }
+
+  body.modo-studio-activo #vistaApp { display: none !important; }
+  body.modo-studio-activo #lienzo { display: block; margin-top: 44px; }
+  body.modo-studio-activo #panel { display: flex; margin-top: 44px; height: calc(100vh - 44px); }
+  body.modo-studio-activo #barraCanvasFlotante { top: 56px; }
+
+  /* Dos cortes, elegidos por lo que le pasa a ESTE layout, no por tamanos de
+     dispositivo: a los 1100 el panel se come el lienzo, y abajo de 760 no hay
+     lienzo utilizable y el modo App es lo unico que tiene sentido. */
+  @media (max-width: 1100px) {
+    aside { width: 300px; }
+    #panelPlantillas { width: 280px; }
+  }
+  @media (max-width: 760px) {
+    body { flex-direction: column; }
+    aside { width: 100%; height: 45vh; border-left: none;
+            border-top: 1px solid var(--linea); }
+    body.modo-studio-activo #panel { height: 45vh; margin-top: 0; }
+    body.modo-studio-activo #lienzo { height: calc(55vh - 44px); }
+    .app-contenedor { padding: 0 4px; }
+    .grid-intenciones { grid-template-columns: 1fr; }
+  }
+  @media (min-width: 1800px) {
+    aside { width: 400px; }
+  }
 </style>
+
+<header id="barraSuperiorApp">
+  <div class="app-logo">
+    <span>ORQUESTER</span>
+    <div id="badgeWorkspaceActual" class="badge-ws">
+      <span>Proyecto:</span>
+      <b id="txtNombreWsActual" class="dato" style="color:var(--acento); max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Sin seleccionar</b>
+    </div>
+  </div>
+  <div style="display:flex; align-items:center; gap:8px;">
+    <button id="btnAbrirCuotas" style="width:auto; padding:4px 10px; font-size:11.5px; background:var(--control); border:1px solid var(--linea); color:var(--texto); border-radius:var(--radio); cursor:pointer;">Cuotas & Modelos</button>
+    <div class="modo-selector">
+      <button id="btnModoApp" class="btn-modo activo">App</button>
+      <button id="btnModoStudio" class="btn-modo">Studio</button>
+    </div>
+  </div>
+</header>
+
+<main id="vistaApp">
+  <div class="app-contenedor">
+    <!-- Card 1: Workspace Selector & Stack Diagnostic -->
+    <div class="seccion-card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <h2 style="margin:0;">1. Carpeta de Trabajo (Workspace)</h2>
+        <button id="btnUsarRaizActual" style="width:auto; font-size:11px; padding:2px 8px; background:#1e293b; border-color:#334155; color:#94a3b8;">Usar proyecto actual</button>
+      </div>
+      <div class="fila" style="margin-bottom:8px;">
+        <input id="inputWorkspaceApp" placeholder="Ruta absoluta a la carpeta del proyecto (ej: a:\Proyectos\mi-app)..." style="font-size:13px;" />
+        <button id="btnExaminarCarpeta" style="width:auto; white-space:nowrap; padding:6px 12px; font-size:12.5px;" title="Abrir el selector de carpetas del sistema">Examinar…</button>
+        <button id="btnAnalizarWorkspaceApp" class="primario" style="width:auto; white-space:nowrap; padding:6px 14px; font-size:12.5px;">Abrir</button>
+      </div>
+      <div id="listaRecientesApp" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;"></div>
+      
+      <div id="diagnosticoWsBox" style="display:none; background:#141720; border:1px solid var(--linea); border-radius:6px; padding:10px 12px; font-size:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--linea); padding-bottom:6px; margin-bottom:6px;">
+          <b id="diagNombreProyecto" style="font-size:13px; color:#fff;">-</b>
+          <span id="diagStackBadge" style="background:#1e293b; color:#38bdf8; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600;">-</span>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; color:var(--tenue); font-size:11.5px;">
+          <div><b>Git:</b> <span id="diagGitTxt" style="color:var(--texto);">-</span></div>
+          <div><b>Tests:</b> <span id="diagTestsTxt" style="color:var(--texto);">-</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 2: Intenciones Rápidas & Plantillas -->
+    <div class="seccion-card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+        <h2 style="margin:0;">2. ¿Qué querés correr en este proyecto?</h2>
+        <span id="txtInfoPaginacionPlantillas" class="tenue" style="font-size:11px;">Página 1 de 2</span>
+      </div>
+      <p class="ayuda" style="margin:0 0 10px;">Elegí una plantilla para precargar el objetivo o escribí uno personalizado abajo. ORQUESTER orquesta los agentes al presionar <b>Orquestar</b>.</p>
+      
+      <div id="gridIntencionesApp" class="grid-intenciones"></div>
+
+      <div id="paginacionPlantillasApp" style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; border-top:1px solid var(--linea); padding-top:8px;">
+        <button id="btnPaginaAntPlantillas" style="width:auto; font-size:11.5px; padding:3px 10px;" disabled>← Anterior</button>
+        <span id="txtEstadoPaginacionPlantillas" class="dato tenue">1 / 2 (9 plantillas)</span>
+        <button id="btnPaginaSigPlantillas" style="width:auto; font-size:11.5px; padding:3px 10px;">Siguiente →</button>
+      </div>
+    </div>
+
+    <!-- Card 3: Objetivo para los Agentes -->
+    <div class="seccion-card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <h2 style="margin:0;">3. Objetivo para los Agentes</h2>
+        <div id="badgePlantillaSeleccionada" style="display:none; align-items:center; gap:6px; font-size:11px; background:#182438; border:1px solid var(--acento); color:var(--acento-claro); padding:2px 8px; border-radius:4px;">
+          <span>Plantilla: <b id="txtNombrePlantillaSeleccionada" class="dato"></b></span>
+          <button id="btnQuitarPlantilla" style="width:auto; border:none; background:transparent; color:var(--peligro-texto); cursor:pointer; padding:0; font-size:12px; line-height:1;" title="Quitar plantilla">✕</button>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <input id="inputPromptApp" placeholder="Ej: Auditar el módulo de autenticación y agregar tests unitarios para casos borde..." style="font-size:13px;" />
+        <button id="btnEjecutarPromptApp" class="primario" style="width:auto; white-space:nowrap; padding:6px 16px; font-size:12.5px;">Orquestar</button>
+      </div>
+    </div>
+
+    <!-- Card 4: Live Execution Timeline & Entregables -->
+    <div id="seccionEjecucionApp" class="seccion-card" style="display:none;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <div>
+          <h2 style="margin:0; color:var(--acento);">Ejecución en Curso: <span id="appBoardTitulo" class="dato" style="color:#fff;">-</span></h2>
+          <div id="appProgresoSubtxt" style="font-size:11.5px; color:var(--tenue); margin-top:2px;">Iniciando agentes...</div>
+        </div>
+        <div style="display:flex; gap:6px;">
+          <button id="btnPararApp" class="peligro" style="width:auto; font-size:11.5px; padding:3px 10px;">Parar</button>
+          <button id="btnVerEnStudio" style="width:auto; font-size:11.5px; padding:3px 10px; background:#223042;">Ver en Studio ↗</button>
+        </div>
+      </div>
+
+      <!-- Barra de progreso -->
+      <div style="background:#13161f; border:1px solid var(--linea); border-radius:4px; height:8px; overflow:hidden; margin-bottom:12px;">
+        <div id="appBarraProgreso" class="barra-progreso-fill" style="background:var(--acento); height:100%;"></div>
+      </div>
+
+      <!-- Timeline de Nodos -->
+      <div id="appTimelineNodos" style="background:#141720; border:1px solid var(--linea); border-radius:6px; padding:10px 12px; margin-bottom:14px; max-height:220px; overflow-y:auto;"><div class="d">Los nodos aparecen acá cuando arranca la corrida.</div></div>
+
+      <!-- Entregables en Vivo -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <b style="font-size:13px;">Entregable Consolidado</b>
+        <div style="display:flex; gap:6px;">
+          <button id="btnCopiarEntregableApp" style="width:auto; font-size:11px; padding:3px 8px;">Copiar</button>
+          <button id="btnReporteAuditApp" style="width:auto; font-size:11px; padding:3px 8px; background:#1b2a3a; color:#7dd3fc; border-color:#2f4a66;">Reporte Completo</button>
+        </div>
+      </div>
+      <div id="appEntregableRender" style="background:#141720; border:1px solid var(--linea); border-radius:6px; padding:14px; min-height:100px; max-height:400px; overflow-y:auto; font-size:12.5px; line-height:1.5;">
+        <div class="d">Esperando entregable de los agentes...</div>
+      </div>
+    </div>
+  </div>
+</main>
 
 <svg id="lienzo">
   <defs>
@@ -131,7 +551,15 @@
      stroke-dasharray="4 3" fill="none"></path>
 </svg>
 
-<aside>
+<div id="barraCanvasFlotante">
+  <button id="btnZoomIn" title="Acercar zoom" style="font-size:12px; padding:3px 8px; width:auto; font-weight:bold;">+</button>
+  <button id="btnZoomOut" title="Alejar zoom" style="font-size:12px; padding:3px 8px; width:auto; font-weight:bold;">-</button>
+  <button id="btnZoomReset" title="Zoom 100%" style="font-size:10.5px; padding:3px 8px; width:auto;">1:1</button>
+  <button id="btnZoomFit" title="Encuadrar todos los nodos" style="font-size:10.5px; padding:3px 8px; width:auto;">Fit</button>
+  <button id="btnModoZen" title="Modo Pantalla Completa / Focus" style="font-size:10.5px; padding:3px 8px; width:auto; background:#242838; border-color:#475069; color:#cdd6f4;">Zen</button>
+</div>
+
+<aside id="panel">
   <div class="panel-header">
     <div class="titulo">
     <h1>ORQUESTER Studio</h1>
@@ -143,41 +571,55 @@
       <button class="tab" data-tab="nodo">Nodo</button>
       <button class="tab" data-tab="obs">Traza</button>
       <button class="tab" data-tab="chat">Chat</button>
+      <button class="tab" data-tab="doctor">Doctor</button>
     </div>
   </div>
 
   <div id="panelCuerpo">
-    <div id="aviso"></div>
+    <div id="aviso" role="status" aria-live="polite" aria-atomic="true"></div>
 
     <!-- Pestaña 1: Diseño del Flujo -->
     <div id="vista-diseno" class="tab-vista activa">
       <div>
-        <label>Board</label>
+        <label for="board">Board</label>
         <input id="board" value="mi-flujo">
       </div>
 
       <div>
-        <label>Tope de gasto <span class="tenue">— en US$, para todo el flujo</span></label>
+        <label for="presupuesto">Tope de gasto <span class="tenue">— en US$, para todo el flujo</span></label>
         <input id="presupuesto" placeholder="(sin tope)">
       </div>
 
       <div>
-        <label>Reglas del flujo <span class="tenue">— van a TODOS los nodos</span></label>
+        <label for="reglas">Reglas del flujo <span class="tenue">— van a TODOS los nodos</span></label>
         <textarea id="reglas" placeholder="Ej: no instales dependencias; no modifiques archivos; respondé en español."></textarea>
       </div>
 
       <div>
-        <label>Abrir un grafo guardado</label>
+        <label for="abrir">Abrir un grafo guardado</label>
         <div class="fila">
           <select id="abrir"><option value="">(elegir…)</option></select>
           <button id="borrarGrafo" style="width:auto; white-space:nowrap;">Borrar</button>
         </div>
       </div>
 
-      <div class="fila">
-        <button id="guardar">Guardar</button>
-        <button id="validar">Validar</button>
-        <button id="ordenar">Ordenar</button>
+      <div class="fila" style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:4px;">
+        <button id="guardar" style="font-size:11px; padding:4px 2px;">Guardar</button>
+        <button id="validar" style="font-size:11px; padding:4px 2px;">Validar</button>
+        <button id="ordenar" style="font-size:11px; padding:4px 2px;">Ordenar</button>
+        <button id="btnGuardarPlantilla" style="font-size:11px; padding:4px 2px; background:#1c2b27; border-color:#2a5e52; color:#5eead4;">Plantilla</button>
+      </div>
+
+      <div style="background:#141720; border:1px solid var(--linea); border-radius:6px; padding:8px 10px; margin-top:2px;">
+        <label style="margin:0 0 4px; font-weight:600; color:var(--acento);">Diseñar flujo con IA</label>
+        <div style="display:flex; gap:6px;">
+          <input id="promptGenIa" placeholder="Ej: 3 nodos para auditar seguridad..." style="margin:0; font-size:12px;">
+          <button id="btnGenIa" class="primario" style="width:auto; white-space:nowrap; padding:4px 10px; font-size:12px;">Crear</button>
+          <!-- Refinar solo aparece con un grafo en el lienzo: sin nada que
+               cambiar el boton no significa nada. -->
+          <button id="btnRefinarIa" style="display:none; width:auto; white-space:nowrap; padding:4px 10px; font-size:12px;">Refinar</button>
+        </div>
+        <div id="pistaRefinar" style="display:none; font-size:10.5px; color:var(--tenue); margin-top:4px;"></div>
       </div>
 
       <div id="bloqueParams" style="display:none;">
@@ -189,8 +631,32 @@
       </div>
 
       <div>
-        <h2>Exportación</h2>
-        <button id="exportar">Exportar como MCP</button>
+        <h2>Exportación & Herramientas</h2>
+        <div class="fila" style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:4px; margin-bottom:4px;">
+          <button id="exportar" style="font-size:10px; padding:4px 2px;">MCP</button>
+          <button id="exportarSvg" style="font-size:10px; padding:4px 2px;">SVG</button>
+          <button id="exportarMermaid" style="font-size:10px; padding:4px 2px;">Mermaid</button>
+          <button id="exportarDataset" style="font-size:10px; padding:4px 2px; background:#1b2836; border-color:#2a435d; color:#7dd3fc;">JSONL</button>
+        </div>
+        <div class="fila" style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:4px;">
+          <button id="exportarCi" style="font-size:10px; padding:4px 2px;">CI/CD</button>
+          <button id="exportarPy" style="font-size:10px; padding:4px 2px;">Python</button>
+          <button id="btnSimular" style="font-size:10px; padding:4px 2px; background:#212c3d; border-color:#3b567d;">Simular</button>
+          <button id="btnLintGrafo" style="font-size:10px; padding:4px 2px; background:#2a2418; border-color:#6d5324; color:#f0c068;">Lint</button>
+        </div>
+      </div>
+
+      <div style="background:#141720; border:1px solid var(--linea); border-radius:6px; padding:8px 10px; margin-top:4px;">
+        <label style="margin:0 0 6px; font-weight:600; font-size:11.5px;">Puntos de control (Snapshots)</label>
+        <div class="fila" style="gap:4px; margin-bottom:6px;">
+          <input id="descSnapshot" type="text" placeholder="Nota de la versión…" style="flex:1; font-size:11px; margin:0; padding:3px 6px;" />
+          <button id="btnGuardarSnapshot" style="white-space:nowrap; padding:3px 8px; font-size:11px;">Guardar</button>
+        </div>
+        <div style="display:flex; gap:4px; align-items:center;">
+          <select id="selSnapshots" style="flex:1; font-size:11px; margin:0; padding:3px 4px;"><option value="">(sin snapshots)</option></select>
+          <button id="btnDiffSnapshot" style="white-space:nowrap; font-size:11px; padding:3px 6px; background:#223042;">Diff</button>
+          <button id="btnRestaurarSnapshot" style="white-space:nowrap; font-size:11px; padding:3px 6px;">Restaurar</button>
+        </div>
       </div>
 
       <div id="bloqueMcp" style="display:none;">
@@ -205,7 +671,7 @@
         <b>Shift + arrastrar</b> de un nodo a otro: dependencia.<br>
         <b>Clic</b> en flecha o <b>Del</b>: borrar.<br>
         <b>Rueda</b>: zoom. <b>Arrastrar fondo</b>: mover.<br>
-        <b>Ctrl+Z</b>: deshacer. <b>Ctrl+S</b>: guardar.
+        <b>Ctrl+D</b>: duplicar nodo. <b>Ctrl+Z</b>: deshacer. <b>Ctrl+S</b>: guardar. <b>F</b>: encuadrar.
       </div>
     </div>
 
@@ -214,15 +680,21 @@
       <h2>Nodo seleccionado</h2>
       <div id="sinNodo" class="ayuda">Hacé clic en un nodo o doble clic en el lienzo para crear uno.</div>
       <div id="editor" style="display:none; flex-direction:column; gap:8px;">
-        <div><label>Título (el goal del nodo)</label><textarea id="titulo"></textarea></div>
-        <div><label>Tipo</label>
+        <div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <label for="titulo" style="margin:0;">Título (el goal del nodo)</label>
+            <button id="btnOptimizarGoal" class="res-btn tenue" style="width:auto; padding:2px 8px; font-size:11px;">Optimizar</button>
+          </div>
+          <textarea id="titulo"></textarea>
+        </div>
+        <div><label for="tipo">Tipo</label>
           <select id="tipo">
             <option value="agente">Agente (se ejecuta)</option>
             <option value="nota">Nota (solo explica, no se ejecuta)</option>
           </select>
         </div>
         <div id="camposAgente" style="display:flex; flex-direction:column; gap:8px;">
-        <div><label>Ejecutor</label>
+        <div><label for="runtime">Ejecutor</label>
           <select id="runtime">
             <option value="hermes">Hermes (nativo)</option>
             <option value="claude-code">Claude Code</option>
@@ -230,21 +702,45 @@
             <option value="antigravity">Antigravity</option>
           </select>
         </div>
-        <div><label>Modelo <span class="tenue" id="pistaModelo"></span></label>
+        <div><label for="modeloLista">Modelo <span class="tenue" id="pistaModelo"></span></label>
           <select id="modeloLista" style="margin-bottom:6px;">
           <option value="">(el que use el CLI por defecto)</option>
         </select>
         <input id="modelo" placeholder="o escribilo a mano"></div>
-        <div><label>Esfuerzo <span class="tenue" id="pistaEsfuerzo"></span></label>
+        <div><label for="esfuerzo">Esfuerzo <span class="tenue" id="pistaEsfuerzo"></span></label>
           <select id="esfuerzo"><option value="">(el del CLI por defecto)</option></select></div>
-        <div><label>Workspace <span class="tenue">— dónde corre el nodo</span></label>
+        <div id="campoPresupuestoNodo" style="display:none;">
+          <label for="nodoPresupuesto">Tope de gasto del nodo <span class="tenue">— en US$</span></label>
+          <input id="nodoPresupuesto" placeholder="(sin tope individual)">
+        </div>
+        <div>
+          <label>Herramientas permitidas <span class="tenue">— vacío = por defecto</span></label>
+          <div id="herramientasBox" style="display:flex; flex-wrap:wrap; gap:8px; font-size:11.5px; padding:4px 0;">
+            <label style="display:flex; align-items:center; gap:4px; margin:0;"><input type="checkbox" value="Read" checked style="width:auto;"> Read</label>
+            <label style="display:flex; align-items:center; gap:4px; margin:0;"><input type="checkbox" value="Grep" checked style="width:auto;"> Grep</label>
+            <label style="display:flex; align-items:center; gap:4px; margin:0;"><input type="checkbox" value="Glob" checked style="width:auto;"> Glob</label>
+            <label style="display:flex; align-items:center; gap:4px; margin:0;"><input type="checkbox" value="Bash" checked style="width:auto;"> Bash</label>
+            <label style="display:flex; align-items:center; gap:4px; margin:0;"><input type="checkbox" value="Write" checked style="width:auto;"> Write</label>
+          </div>
+        </div>
+        <div><label for="workspace">Workspace <span class="tenue">— dónde corre el nodo</span></label>
           <input id="workspace" placeholder="(scratch: se borra al terminar)"></div>
+        </div>
+        <div id="boxTrazabilidadNodo" style="display:none; background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:6px 8px; font-size:11px; margin-top:4px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <b>Linaje & Impacto:</b>
+            <span id="nodoImpactoBadge" class="dato" style="color:var(--acento); font-weight:bold;">0%</span>
+          </div>
+          <div id="nodoLinajeTxt" style="color:var(--tenue); font-size:10.5px; margin-top:3px;"></div>
+        </div>
+        <div id="boxReintentarNodo" style="display:none; margin-top:4px;">
+          <button id="btnReintentarNodo" class="res-btn" style="width:100%; border-color:#8e5229; color:#f0a868; font-weight:600; padding:6px;">Reintentar este nodo</button>
         </div>
         <button id="borrar" class="peligro">Borrar nodo</button>
       </div>
     </div>
 
-    <!-- Pestaña 3: Observabilidad (Traza y Consumo) -->
+    <!-- Pestaña 3: Chat -->
     <div id="vista-chat" class="tab-vista">
       <div class="fila">
         <select id="chatRuntime">
@@ -255,15 +751,15 @@
         <button id="chatNuevo" style="width:auto; white-space:nowrap;">Nueva</button>
       </div>
       <div>
-        <label>Modelo <span class="tenue" id="chatPistaModelo"></span></label>
+        <label for="chatModelo">Modelo <span class="tenue" id="chatPistaModelo"></span></label>
         <select id="chatModelo"><option value="">(el que use el CLI por defecto)</option></select>
       </div>
       <div>
-        <label>Esfuerzo</label>
+        <label for="chatEsfuerzo">Esfuerzo</label>
         <select id="chatEsfuerzo"><option value="">(el del CLI por defecto)</option></select>
       </div>
       <div>
-        <label>Workspace <span class="tenue">— dónde trabaja el agente</span></label>
+        <label for="chatWorkspace">Workspace <span class="tenue">— dónde trabaja el agente</span></label>
         <input id="chatWorkspace" placeholder="(el directorio del Studio)">
       </div>
       <div id="chatSesion" class="ayuda"></div>
@@ -274,7 +770,26 @@
       </div>
     </div>
 
+    <!-- Pestaña 4: Observabilidad (Telemetría, Traza y Consumo) -->
     <div id="vista-obs" class="tab-vista">
+      <div>
+        <label for="selBoardHistorial">Inspeccionar corrida histórica</label>
+        <select id="selBoardHistorial"><option value="">(elegir corrida previa…)</option></select>
+        <button id="btnGenerarReporte" style="margin-top:6px; width:100%; font-size:11.5px; padding:4px 8px;">Reporte de Auditoría</button>
+      </div>
+
+      <div id="bloqueTelemetria" style="display:none; background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:10px; margin-bottom:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <h2 style="margin:0; font-size:12px; text-transform:uppercase; letter-spacing:0.5px; color:var(--acento);">Telemetría en Vivo</h2>
+          <span id="teleProgresoTxt" style="font-size:11px; font-weight:bold; color:var(--texto);">0%</span>
+        </div>
+        <div style="background:#1c202a; border:1px solid var(--linea); border-radius:4px; height:7px; overflow:hidden; margin-bottom:8px;">
+          <div id="teleProgresoBarra" class="barra-progreso-fill" style="background:var(--acento); height:100%;"></div>
+        </div>
+        <div id="teleResumenStats" style="display:flex; justify-content:space-between; font-size:11px; color:var(--tenue); margin-bottom:8px;"></div>
+        <div id="teleDistribucionGrafico" style="margin-top:6px; border-top:1px solid var(--linea); padding-top:6px;"></div>
+      </div>
+
       <div>
         <h2>Leyenda de Estados</h2>
         <div class="leyenda">
@@ -282,8 +797,8 @@
           <span><i style="background:var(--ready)"></i>lista</span>
           <span><i style="background:var(--running)"></i>corriendo</span>
           <span><i style="background:var(--done)"></i>hecha</span>
-          <span><i style="background:var(--failed)"></i>falló</span>
-          <span><i style="background:#d1743a"></i>triage</span>
+          <span><i style="background:var(--bloqueado)"></i>bloqueada</span>
+          <span><i style="background:var(--triage)"></i>triage</span>
         </div>
       </div>
 
@@ -298,6 +813,15 @@
       </div>
       <div id="sinTraza" class="ayuda">Seleccioná un nodo compilado para ver su traza y entregable.</div>
     </div>
+
+    <!-- Pestaña 5: Doctor & Preflight -->
+    <div id="vista-doctor" class="tab-vista">
+      <h2>Diagnóstico del Entorno</h2>
+      <button id="btnEjecutarDoctor" style="width:100%; margin-bottom:8px;">Ejecutar Diagnóstico</button>
+      <div id="resultadoDoctor" style="background:#141720; border:1px solid var(--linea); border-radius:6px; padding:10px; font-size:11.5px; line-height:1.5;">
+        <div class="d">Haz clic para comprobar la salud de SQLite, runtimes CLI y conectividad del entorno.</div>
+      </div>
+    </div>
   </div>
 
   <div id="panelFooter">
@@ -310,10 +834,92 @@
   </div>
 </aside>
 
+<div id="velo" aria-hidden="true"><div class="caja">
+  <b>Soltá acá</b>
+  <span>Un <code>.json</code> de grafo se abre en el lienzo.<br>
+        Una carpeta o una ruta de texto se abre como proyecto.</span>
+</div></div>
+
+<div id="modalEntregable" role="dialog" aria-modal="true" aria-labelledby="modalTitulo" tabindex="-1" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.75); z-index:100; align-items:center; justify-content:center; padding:24px;">
+  <div style="background:var(--panel); border:1px solid var(--linea); border-radius:8px; width:90vw; max-width:960px; max-height:85vh; display:flex; flex-direction:column; box-shadow:0 16px 48px rgba(0,0,0,0.6);">
+    <div style="padding:10px 16px; border-bottom:1px solid var(--linea); display:flex; justify-content:space-between; align-items:center;">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <b id="modalTitulo" style="font-size:13px;">Entregable Completo</b>
+        <div style="display:inline-flex; border:1px solid var(--linea); border-radius:4px; overflow:hidden;">
+          <button id="btnModoPreview" style="border:none; border-radius:0; padding:2px 8px; font-size:11px; background:var(--acento); color:#fff; width:auto;">Formato</button>
+          <button id="btnModoRaw" style="border:none; border-radius:0; padding:2px 8px; font-size:11px; background:transparent; color:var(--tenue); width:auto;">Texto plano</button>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button id="modalBtnCopiar" style="width:auto; padding:3px 9px; font-size:11.5px;">Copiar todo</button>
+        <button id="modalBtnCerrar" style="width:auto; padding:3px 9px; font-size:11.5px;">Cerrar (Esc)</button>
+      </div>
+    </div>
+    <div style="padding:16px; overflow:auto; flex:1;">
+      <div id="modalEntregableRender" style="font-size:12.5px; line-height:1.6; color:var(--texto);"></div>
+      <pre id="modalEntregableTexto" style="display:none; margin:0; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; white-space:pre-wrap; color:var(--texto); line-height:1.5;"></pre>
+    </div>
+  </div>
+</div>
+
+<div id="modalCuotas" role="dialog" aria-modal="true" aria-labelledby="modalCuotasTitulo" tabindex="-1" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.75); z-index:100; align-items:center; justify-content:center; padding:24px;">
+  <div style="background:var(--panel); border:1px solid var(--linea); border-radius:var(--radio); width:90vw; max-width:760px; max-height:85vh; display:flex; flex-direction:column; box-shadow:0 16px 48px rgba(0,0,0,0.6);">
+    <div style="padding:12px 16px; border-bottom:1px solid var(--linea); display:flex; justify-content:space-between; align-items:center;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <b id="modalCuotasTitulo" style="font-size:14px;">Cuotas, Modelos y Consumo</b>
+        <span id="badgeCuotasBoard" class="dato" style="font-size:11px; color:var(--acento); background:var(--hundido); padding:2px 8px; border-radius:4px;"></span>
+      </div>
+      <button id="btnCerrarModalCuotas" style="width:auto; padding:3px 9px; font-size:11.5px;">Cerrar (Esc)</button>
+    </div>
+    <div style="padding:16px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:16px;">
+      <!-- Resumen global -->
+      <div id="cuotasResumenGlobal" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:8px;"></div>
+      <!-- Desglose por modelo / runtime -->
+      <div>
+        <h2 style="margin:0 0 8px; color:var(--tenue); font-size:11px; text-transform:uppercase; letter-spacing:.08em;">Modelos y Runtimes</h2>
+        <div id="cuotasPorRuntime" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px;"></div>
+      </div>
+      <!-- Ajuste de Presupuesto / Tope -->
+      <div style="background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <div>
+            <b style="font-size:12.5px;">Tope de Presupuesto Global</b>
+            <div style="font-size:11px; color:var(--tenue);">Límite en USD para frenar automáticamente la ejecución de nodos nuevos.</div>
+          </div>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <span style="font-size:12px; color:var(--tenue);">US$</span>
+            <input id="inputTopePresupuestoCuotas" type="number" step="0.10" min="0" placeholder="Sin límite" style="width:100px; padding:4px 8px; font-size:12px;" />
+            <button id="btnGuardarTopeCuotas" style="width:auto; padding:4px 10px; font-size:12px;">Aplicar</button>
+          </div>
+        </div>
+      </div>
+      <!-- Estado de Secretos / Credenciales -->
+      <div>
+        <h2 style="margin:0 0 8px; color:var(--tenue); font-size:11px; text-transform:uppercase; letter-spacing:.08em;">Estado de Credenciales y Claves API</h2>
+        <div id="cuotasEstadoSecretos" style="display:flex; flex-direction:column; gap:4px; font-size:11.5px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
-const COLOR = { todo:"#4a5160", ready:"#c9a227", running:"#3d8bcd", blocked:"#4a5160",
-                done:"#3f9d52", failed:"#c0504d", review:"#8e6bc0", cancelled:"#3a3f4a",
-                triage:"#d1743a" };
+// El color de un estado sale de la MISMA variable CSS que pinta la leyenda.
+// Antes era un objeto con hex propios, duplicando la paleta, y se
+// desincronizo: la leyenda prometia rojo para `bloqueada` y el lienzo pintaba
+// `blocked` con "#4a5160", o sea el MISMO gris que `todo`. Un nodo trabado se
+// veia identico a uno que todavia no arranco, que es justo lo que uno mira el
+// lienzo para saber.
+//
+// Ademas tenia claves `failed` y `cancelled`, que NO existen en
+// `kanban_db.VALID_STATUSES`: el rojo estaba asignado a un estado que no llega
+// nunca. Es la cuarta vez que ese `failed` inventado causa un bug en esta rama,
+// y `tests/test_modo_app.py` ahora falla si alguien lo reintroduce.
+const VAR_ESTADO = { todo:"--todo", scheduled:"--todo", ready:"--ready",
+                     running:"--running", done:"--done", blocked:"--bloqueado",
+                     triage:"--triage", review:"--review", archived:"--tenue" };
+const _cssRaiz = getComputedStyle(document.documentElement);
+const COLOR = Object.fromEntries(Object.entries(VAR_ESTADO).map(
+  ([estado, variable]) => [estado, _cssRaiz.getPropertyValue(variable).trim()]));
 const RT_COLOR = { hermes:"#8e9aab", "claude-code":"#d0873f", opencode:"#4f9c8a",
                    antigravity:"#a297fc" };
 const A = 196, ALTO = 60;
@@ -372,6 +978,38 @@ const verVista = () => vista &&
 const vistaActual = () => vista ||
   { x:0, y:0, w:svg.clientWidth, h:svg.clientHeight };
 
+function zoomCentro(factor) {
+  const v = vistaActual();
+  const cx = v.x + v.w / 2;
+  const cy = v.y + v.h / 2;
+  const nw = v.w * factor;
+  const nh = v.h * factor;
+  vista = { x: cx - nw / 2, y: cy - nh / 2, w: nw, h: nh };
+  verVista();
+}
+
+$("#btnZoomIn").onclick = () => zoomCentro(1 / 1.25);
+$("#btnZoomOut").onclick = () => zoomCentro(1.25);
+$("#btnZoomReset").onclick = () => {
+  vista = null;
+  svg.removeAttribute("viewBox");
+};
+$("#btnZoomFit").onclick = () => encuadrar();
+$("#btnModoZen").onclick = () => {
+  document.body.classList.toggle("modo-zen");
+  const activo = document.body.classList.contains("modo-zen");
+  $("#btnModoZen").textContent = activo ? "Salir Zen" : "Zen";
+  $("#btnModoZen").style.background = activo ? "#3d2428" : "#242838";
+  $("#btnModoZen").style.color = activo ? "#fca5a5" : "#cdd6f4";
+  encuadrar();
+};
+
+// La sesión del diseñador con IA. La guarda el CLI; acá viaja solo el id, igual
+// que en el chat. Se tira al abrir otro grafo: la conversación era sobre ESE
+// flujo. Va acá arriba y no junto a sus botones porque `pintar` la lee, y
+// `pintar` corre mucho antes: con el `let` más abajo es zona muerta temporal.
+let SESION_IA = null;
+
 // --- Deshacer ------------------------------------------------------------
 let pila = [];
 const anotar = () => {
@@ -384,6 +1022,23 @@ const buscar = id => grafo.nodos.find(n => n.id === id);
 function avisar(msg, tipo="error") {
   const a = $("#aviso");
   a.textContent = msg; a.className = tipo; a.style.display = msg ? "block" : "none";
+}
+
+// Un grafo es un .json de `ui/grafos/` y el lienzo no siempre lo escribió él:
+// se puede editar a mano, generarlo con un script o recibirlo del diseñador con
+// IA. Un nodo sin coordenadas producía `d="Mundefined,NaN"` en la arista y un
+// `translate(undefined,undefined)` en el nodo: invisible y sin decir nada.
+// Vive acá y no pegado a `abrirGrafo` porque hay DOS caminos por los que entra
+// un grafo ajeno, y poner la guarda en uno solo es como llegamos a esto.
+function ubicarSinCoordenadas(nodos) {
+  let n_sin = 0;
+  for (const n of nodos || []) {
+    if (typeof n.x !== "number" || typeof n.y !== "number") {
+      n.x = 40; n.y = 40 + n_sin++ * (ALTO + 24);
+    }
+  }
+  if (n_sin) avisar(`${n_sin} nodo(s) sin coordenadas: apilados a la izquierda, usá Ordenar.`, "tibio");
+  return n_sin;
 }
 
 function envolver(texto, ancho, maxLineas) {
@@ -443,7 +1098,8 @@ function pintar() {
     const nota = n.tipo === "nota";
     const est = nota ? null : estado[ids[n.id]]?.estado;
     const g = document.createElementNS(svg.namespaceURI, "g");
-    g.setAttribute("class", "nodo" + (sel === n.id ? " sel" : ""));
+    g.setAttribute("class", "nodo" + (sel === n.id ? " sel" : "") +
+                            (arrastre && arrastre.id === n.id ? " arrastrando" : ""));
     g.setAttribute("data-estado", est || "");
     g.setAttribute("transform", `translate(${n.x},${n.y})`);
 
@@ -481,6 +1137,7 @@ function pintar() {
     gn.appendChild(g);
   }
   $("#resumen").textContent = resumir();
+  verBotonRefinar();          // un solo punto: `pintar` corre en cada cambio
 }
 
 function seguirNodo(g, n) {
@@ -553,7 +1210,10 @@ async function cargarTraza() {
     ? `<div class="res-wrap">
          <div class="res-hdr">
            <b>Entregable</b>
-           <button class="res-btn" id="btnCopiarRes">Copiar entregable</button>
+           <div style="display:flex; gap:6px;">
+             <button class="res-btn" id="btnExpandirRes">Expandir</button>
+             <button class="res-btn" id="btnCopiarRes">Copiar entregable</button>
+           </div>
          </div>
          <div class="res">${esc(datos.resultado)}</div>
        </div>` : "";
@@ -572,12 +1232,31 @@ async function cargarTraza() {
     (intentos || "") +
     (eventos ? `<details style="margin-top:6px;"><summary style="cursor:pointer; color:var(--tenue); font-size:11px; margin-bottom:4px;">Eventos del kanban (${(datos.eventos||[]).length})</summary>${eventos}</details>` : '<div class="d">sin eventos todavía</div>');
 
+  const boxReintento = $("#boxReintentarNodo");
+  if (boxReintento) {
+    // Sin `=== "failed"`: no es un estado del kanban y esa rama no se cumplia
+    // jamas. Los dos que si llegan son `blocked` y `triage`.
+    const esFallido = Boolean(datos.block_kind || datos.estado === "blocked"
+                              || datos.estado === "triage");
+    boxReintento.style.display = esFallido ? "block" : "none";
+  }
+
   const btnCopiar = $("#btnCopiarRes");
   if (btnCopiar) {
     btnCopiar.onclick = () => {
-      navigator.clipboard.writeText(ULTIMO_RESULTADO);
-      btnCopiar.textContent = "¡Copiado!";
-      setTimeout(() => { btnCopiar.textContent = "Copiar entregable"; }, 1500);
+      copiar(ULTIMO_RESULTADO, () => {
+        btnCopiar.textContent = "¡Copiado!";
+        setTimeout(() => { btnCopiar.textContent = "Copiar entregable"; }, 1500);
+      });
+    };
+  }
+  const btnExpandir = $("#btnExpandirRes");
+  if (btnExpandir) {
+    btnExpandir.onclick = () => {
+      $("#modalEntregableRender").innerHTML = renderMarkdown(ULTIMO_RESULTADO);
+      $("#modalEntregableTexto").textContent = ULTIMO_RESULTADO;
+      abrirModalEntregable();
+      mostrarModoPreview();
     };
   }
 }
@@ -592,6 +1271,26 @@ let SESIONES = {}, TOTALES_CHAT = {}, chateando = false;
 // Modelo y esfuerzo POR EJECUTOR: un slug de agy no significa nada en opencode.
 let MODELO_CHAT = {}, ESFUERZO_CHAT = {};
 
+function extraerGrafoJson(txt) {
+  try {
+    const m = txt.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+    if (m) {
+      const obj = JSON.parse(m[1]);
+      if (Array.isArray(obj.nodos) && Array.isArray(obj.aristas)) return obj;
+    }
+    
+    // Fallback: Si no hay bloques markdown, intentar extraer JSON crudo.
+    // El LLM podría devolver prosa antes o después del JSON.
+    const start = txt.indexOf('{');
+    const end = txt.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      const obj = JSON.parse(txt.substring(start, end + 1));
+      if (Array.isArray(obj.nodos) && Array.isArray(obj.aristas)) return obj;
+    }
+  } catch (_) {}
+  return null;
+}
+
 function pintarChat(quien, texto, clase) {
   const d = document.createElement("div");
   d.className = "msg " + (clase || (quien === "yo" ? "yo" : "el"));
@@ -603,15 +1302,39 @@ function pintarChat(quien, texto, clase) {
     btn.style.cssText = "width:auto; padding:2px 6px; font-size:10.5px;";
     btn.textContent = "Copiar";
     btn.onclick = () => {
-      navigator.clipboard.writeText(texto);
-      btn.textContent = "¡Copiado!";
-      setTimeout(() => { btn.textContent = "Copiar"; }, 1500);
+      copiar(texto, () => {
+        btn.textContent = "¡Copiado!";
+        setTimeout(() => { btn.textContent = "Copiar"; }, 1500);
+      });
     };
     hdr.appendChild(btn);
     d.appendChild(hdr);
     const cuerpo = document.createElement("div");
     cuerpo.textContent = texto;
     d.appendChild(cuerpo);
+
+    const gJson = extraerGrafoJson(texto);
+    if (gJson && gJson.nodos.length) {
+      const box = document.createElement("div");
+      box.style.cssText = "margin-top:8px; padding-top:6px; border-top:1px solid var(--linea);";
+      const btnCargar = document.createElement("button");
+      btnCargar.className = "primario";
+      btnCargar.style.cssText = "font-size:11.5px; padding:5px 9px;";
+      btnCargar.textContent = `Cargar grafo en el lienzo (${gJson.nodos.length} nodo(s))`;
+      btnCargar.onclick = async () => {
+        anotar();
+        abrirGrafo(gJson, gJson.board || grafo.board || "flujo-chat");
+        const { ok, datos } = await api("/api/ordenar", grafo);
+        if (ok && datos.posiciones) {
+          for (const n of grafo.nodos) Object.assign(n, datos.posiciones[n.id]);
+          pintar(); encuadrar();
+        }
+        activarTab("diseno");
+        avisar(`Grafo '${grafo.board}' cargado desde el chat y ordenado.`, "ok");
+      };
+      box.appendChild(btnCargar);
+      d.appendChild(box);
+    }
   } else {
     d.textContent = texto;                       // textContent, no innerHTML
   }
@@ -641,11 +1364,103 @@ async function enviarChat() {
   if (chateando) return;                       // un turno a la vez por pestaña
   const mensaje = $("#chatMensaje").value.trim();
   if (!mensaje) return;
-  const rt = $("#chatRuntime").value;
-  chateando = true; $("#chatEnviar").disabled = true;
-  pintarChat("yo", mensaje);
   $("#chatMensaje").value = "";
   $("#chatMensaje").style.height = "auto";
+  pintarChat("yo", mensaje);
+
+  // Comandos de Copilot locales en el Studio
+  if (mensaje.startsWith("/")) {
+    const partes = mensaje.slice(1).split(" ");
+    const cmd = (partes[0] || "").toLowerCase();
+    const args = partes.slice(1).join(" ");
+    if (cmd === "ayuda" || cmd === "help") {
+      pintarChat("el", "Comandos de Copilot disponibles:\n• /agregar <id> <titulo> [runtime]\n• /conectar <origen> <destino>\n• /eliminar <id>\n• /ordenar\n• /simular\n• /limpiar");
+      return;
+    }
+    if (cmd === "agregar") {
+      const match = args.match(/^(\S+)\s+(.+?)(?:\s+(claude-code|opencode|antigravity|hermes))?$/);
+      if (!match) {
+        pintarChat("el", "Uso: /agregar <id> <titulo> [claude-code|opencode|antigravity|hermes]");
+        return;
+      }
+      const [, id, tit, rt] = match;
+      if (grafo.nodos.some(n => n.id === id)) {
+        pintarChat("el", `Ya existe un nodo con id '${id}'.`);
+        return;
+      }
+      anotar();
+      grafo.nodos.push({ id, titulo: tit, runtime: rt || "claude-code", x: 100 + (grafo.nodos.length * 30), y: 100 + (grafo.nodos.length * 30) });
+      sel = id; refrescarEditor(); pintar();
+      pintarChat("el", `✓ Nodo '${id}' agregado al lienzo (${rt || "claude-code"}).`);
+      return;
+    }
+    if (cmd === "conectar") {
+      const [p, h] = args.split(/\s+/);
+      if (!p || !h) {
+        pintarChat("el", "Uso: /conectar <origen_id> <destino_id>");
+        return;
+      }
+      if (!grafo.nodos.some(n => n.id === p) || !grafo.nodos.some(n => n.id === h)) {
+        pintarChat("el", `Error: uno de los nodos ('${p}' o '${h}') no existe.`);
+        return;
+      }
+      if (grafo.aristas.some(([a, b]) => a === p && b === h)) {
+        pintarChat("el", `La conexión ${p} -> ${h} ya existe.`);
+        return;
+      }
+      anotar();
+      grafo.aristas.push([p, h]);
+      pintar();
+      pintarChat("el", `✓ Conexión creada: ${p} → ${h}.`);
+      return;
+    }
+    if (cmd === "eliminar" || cmd === "borrar") {
+      const id = args.trim();
+      if (!id || !grafo.nodos.some(n => n.id === id)) {
+        pintarChat("el", `No existe el nodo '${id}'.`);
+        return;
+      }
+      anotar();
+      grafo.nodos = grafo.nodos.filter(n => n.id !== id);
+      grafo.aristas = grafo.aristas.filter(([p, h]) => p !== id && h !== id);
+      if (sel === id) sel = null;
+      refrescarEditor(); pintar();
+      pintarChat("el", `✓ Nodo '${id}' eliminado del lienzo.`);
+      return;
+    }
+    if (cmd === "ordenar") {
+      const { ok, datos } = await api("/api/ordenar", grafo);
+      if (ok && datos.posiciones) {
+        anotar();
+        for (const n of grafo.nodos) Object.assign(n, datos.posiciones[n.id]);
+        pintar(); encuadrar();
+        pintarChat("el", "✓ Nodos auto-ordenados por capas topológicas.");
+      } else {
+        pintarChat("el", "Error al ordenar: " + (datos.error || "grafo inválido"));
+      }
+      return;
+    }
+    if (cmd === "simular") {
+      const { ok, datos } = await api("/api/simular", grafo);
+      if (ok) {
+        pintarChat("el", `Simulación: ${datos.total_nodos} nodos · ${datos.camino_critico_pasos} pasos críticos · ${datos.paralelismo_maximo} paralelismo máximo.`);
+      } else {
+        pintarChat("el", "Error en simulación: " + (datos.error || "grafo inválido"));
+      }
+      return;
+    }
+    if (cmd === "limpiar") {
+      anotar();
+      grafo.nodos = [];
+      grafo.aristas = [];
+      sel = null; refrescarEditor(); pintar();
+      pintarChat("el", "✓ Lienzo limpiado.");
+      return;
+    }
+  }
+
+  const rt = $("#chatRuntime").value;
+  chateando = true; $("#chatEnviar").disabled = true;
   const t0 = Date.now();
   const esperando = pintarChat("el", `${rt} está trabajando… (0s)`, "el pensando");
   const reloj = setInterval(() => {
@@ -703,8 +1518,19 @@ $("#chatMensaje").onkeydown = e => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviarChat(); }
 };
 
+// `writeText` devuelve una promesa que se RECHAZA si el navegador niega el
+// permiso o si el documento no tiene el foco. Sin `catch`, el cartel decia
+// "copiado al portapapeles" sobre algo que no se copio, y encima quedaba una
+// promesa rechazada sin atender en la consola.
+function copiar(texto, alExito) {
+  navigator.clipboard.writeText(texto).then(alExito, e =>
+    avisar("No se pudo copiar al portapapeles: " + (e?.message || e), "error"));
+}
+
 const esc = t => String(t).replace(/[&<>"]/g, c =>
   ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+
+let ULTIMA_TRAZA = null;
 
 function refrescarEditor() {
   const n = buscar(sel);
@@ -723,6 +1549,42 @@ function refrescarEditor() {
       llenarEsfuerzo("#esfuerzo", n.runtime, n.esfuerzo);
       const tope = (CAPS[n.runtime] || {}).tope_gasto_flag;
       $("#pistaEsfuerzo").textContent = tope ? "— acepta tope de gasto por nodo" : "";
+      $("#campoPresupuestoNodo").style.display = tope ? "block" : "none";
+      $("#nodoPresupuesto").value = n.presupuesto_usd || "";
+      const herr = n.herramientas || ["Read", "Grep", "Glob", "Bash"];
+      document.querySelectorAll("#herramientasBox input").forEach(cb => {
+        cb.checked = herr.includes(cb.value);
+      });
+
+      // Trazabilidad y linaje en vivo. `refrescarEditor` corre en cada
+      // seleccion, duplicado, cambio de runtime y borrado, y mandaba el grafo
+      // ENTERO en cada una, contra un servidor de un solo hilo. La topologia
+      // solo cambia si cambia el nodo mirado o el cableado, asi que se pide
+      // una vez por combinacion y no una vez por clic.
+      const claveTraza = sel + "|" + JSON.stringify(grafo.aristas || []) +
+                         "|" + (grafo.nodos || []).map(x => x.id).join(",");
+      if (claveTraza !== ULTIMA_TRAZA) {
+        ULTIMA_TRAZA = claveTraza;
+        api("/api/trazabilidad-grafo", { nodo: sel, grafo: grafo }).then(({ ok, datos }) => {
+          const box = $("#boxTrazabilidadNodo");
+          // `sel` se lee AL RESOLVER, `n.id` es el nodo que pidio esta
+          // respuesta: si ya no coinciden, la respuesta llego tarde y no es
+          // sobre lo que el usuario mira. Antes se caia al `else` y apagaba la
+          // caja del nodo NUEVO; con el cache encima, no se volvia a pedir y la
+          // trazabilidad quedaba en blanco hasta tocar el cableado.
+          if (sel !== n.id) return;
+          if (ok && datos) {
+            box.style.display = "block";
+            $("#nodoImpactoBadge").textContent = `${datos.impacto_pct}% impacto`;
+            $("#nodoLinajeTxt").textContent = `Ancestros: ${datos.ancestros.length} · Downstreams bloqueados: ${datos.descendientes.length}`;
+          } else {
+            box.style.display = "none";
+            ULTIMA_TRAZA = null;          // que un fallo se pueda reintentar
+          }
+        }).catch(() => { ULTIMA_TRAZA = null; });
+      }
+    } else {
+      $("#boxTrazabilidadNodo").style.display = "none";
     }
   }
 }
@@ -743,8 +1605,8 @@ async function refrescarParams() {
     return;
   }
   caja.innerHTML = ps.map(p =>
-    `<div><label>${esc(p)}</label>
-       <input data-p="${esc(p)}" class="${faltan.has(p) ? "falta" : ""}" value="${esc(VALORES[p] || "")}"></div>`).join("");
+    `<div><label for="param-${esc(p)}">${esc(p)}</label>
+       <input id="param-${esc(p)}" data-p="${esc(p)}" class="${faltan.has(p) ? "falta" : ""}" value="${esc(VALORES[p] || "")}"></div>`).join("");
   for (const i of caja.querySelectorAll("input"))
     i.oninput = e => {
       VALORES[e.target.dataset.p] = e.target.value;
@@ -760,9 +1622,11 @@ async function listarGrafos() {
 }
 function abrirGrafo(datos, nombre) {
   grafo = { nodos: [], aristas: [], ...datos, board: nombre };
+  ubicarSinCoordenadas(grafo.nodos);
   // El board viejo no tiene por que ser el de este grafo: los task_id de la
   // corrida anterior no significan nada aca y pintarian estados ajenos.
   ids = {}; estado = {}; sel = null; VALORES = {}; pila = [];
+  SESION_IA = null;           // la conversacion era sobre el flujo anterior
   $("#board").value = grafo.board;
   $("#reglas").value = grafo.reglas || "";
   $("#presupuesto").value = grafo.presupuesto_usd || "";
@@ -974,13 +1838,77 @@ document.addEventListener("keydown", e => {
     return;
   }
 
-  // Deseleccionar (Escape)
-  if (e.key === "Escape" && sel) {
+  // Duplicar nodo seleccionado (Ctrl+D o Cmd+D)
+  if ((e.ctrlKey || e.metaKey) && (e.key === "d" || e.key === "D") && sel) {
     e.preventDefault();
-    sel = null;
+    const original = buscar(sel);
+    if (!original) return;
+    anotar();
+    const nuevo = JSON.parse(JSON.stringify(original));
+    nuevo.id = nuevoId();
+    nuevo.x = (original.x || 0) + 30;
+    nuevo.y = (original.y || 0) + 30;
+    grafo.nodos.push(nuevo);
+    sel = nuevo.id;
     refrescarEditor(); cargarTraza(); pintar();
+    avisar(`Nodo '${nuevo.id}' duplicado.`, "ok");
     return;
   }
+
+  // Deseleccionar o cerrar modal (Escape)
+  if (e.key === "Escape") {
+    if ($("#modalCuotas") && $("#modalCuotas").style.display === "flex") {
+      e.preventDefault();
+      $("#modalCuotas").style.display = "none";
+      return;
+    }
+    if ($("#modalEntregable") && $("#modalEntregable").style.display === "flex") {
+      e.preventDefault();
+      cerrarModalEntregable();
+      return;
+    }
+    if (sel) {
+      e.preventDefault();
+      sel = null;
+      refrescarEditor(); cargarTraza(); pintar();
+      return;
+    }
+  }
+});
+
+$("#btnOptimizarGoal").onclick = async () => {
+  const n = buscar(sel);
+  if (!n) return;
+  const goal = (n.titulo || "").trim();
+  if (!goal) return avisar("El goal está vacío.", "error");
+  $("#btnOptimizarGoal").disabled = true;
+  $("#btnOptimizarGoal").textContent = "Optimizando…";
+  avisar("Optimizando goal con el agente...", "ok");
+  const { ok, datos } = await api("/api/optimizar-goal", {
+    goal: goal,
+    runtime: n.runtime || "claude-code",
+    reglas: grafo.reglas || ""
+  });
+  $("#btnOptimizarGoal").disabled = false;
+  $("#btnOptimizarGoal").textContent = "Optimizar";
+  if (!ok || !datos.optimizado) return avisar(datos.error || "Fallo optimizando el goal.", "error");
+  anotar();
+  n.titulo = datos.optimizado;
+  $("#titulo").value = datos.optimizado;
+  pintar();
+  // Si degradó, ningún agente tocó esto: lo ordenó una plantilla. Decirlo, en
+  // vez de anunciar éxito sobre un fallback.
+  if (datos.degradado) avisar("Goal ordenado sin agente: " + datos.motivo, "tibio");
+  else avisar("Goal optimizado con éxito.", "ok");
+};
+
+document.querySelectorAll("#herramientasBox input").forEach(cb => {
+  cb.onchange = () => {
+    const n = buscar(sel);
+    if (!n) return;
+    const seleccionadas = [...document.querySelectorAll("#herramientasBox input:checked")].map(i => i.value);
+    n.herramientas = seleccionadas;
+  };
 });
 
 $("#titulo").oninput = e => {
@@ -991,6 +1919,10 @@ $("#esfuerzo").onchange = e => {
   const n = buscar(sel);
   // Vacio = sin override: el CLI usa el esfuerzo de su perfil.
   if (n) { const v = e.target.value; v ? n.esfuerzo = v : delete n.esfuerzo; pintar(); }
+};
+$("#nodoPresupuesto").oninput = e => {
+  const n = buscar(sel);
+  if (n) { const v = e.target.value.trim(); v ? n.presupuesto_usd = v : delete n.presupuesto_usd; }
 };
 $("#workspace").oninput = e => {
   const n = buscar(sel);
@@ -1021,8 +1953,8 @@ $("#runtime").onchange = e => {
   const niveles = llenarEsfuerzo("#esfuerzo", n.runtime, n.esfuerzo);
   if (n.esfuerzo && !niveles.includes(n.esfuerzo)) delete n.esfuerzo;
   const tope = (CAPS[n.runtime] || {}).tope_gasto_flag;
-  $("#pistaEsfuerzo").textContent = tope ? "— acepta tope de gasto por nodo" : "";
-  pintar(); pistaDeModelo(); cargarModelos();
+  if (!tope) delete n.presupuesto_usd;
+  refrescarEditor(); pintar(); pistaDeModelo(); cargarModelos();
 };
 $("#modelo").oninput = e => {
   const n = buscar(sel);
@@ -1131,11 +2063,22 @@ async function api(ruta, cuerpo) {
     return { ok:false, datos:{ error:"sin token" } };
   }
   const cab = { "X-Orquester-Token": TOKEN };
-  const r = await fetch(ruta, cuerpo ? {
-    method:"POST", headers:{ ...cab, "Content-Type":"application/json" },
-    body:JSON.stringify(cuerpo)
-  } : { headers: cab });
-  return { ok:r.ok, datos: await r.json() };
+  // `api` NUNCA tira: devuelve `{ok:false}`. Si tirara, cada `await api(...)`
+  // abortaría su handler y el botón que se deshabilitó una línea antes quedaría
+  // deshabilitado para siempre, con el "…" puesto y sin decir nada. Y son
+  // dos casos reales: `fetch` rechaza si el servidor se cayó, y `r.json()` tira
+  // si la respuesta no es JSON. Acá y no en cada handler: son treinta botones.
+  try {
+    const r = await fetch(ruta, cuerpo ? {
+      method:"POST", headers:{ ...cab, "Content-Type":"application/json" },
+      body:JSON.stringify(cuerpo)
+    } : { headers: cab });
+    return { ok:r.ok, datos: await r.json() };
+  } catch (e) {
+    // `e?.message || e`: si lo que se lanzó no es un Error, `e.message` es
+    // undefined y el aviso quedaba diciendo "undefined", que no ayuda a nadie.
+    return { ok:false, datos:{ error:`no se pudo hablar con el Studio: ${e?.message || e}` } };
+  }
 }
 
 $("#validar").onclick = async () => {
@@ -1146,6 +2089,20 @@ $("#guardar").onclick = async () => {
   await api("/api/grafo", grafo);
   await listarGrafos();
   avisar(`Guardado como '${grafo.board}' en ui/grafos/.`, "ok");
+};
+$("#btnGuardarPlantilla").onclick = async () => {
+  if (!grafo.nodos.length) return avisar("El grafo no tiene nodos.", "error");
+  const nom = prompt("Nombre para la plantilla en el catálogo:", grafo.board || "mi-plantilla");
+  if (!nom) return;
+  const desc = prompt("Descripción breve de la plantilla:", `Plantilla ${nom}`);
+  const { ok, datos } = await api("/api/guardar-plantilla", {
+    nombre: nom.trim(),
+    descripcion: (desc || "").trim(),
+    grafo: grafo,
+  });
+  if (!ok) return avisar(datos.error || "No se pudo guardar la plantilla", "error");
+  await listarPlantillas();
+  avisar(`✓ Plantilla '${datos.nombre}' guardada en el catálogo.`, "ok");
 };
 $("#ordenar").onclick = async () => {
   const { ok, datos } = await api("/api/ordenar", grafo);
@@ -1174,9 +2131,9 @@ $("#correr").onclick = async () => {
 
 $("#parar").onclick = async () => {
   const { datos } = await api("/api/parar", { board: grafo.board });
-  avisar(datos.ok ? "Pedido de parada: no arranca nodos nuevos. Lo que ya está " +
-                    "corriendo termina y cierra su card."
+  avisar(datos.ok ? "Ejecución detenida: subprocesos cancelados y tareas en vuelo bloqueadas."
                   : datos.motivo, datos.ok ? "ok" : "error");
+  sondearEstado();
 };
 
 let CONFIG_MCP = "";
@@ -1193,12 +2150,629 @@ $("#exportar").onclick = async () => {
 
 $("#btnCopiarMcp").onclick = () => {
   if (!CONFIG_MCP) return;
-  navigator.clipboard.writeText(CONFIG_MCP);
-  $("#btnCopiarMcp").textContent = "¡Copiado al portapapeles!";
-  setTimeout(() => { $("#btnCopiarMcp").textContent = "Copiar config MCP"; }, 1500);
+  copiar(CONFIG_MCP, () => {
+    $("#btnCopiarMcp").textContent = "¡Copiado al portapapeles!";
+    setTimeout(() => { $("#btnCopiarMcp").textContent = "Copiar config MCP"; }, 1500);
+  });
+};
+
+$("#exportarSvg").onclick = () => {
+  if (!grafo.nodos.length) return avisar("No hay nodos para exportar.", "error");
+  const clon = svg.cloneNode(true);
+  clon.removeAttribute("id");
+  const f = clon.querySelector("#fantasma");
+  if (f) f.remove();
+
+  const ancho = n => (n.tipo === "nota" ? A * 1.35 : A);
+  const alto  = n => (n.tipo === "nota" ? ALTO * 1.9 : ALTO);
+  const x0 = Math.min(...grafo.nodos.map(n => n.x)) - 30;
+  const y0 = Math.min(...grafo.nodos.map(n => n.y)) - 30;
+  const x1 = Math.max(...grafo.nodos.map(n => n.x + ancho(n))) + 30;
+  const y1 = Math.max(...grafo.nodos.map(n => n.y + alto(n))) + 30;
+  const w = Math.max(x1 - x0, 100);
+  const h = Math.max(y1 - y0, 100);
+  clon.setAttribute("viewBox", `${x0} ${y0} ${w} ${h}`);
+  clon.setAttribute("width", `${w}`);
+  clon.setAttribute("height", `${h}`);
+  clon.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+
+  const serializer = new XMLSerializer();
+  const svgStr = '<?xml version="1.0" standalone="no"?>\r\n' + serializer.serializeToString(clon);
+  const blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${grafo.board || "orquester-grafo"}.svg`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  avisar(`Diagrama exportado como '${a.download}'.`, "ok");
+};
+
+$("#exportarMermaid").onclick = async () => {
+  if (!grafo.nodos.length) return avisar("No hay nodos para exportar.", "error");
+  const { ok, datos } = await api("/api/exportar-mermaid", grafo);
+  if (!ok) return avisar(datos.error || "No se pudo generar Mermaid", "error");
+  copiar(datos.mermaid, () => avisar("Diagrama Mermaid copiado al portapapeles.", "ok"));
+};
+
+$("#exportarDataset").onclick = async () => {
+  // Sin board, el endpoint exporta TODOS los boards de la maquina: un click
+  // sobre un lienzo sin nombre devolvia el historial entero, ajeno incluido.
+  if (!(grafo.board || "").trim()) return avisar("Ponele nombre al flujo antes de exportar el dataset.", "error");
+  const { ok, datos } = await api(`/api/exportar-dataset?board=${encodeURIComponent(grafo.board)}`);
+  if (!ok || !datos) return avisar("No se pudo exportar dataset", "error");
+
+  const modalHtml = `
+    <div style="margin-bottom:12px; font-size:13px;">
+      <b>Dataset JSONL de Ejecución:</b> <code>${esc(datos.board)}</code> (${datos.total_registros} registros)<br>
+      <span style="color:var(--tenue); font-size:11.5px;">Formato estructurado por línea para fine-tuning, benchmarking y análisis offline.</span>
+    </div>
+    <div style="background:#0e1017; border:1px solid var(--linea); border-radius:6px; padding:10px; margin-bottom:8px; font-size:11px; max-height:300px; overflow-y:auto; font-family:monospace; white-space:pre-wrap;">
+      ${esc(datos.jsonl || "(sin registros de ejecución aún)")}
+    </div>
+  `;
+  $("#modalEntregableRender").innerHTML = modalHtml;
+  $("#modalEntregableTexto").textContent = datos.jsonl;
+  abrirModalEntregable();
+  mostrarModoPreview();
+};
+
+$("#exportarCi").onclick = async () => {
+  if (!grafo.nodos.length) return avisar("No hay nodos para exportar.", "error");
+  const { ok, datos } = await api("/api/exportar-ci", grafo);
+  if (!ok) return avisar(datos.error || "No se pudo generar workflow CI/CD", "error");
+  copiar(datos.workflow, () => avisar("Pipeline GitHub Actions copiado al portapapeles.", "ok"));
+};
+
+$("#exportarPy").onclick = async () => {
+  if (!grafo.nodos.length) return avisar("No hay nodos para exportar.", "error");
+  const { ok, datos } = await api("/api/exportar-python", grafo);
+  if (!ok) return avisar(datos.error || "No se pudo generar script Python", "error");
+  copiar(datos.script, () => avisar("Script Python autónomo copiado al portapapeles.", "ok"));
+};
+
+$("#btnSimular").onclick = async () => {
+  if (!grafo.nodos.length) return avisar("No hay nodos para simular.", "error");
+  const { ok, datos } = await api("/api/simular", grafo);
+  if (!ok) return avisar(datos.error || "Error en simulación", "error");
+
+  const pasosHtml = (datos.pasos || []).map(p => {
+    const nods = p.nodos.map(n => `<b>${esc(n.id)}</b> <span style="color:var(--tenue);">(${esc(n.runtime)})</span>`).join(", ");
+    return `<div style="padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
+      <span style="color:var(--acento); font-weight:bold;">Paso ${p.paso} (${p.paralelos} paralelo/s):</span> ${nods}
+    </div>`;
+  }).join("");
+
+  const modalHtml = `
+    <div style="margin-bottom:12px; font-size:13px;">
+      <b>Camino crítico:</b> ${datos.camino_critico_pasos} pasos secuenciales · 
+      <b>Paralelismo pico:</b> ${datos.paralelismo_maximo} nodos simultáneos · 
+      <b>Nodos ejecutables:</b> ${datos.total_nodos}
+    </div>
+    <div style="background:#0e1017; border:1px solid var(--linea); border-radius:6px; padding:10px; margin-bottom:8px; font-size:12px;">
+      ${pasosHtml}
+    </div>
+    <div style="font-size:11px; color:var(--tenue);">
+      Runtimes involucrados: <b>${datos.runtimes.map(esc).join(", ")}</b>
+    </div>
+  `;
+  $("#modalEntregableRender").innerHTML = modalHtml;
+  $("#modalEntregableTexto").textContent = JSON.stringify(datos, null, 2);
+  abrirModalEntregable();
+  mostrarModoPreview();
+};
+
+$("#btnLintGrafo").onclick = async () => {
+  if (!grafo.nodos.length) return avisar("No hay nodos para analizar.", "error");
+  const { ok, datos } = await api("/api/analizar-grafo", grafo);
+  if (!ok) return avisar(datos.error || "Error al analizar grafo", "error");
+
+  const hallazgos = datos.hallazgos || [];
+  if (!hallazgos.length) {
+    return avisar("✓ Grafo óptimo: sin antipatrones ni riesgos detectados.", "ok");
+  }
+
+  const itemsHtml = hallazgos.map(h => {
+    const col = h.tipo === "advertencia" ? "var(--bloqueado)" : (h.tipo === "optimizacion" ? "#74c0fc" : "#ffd43b");
+    return `<div style="border-left:3px solid ${col}; background:rgba(255,255,255,0.03); padding:8px 12px; margin:6px 0; border-radius:0 4px 4px 0; font-size:12px;">
+      <b>[${esc(h.tipo.toUpperCase())}]</b> ${esc(h.mensaje)}
+    </div>`;
+  }).join("");
+
+  const modalHtml = `
+    <div style="margin-bottom:12px; font-size:13px;">
+      <b>Auditoría Topológica & Linter:</b> Se detectaron <b>${hallazgos.length}</b> sugerencia(s) para optimizar el grafo.
+    </div>
+    <div style="background:#0e1017; border:1px solid var(--linea); border-radius:6px; padding:10px; margin-bottom:8px;">
+      ${itemsHtml}
+    </div>
+  `;
+  $("#modalEntregableRender").innerHTML = modalHtml;
+  $("#modalEntregableTexto").textContent = JSON.stringify(hallazgos, null, 2);
+  abrirModalEntregable();
+  mostrarModoPreview();
+};
+
+function renderMarkdown(md) {
+  if (!md) return '<div class="d">Sin contenido</div>';
+  let html = esc(md);
+  html = html.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (m, lang, code) => {
+    return `<pre style="background:#13161f; border:1px solid var(--linea); border-radius:6px; padding:10px; margin:8px 0; overflow:auto; font-family:var(--mono); font-size:12px; line-height:1.4;"><code>${code}</code></pre>`;
+  });
+  html = html.replace(/^### (.*?)$/gm, '<h4 style="margin:12px 0 4px; font-size:13px; color:#fff;">$1</h4>');
+  html = html.replace(/^## (.*?)$/gm, '<h3 style="margin:16px 0 6px; font-size:14px; color:#fff; border-bottom:1px solid var(--linea); padding-bottom:3px;">$1</h3>');
+  html = html.replace(/^# (.*?)$/gm, '<h2 style="margin:20px 0 8px; font-size:16px; color:#fff; border-bottom:1px solid var(--linea); padding-bottom:4px;">$1</h2>');
+  html = html.replace(/^> \[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\n([\s\S]*?)(?=\n\n|\n[^\>]|$)/gm, (m, tipo, texto) => {
+    const col = tipo === "WARNING" || tipo === "CAUTION" ? "var(--bloqueado)" : (tipo === "TIP" ? "var(--done)" : "var(--acento)");
+    return `<div style="border-left:3px solid ${col}; background:rgba(255,255,255,0.03); padding:8px 12px; margin:8px 0; border-radius:0 4px 4px 0;"><b>${tipo}:</b> ${texto.replace(/^> /gm, '')}</div>`;
+  });
+  html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+  html = html.replace(/\*(.*?)\*/g, '<i>$1</i>');
+  html = html.replace(/`([^`]+)`/g, '<code style="background:#1c202a; padding:2px 4px; border-radius:3px; font-size:11.5px; font-family:var(--mono);">$1</code>');
+  html = html.replace(/^- (.*?)$/gm, '<li style="margin-left:18px; margin-bottom:3px;">$1</li>');
+  html = html.replace(/\n\n/g, '<div style="height:8px;"></div>');
+  return html;
+}
+
+function mostrarModoPreview() {
+  $("#modalEntregableRender").style.display = "block";
+  $("#modalEntregableTexto").style.display = "none";
+  $("#btnModoPreview").style.background = "var(--acento)";
+  $("#btnModoPreview").style.color = "#fff";
+  $("#btnModoRaw").style.background = "transparent";
+  $("#btnModoRaw").style.color = "var(--tenue)";
+}
+
+function mostrarModoRaw() {
+  $("#modalEntregableRender").style.display = "none";
+  $("#modalEntregableTexto").style.display = "block";
+  $("#btnModoRaw").style.background = "var(--acento)";
+  $("#btnModoRaw").style.color = "#fff";
+  $("#btnModoPreview").style.background = "transparent";
+  $("#btnModoPreview").style.color = "var(--tenue)";
+}
+
+$("#btnModoPreview").onclick = mostrarModoPreview;
+$("#btnModoRaw").onclick = mostrarModoRaw;
+
+// Quien tenia el foco antes de abrir. Al cerrar hay que devolverselo: si no, el
+// foco vuelve al principio del documento y quien navega con teclado tiene que
+// recorrer la interfaz entera para volver al boton que apreto.
+let FOCO_PREVIO = null;
+
+function abrirModalEntregable() {
+  FOCO_PREVIO = document.activeElement;
+  const m = $("#modalEntregable");
+  m.style.display = "flex";
+  // Al contenedor y no al primer boton: con `role="dialog"` y `aria-labelledby`
+  // un lector anuncia "Entregable Completo, dialogo" en vez de leer un boton
+  // suelto sin contexto.
+  m.focus();
+}
+
+function cerrarModalEntregable() {
+  $("#modalEntregable").style.display = "none";
+  // `?.` porque el elemento pudo desaparecer mientras el modal estaba abierto
+  // (el panel se repinta solo cuando llega estado nuevo del board).
+  FOCO_PREVIO?.focus?.();
+  FOCO_PREVIO = null;
+}
+
+// Trampa de foco: sin esto, tabular dentro del modal se va a los controles de
+// atras, que estan tapados por el fondo negro. Uno tabula a ciegas.
+$("#modalEntregable").addEventListener("keydown", e => {
+  if (e.key !== "Tab") return;
+  const focos = [...$("#modalEntregable").querySelectorAll(
+    "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])")]
+    .filter(el => el.offsetParent !== null);
+  if (!focos.length) return;
+  const primero = focos[0], ultimo = focos[focos.length - 1];
+  if (e.shiftKey && (document.activeElement === primero ||
+                     document.activeElement === $("#modalEntregable"))) {
+    e.preventDefault(); ultimo.focus();
+  } else if (!e.shiftKey && document.activeElement === ultimo) {
+    e.preventDefault(); primero.focus();
+  }
+});
+$("#modalBtnCerrar").onclick = cerrarModalEntregable;
+$("#modalEntregable").onclick = e => {
+  if (e.target === $("#modalEntregable")) cerrarModalEntregable();
+};
+$("#modalBtnCopiar").onclick = () => {
+  copiar(ULTIMO_RESULTADO, () => {
+    $("#modalBtnCopiar").textContent = "¡Copiado!";
+    setTimeout(() => { $("#modalBtnCopiar").textContent = "Copiar todo"; }, 1500);
+  });
+};
+
+async function listarSnapshots() {
+  const { datos } = await api(`/api/snapshots?board=${encodeURIComponent(grafo.board)}`);
+  const s = $("#selSnapshots");
+  if (!s) return;
+  const lista = datos.snapshots || [];
+  if (!lista.length) {
+    s.innerHTML = '<option value="">(sin snapshots guardados)</option>';
+    return;
+  }
+  s.innerHTML = '<option value="">(elegir snapshot…)</option>' +
+    lista.map(snap => `<option value="${esc(snap.id)}">${esc(snap.descripcion)} (${snap.total_nodos} nodos)</option>`).join("");
+}
+
+$("#btnGuardarSnapshot").onclick = async () => {
+  const desc = ($("#descSnapshot").value || "").trim();
+  const { ok, datos } = await api("/api/snapshot", {
+    board: grafo.board,
+    grafo: grafo,
+    descripcion: desc
+  });
+  if (!ok) return avisar(datos.error || "No se pudo guardar snapshot", "error");
+  $("#descSnapshot").value = "";
+  avisar("Snapshot guardado con éxito.", "ok");
+  listarSnapshots();
+};
+
+$("#btnDiffSnapshot").onclick = async () => {
+  const sid = $("#selSnapshots").value;
+  if (!sid) return avisar("Seleccioná un snapshot para comparar con el lienzo.", "error");
+  const { ok, datos } = await api("/api/snapshot/diff", { id: sid, grafo_actual: grafo });
+  if (!ok) return avisar(datos.error || "No se pudo calcular el diff", "error");
+
+  let htmlCambios = "";
+  if (datos.identicos) {
+    htmlCambios = '<div style="color:var(--done); padding:8px 0;">✓ El snapshot y el lienzo actual son idénticos.</div>';
+  } else {
+    if (datos.nodos_agregados && datos.nodos_agregados.length) {
+      htmlCambios += `<div style="margin:4px 0; color:var(--done);"><b>+ Nodos agregados:</b> ${datos.nodos_agregados.map(esc).join(", ")}</div>`;
+    }
+    if (datos.nodos_eliminados && datos.nodos_eliminados.length) {
+      htmlCambios += `<div style="margin:4px 0; color:var(--bloqueado);"><b>- Nodos eliminados:</b> ${datos.nodos_eliminados.map(esc).join(", ")}</div>`;
+    }
+    if (datos.nodos_modificados && datos.nodos_modificados.length) {
+      const mods = datos.nodos_modificados.map(m => {
+        const det = Object.entries(m.cambios).map(([k, v]) => `${esc(k)}: ${esc(v.antes)} → <b>${esc(v.despues)}</b>`).join(", ");
+        return `<li><b>${esc(m.id)}</b> (${det})</li>`;
+      }).join("");
+      htmlCambios += `<div style="margin:4px 0; color:#ffd43b;"><b>~ Nodos modificados:</b><ul style="margin:4px 0 4px 18px;">${mods}</ul></div>`;
+    }
+    if (datos.aristas_agregadas && datos.aristas_agregadas.length) {
+      htmlCambios += `<div style="margin:4px 0; color:var(--done);"><b>+ Aristas nuevas:</b> ${datos.aristas_agregadas.map(([p, h]) => `${esc(p)}→${esc(h)}`).join(", ")}</div>`;
+    }
+    if (datos.aristas_eliminadas && datos.aristas_eliminadas.length) {
+      htmlCambios += `<div style="margin:4px 0; color:var(--bloqueado);"><b>- Aristas eliminadas:</b> ${datos.aristas_eliminadas.map(([p, h]) => `${esc(p)}→${esc(h)}`).join(", ")}</div>`;
+    }
+  }
+
+  const modalHtml = `
+    <div style="margin-bottom:12px; font-size:13px;">
+      <b>Comparación de Snapshot:</b> <i>${esc(datos.base.descripcion)}</i> vs <i>${esc(datos.comparado.descripcion)}</i><br>
+      <span style="color:var(--tenue); font-size:11.5px;">Resumen: ${esc(datos.resumen)}</span>
+    </div>
+    <div style="background:#0e1017; border:1px solid var(--linea); border-radius:6px; padding:10px; margin-bottom:8px; font-size:12px;">
+      ${htmlCambios}
+    </div>
+  `;
+  $("#modalEntregableRender").innerHTML = modalHtml;
+  $("#modalEntregableTexto").textContent = JSON.stringify(datos, null, 2);
+  abrirModalEntregable();
+  mostrarModoPreview();
+};
+
+$("#btnRestaurarSnapshot").onclick = async () => {
+  const sid = $("#selSnapshots").value;
+  if (!sid) return avisar("Seleccioná un snapshot para restaurar.", "error");
+  const { ok, datos } = await api("/api/snapshot/restaurar", { id: sid });
+  if (!ok || !datos.snapshot) return avisar(datos.error || "No se pudo restaurar snapshot", "error");
+  anotar();
+  abrirGrafo(datos.snapshot.grafo, datos.snapshot.board || grafo.board);
+  avisar(`Snapshot '${datos.snapshot.descripcion}' restaurado.`, "ok");
+};
+
+$("#btnEjecutarDoctor").onclick = async () => {
+  $("#btnEjecutarDoctor").disabled = true;
+  $("#btnEjecutarDoctor").textContent = "Diagnosticando…";
+  const [{ ok, datos }, { ok: okSec, datos: datosSec }, { ok: okWs, datos: datosWs }] = await Promise.all([
+    api("/api/doctor"),
+    api("/api/secretos-status"),
+    api("/api/workspaces")
+  ]);
+  $("#btnEjecutarDoctor").disabled = false;
+  $("#btnEjecutarDoctor").textContent = "Ejecutar Diagnóstico";
+  const box = $("#resultadoDoctor");
+  if (!ok || !datos) {
+    box.innerHTML = '<div class="intento mal">Error al ejecutar diagnóstico.</div>';
+    return;
+  }
+  const plat = datos.plataforma || {};
+  const bins = datos.binarios || {};
+  const binHtml = Object.entries(bins).map(([nombre, info]) => {
+    const icon = info.disponible ? '<span style="color:var(--done);">✓</span>' : '<span style="color:var(--bloqueado);">✗</span>';
+    const ver = info.version ? `<span style="color:var(--tenue); font-size:10.5px;">(${esc(info.version)})</span>` : '';
+    return `<div style="display:flex; justify-content:space-between; padding:2px 0;"><span>${icon} <b>${nombre}</b></span> ${ver}</div>`;
+  }).join("");
+
+  const secHtml = ((datosSec && datosSec.secretos) || []).map(s => {
+    const icon = s.presente ? '<span style="color:var(--done);">✓</span>' : '<span style="color:var(--tenue);">—</span>';
+    const mask = s.enmascarado ? `<span style="color:var(--acento); font-size:10px; font-family:monospace;">${esc(s.enmascarado)}</span>` : '<span style="color:var(--tenue); font-size:10px;">no configurada</span>';
+    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:2px 0; border-bottom:1px solid rgba(255,255,255,0.03);">
+      <span>${icon} <b style="font-size:11px;">${esc(s.variable)}</b> <span style="color:var(--tenue); font-size:10px;">(${esc(s.proveedor)})</span></span>
+      ${mask}
+    </div>`;
+  }).join("");
+
+  const totalWs = datosWs?.total_workspaces || 0;
+  const tamWs = datosWs?.tamano_total_humano || "0 KB";
+
+  box.innerHTML = `
+    <div style="margin-bottom:8px; border-bottom:1px solid var(--linea); padding-bottom:6px;">
+      <b>Plataforma:</b> ${esc(plat.os)} ${esc(plat.release)} · Python ${esc(plat.python)}<br>
+      <b>SQLite:</b> v${esc(plat.sqlite_version)} ${plat.wal_seguro ? '<span style="color:var(--done);">✓ WAL seguro</span>' : '<span style="color:var(--ready);">[!] DELETE mode</span>'}
+    </div>
+    <div style="margin-bottom:4px; font-weight:600; font-size:11.5px;">Binarios y Runtimes:</div>
+    <div style="background:#0e1017; border:1px solid var(--linea); border-radius:4px; padding:6px 8px; margin-bottom:8px;">
+      ${binHtml}
+    </div>
+    <div style="margin-bottom:4px; font-weight:600; font-size:11.5px; display:flex; justify-content:space-between;">
+      <span>Credenciales & API Keys:</span>
+      <span style="color:var(--tenue); font-weight:normal;">${datosSec?.total_configuradas || 0}/${datosSec?.total_revisadas || 0}</span>
+    </div>
+    <div style="background:#0e1017; border:1px solid var(--linea); border-radius:4px; padding:6px 8px; margin-bottom:8px;">
+      ${secHtml}
+    </div>
+    <div style="margin-bottom:4px; font-weight:600; font-size:11.5px; display:flex; justify-content:space-between; align-items:center;">
+      <span>Workspaces Scratch:</span>
+      <span style="color:var(--tenue); font-weight:normal;">${totalWs} (${tamWs})</span>
+    </div>
+    <div style="background:#0e1017; border:1px solid var(--linea); border-radius:4px; padding:6px 8px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+      <span style="font-size:11px; color:var(--tenue);">${totalWs ? `${totalWs} carpetas temporales` : 'Sin residuos temporales'}</span>
+      <button id="btnLimpiarWs" style="font-size:10px; padding:2px 8px; ${totalWs ? 'background:#3b2024; color:#fca5a5;' : 'display:none;'}">Limpiar</button>
+    </div>
+    <div style="font-size:11px; color:var(--tenue);">
+      Runtimes activos para ejecución: <b>${datos.runtimes_activos}/4</b>
+    </div>
+  `;
+
+  const btnLimpiar = $("#btnLimpiarWs");
+  if (btnLimpiar) {
+    // Doble clic para confirmar, con el mismo patrón que "Borrar" un grafo: un
+    // `confirm()` suprimido por el navegador devuelve false y la acción no pasa
+    // nunca. Acá hace falta porque un solo clic borra el scratch de TODOS los
+    // boards, y eso no se deshace.
+    let confirmar = false;
+    const reponer = () => {
+      confirmar = false;
+      btnLimpiar.disabled = false;
+      btnLimpiar.textContent = "Limpiar";
+      btnLimpiar.classList.remove("peligro");
+    };
+    btnLimpiar.onclick = async () => {
+      if (!confirmar) {
+        confirmar = true;
+        btnLimpiar.textContent = "¿Borrar todos?";
+        btnLimpiar.classList.add("peligro");
+        setTimeout(() => { if (confirmar) reponer(); }, 4000);
+        return;
+      }
+      confirmar = false;
+      btnLimpiar.disabled = true;
+      btnLimpiar.textContent = "Limpiando…";
+      const { ok: okL, datos: datosL } = await api("/api/workspaces/limpiar", {});
+      reponer();                       // pase lo que pase: antes quedaba muerto
+      if (!okL) return avisar(datosL?.error || "Error al limpiar workspaces", "error");
+      const om = (datosL.omitidos || []).length;
+      avisar(`✓ ${datosL.workspaces_eliminados} workspaces eliminados `
+             + `(${datosL.liberado_humano} liberados).`
+             + (om ? ` ${om} sin tocar por estar en uso.` : ""),
+             om ? "tibio" : "ok");
+      $("#btnEjecutarDoctor").click();
+    };
+  }
+};
+
+$("#btnGenerarReporte").onclick = async () => {
+  $("#btnGenerarReporte").disabled = true;
+  $("#btnGenerarReporte").textContent = "Generando reporte…";
+  const { ok, datos } = await api(`/api/reporte-corrida?board=${encodeURIComponent(grafo.board)}`);
+  $("#btnGenerarReporte").disabled = false;
+  $("#btnGenerarReporte").textContent = "Reporte de Auditoría";
+  if (!ok || !datos.reporte) return avisar("No se pudo generar el reporte.", "error");
+
+  $("#modalEntregableRender").innerHTML = renderMarkdown(datos.reporte);
+  $("#modalEntregableTexto").textContent = datos.reporte;
+  abrirModalEntregable();
+  mostrarModoPreview();
+};
+
+function verBotonRefinar() {
+  const hay = (grafo.nodos || []).length > 0;
+  $("#btnRefinarIa").style.display = hay ? "" : "none";
+  $("#pistaRefinar").style.display = hay ? "" : "none";
+  if (hay) {
+    $("#pistaRefinar").textContent = SESION_IA
+      ? "Refinar continúa la conversación anterior sobre este flujo."
+      : "Refinar cambia el grafo actual en vez de empezar de cero.";
+  }
+}
+
+// Aplica un grafo que vino del diseñador. `pisar` distingue crear de refinar:
+// refinando NO se llama a `abrirGrafo`, que resetea ids, estado y la pila de
+// deshacer — perder el deshacer justo cuando el agente te cambió algo es lo
+// contrario de lo que uno quiere.
+function aplicarGrafoIa(nuevo, pisar) {
+  if (pisar) {
+    abrirGrafo(nuevo, nuevo.board || "flujo-ia");
+    return;
+  }
+  const antes = new Set(grafo.nodos.map(n => n.id));
+  // Un grafo sin `nodos` (o con `nodos` que no es lista) dejaba `grafo.nodos`
+  // en undefined y `pintar()` reventaba con el lienzo ya vacio: el trabajo
+  // perdido y sin nada dibujado. Se normaliza ANTES de tocar el estado.
+  const nodos = Array.isArray(nuevo.nodos) ? nuevo.nodos : [];
+  ubicarSinCoordenadas(nodos);
+  grafo.nodos = nodos;
+  grafo.aristas = nuevo.aristas || [];
+  if (nuevo.reglas !== undefined) grafo.reglas = nuevo.reglas;
+  // Si el nodo seleccionado dejó de existir, el editor quedaría mostrando un
+  // fantasma editable.
+  if (sel && !grafo.nodos.some(n => n.id === sel)) sel = null;
+  pintar(); refrescarEditor();
+  return { nuevos: grafo.nodos.filter(n => !antes.has(n.id)).length,
+           idos: [...antes].filter(i => !grafo.nodos.some(n => n.id === i)).length };
+}
+
+async function pedirDisenoIa(refinar) {
+  const boton = $(refinar ? "#btnRefinarIa" : "#btnGenIa");
+  const etiqueta = boton.textContent;
+  const prompt = ($("#promptGenIa").value || "").trim();
+  if (!prompt) {
+    return avisar(refinar ? "Escribí qué querés cambiar del flujo."
+                          : "Escribí una descripción para el flujo.", "error");
+  }
+  boton.disabled = true;
+  boton.textContent = refinar ? "Refinando…" : "Creando…";
+  avisar(refinar ? "Pidiéndole el cambio al agente..." : "Diseñando flujo con IA...", "ok");
+  const { ok, datos } = await api("/api/generar-grafo", {
+    descripcion: prompt,
+    ...(refinar ? { actual: { board: grafo.board, reglas: grafo.reglas,
+                              nodos: grafo.nodos, aristas: grafo.aristas },
+                    sesion: SESION_IA || "" } : {}),
+  });
+  boton.disabled = false;
+  boton.textContent = etiqueta;
+  if (!ok || !datos.grafo) return avisar(datos.error || "No se pudo generar el grafo", "error");
+
+  anotar();                                    // deshacer alcanza el refinamiento
+  const delta = aplicarGrafoIa(datos.grafo, !refinar);
+  SESION_IA = datos.sesion || SESION_IA;
+  verBotonRefinar();
+
+  if (!refinar) {
+    const { ok: okOrd, datos: datosOrd } = await api("/api/ordenar", grafo);
+    if (okOrd && datosOrd.posiciones) {
+      for (const n of grafo.nodos) Object.assign(n, datosOrd.posiciones[n.id]);
+      pintar(); encuadrar();
+    }
+  }
+
+  if (datos.degradado) {
+    avisar(`Sin diseño de un agente: ${datos.motivo}`, "tibio");
+  } else if (refinar) {
+    const partes = [];
+    if (delta.nuevos) partes.push(`+${delta.nuevos} nodo(s)`);
+    if (delta.idos) partes.push(`-${delta.idos} nodo(s)`);
+    avisar(`Flujo refinado${partes.length ? ": " + partes.join(", ") : " (sin cambios en la cantidad de nodos)"}.`, "ok");
+  } else {
+    avisar(`Grafo '${grafo.board}' generado con IA (${grafo.nodos.length} nodos).`, "ok");
+  }
+}
+
+$("#btnGenIa").onclick = () => pedirDisenoIa(false);
+$("#btnRefinarIa").onclick = () => pedirDisenoIa(true);
+
+$("#btnReintentarNodo").onclick = async () => {
+  const tid = ids[sel];
+  if (!tid) return;
+  $("#btnReintentarNodo").disabled = true;
+  $("#btnReintentarNodo").textContent = "Reintentando…";
+  const { ok, datos } = await api("/api/reintentar-nodo", {
+    board: grafo.board,
+    task_id: tid
+  });
+  $("#btnReintentarNodo").disabled = false;
+  $("#btnReintentarNodo").textContent = "Reintentar este nodo";
+  if (!ok) return avisar(datos.error || "No se pudo reintentar el nodo", "error");
+  avisar(`Nodo '${sel}' desbloqueado para reintento.`, "ok");
+  refrescarEstado();
+  cargarTraza();
+};
+
+async function listarBoards() {
+  const { datos } = await api("/api/historial");
+  const s = $("#selBoardHistorial");
+  if (!s) return;
+  const lista = datos.historial || [];
+  s.innerHTML = '<option value="">(elegir corrida previa…)</option>' +
+    lista.map(b => {
+      const info = `${b.total_nodos} nodos` +
+        (b.completado ? " ✓ 100%" : (b.tiene_fallos ? " ✗ fallos" : "")) +
+        (b.costo_usd > 0 ? ` · US$ ${b.costo_usd.toFixed(3)}` : "");
+      return `<option value="${esc(b.slug)}">${esc(b.slug)} (${info})</option>`;
+    }).join("");
+}
+
+$("#selBoardHistorial").onchange = e => {
+  const b = e.target.value;
+  if (!b) return;
+  grafo.board = b;
+  $("#board").value = b;
+  refrescarEstado();
+  avisar(`Inspeccionando board '${b}'.`, "ok");
 };
 
 let POR_NODO = {};
+
+async function cargarTelemetria() {
+  const caja = $("#bloqueTelemetria");
+  if (!caja) return;
+  const { datos } = await api(`/api/telemetria?board=${encodeURIComponent(grafo.board)}`);
+  if (!datos || !datos.resumen || datos.resumen.total === 0) {
+    caja.style.display = "none";
+    return;
+  }
+  caja.style.display = "block";
+  const r = datos.resumen;
+  $("#teleProgresoTxt").textContent = `${r.progreso_pct}% (${r.terminados}/${r.total})`;
+  $("#teleProgresoBarra").style.transform = "scaleX(" + (r.progreso_pct / 100) + ")";
+  if (r.fallidos > 0) $("#teleProgresoBarra").style.background = "var(--bloqueado)";
+  else if (r.activos > 0) $("#teleProgresoBarra").style.background = "var(--running)";
+  else if (r.progreso_pct === 100) $("#teleProgresoBarra").style.background = "var(--done)";
+  else $("#teleProgresoBarra").style.background = "var(--acento)";
+
+  $("#teleResumenStats").innerHTML = `
+    <span><b>${r.activos}</b> corriendo</span>
+    <span><b>${r.listos}</b> listos</span>
+    <span><b>${r.terminados}</b> hechos</span>
+    <span style="${r.fallidos ? 'color:var(--bloqueado); font-weight:bold;' : ''}"><b>${r.fallidos}</b> fallos</span>
+  `;
+
+  // Gráfico visual SVG de distribución por ejecutor
+  const nodos = datos.nodos || [];
+  const porRt = {};
+  for (const n of nodos) {
+    porRt[n.runtime] = (porRt[n.runtime] || 0) + 1;
+  }
+  const coloresRt = {
+    "claude-code": "#d0873f",
+    "opencode": "#4f9c8a",
+    "antigravity": "#a297fc",
+    "hermes": "#8e9aab"
+  };
+  const totalNodos = nodos.length || 1;
+  const barritas = Object.entries(porRt).map(([rt, cant]) => {
+    const w = (cant / totalNodos) * 100;
+    const col = coloresRt[rt] || "#59616f";
+    return `<div style="background:${col}; width:${w}%; height:100%;" title="${esc(rt)}: ${cant} nodo(s)"></div>`;
+  }).join("");
+
+  const leyendasRt = Object.entries(porRt).map(([rt, cant]) => {
+    const col = coloresRt[rt] || "#59616f";
+    return `<span style="font-size:10.5px; display:inline-flex; align-items:center; gap:3px; margin-right:8px;">
+      <i style="display:inline-block; width:7px; height:7px; border-radius:2px; background:${col};"></i>
+      ${esc(rt)} (${cant})
+    </span>`;
+  }).join("");
+
+  $("#teleDistribucionGrafico").innerHTML = `
+    <div style="font-size:10.5px; color:var(--tenue); margin-bottom:4px;">Distribución de ejecutores:</div>
+    <div style="display:flex; height:6px; border-radius:3px; overflow:hidden; background:#1c202a; margin-bottom:6px;">
+      ${barritas}
+    </div>
+    <div style="display:flex; flex-wrap:wrap; gap:4px;">
+      ${leyendasRt}
+    </div>
+  `;
+}
 
 async function cargarConsumo() {
   const caja = $("#bloqueConsumo");
@@ -1208,7 +2782,7 @@ async function cargarConsumo() {
   if (!t || !t.intentos) { caja.style.display = "none"; return; }
   caja.style.display = "block";
   const fila = (et, val) =>
-    `<div class="linea"><span class="et">${et}</span><span class="val">${val}</span></div>`;
+    `<div class="linea"><span class="et">${et}</span><span class="val dato">${val}</span></div>`;
   const costo = t.con_costo
     ? `US$ ${t.costo_usd.toFixed(4)}` : "—";
 
@@ -1221,7 +2795,7 @@ async function cargarConsumo() {
   if (pres && pres > 0) {
     const costoActual = t.con_costo ? t.costo_usd : 0;
     const pct = (costoActual / pres) * 100;
-    const col = pct > 100 ? "var(--failed)" : (pct >= 75 ? "var(--ready)" : "var(--acento)");
+    const col = pct > 100 ? "var(--bloqueado)" : (pct >= 75 ? "var(--ready)" : "var(--acento)");
     const anchoBarra = Math.min(pct, 100);
     barraHtml = `
       <div style="margin-top:8px; padding-top:6px; border-top:1px solid var(--linea);">
@@ -1229,8 +2803,8 @@ async function cargarConsumo() {
           <span class="et">tope de gasto${aplicado == null ? " (sin arrancar)" : ""}</span>
           <span class="val">${t.con_costo ? `US$ ${costoActual.toFixed(4)}` : "—"} / US$ ${pres.toFixed(2)} (${pct.toFixed(0)}%)</span>
         </div>
-        <div style="background:#141720; border:1px solid var(--linea); border-radius:4px; height:8px; overflow:hidden; margin:4px 0 6px;">
-          <div style="background:${col}; width:${anchoBarra}%; height:100%; transition:width .3s;"></div>
+        <div style="background:var(--hundido); border:1px solid var(--linea); border-radius:4px; height:8px; overflow:hidden; margin:4px 0 6px;">
+          <div class="barra-progreso-fill" style="background:${col}; height:100%; transform:scaleX(${anchoBarra / 100});"></div>
         </div>
         <div class="nota" style="border-top:none; padding-top:0;">
           El corte es entre nodos: lo que ya corre termina y cierra su card.
@@ -1252,6 +2826,7 @@ async function cargarConsumo() {
 }
 
 async function refrescarEstado() {
+  cargarTelemetria();
   cargarConsumo();
   if (!Object.keys(ids).length) return;
   const { datos } = await api(`/api/estado?board=${encodeURIComponent(grafo.board)}`);
@@ -1265,7 +2840,7 @@ grafo.nodos = [
   { id:"c", titulo:"Escribí la documentación",     runtime:"claude-code", x:280, y:230 },
 ];
 grafo.aristas = [["a","b"],["a","c"]];
-refrescarEditor(); pintar(); listarGrafos(); cargarPlantillas(); refrescarParams();
+refrescarEditor(); pintar(); listarGrafos(); listarBoards(); listarSnapshots(); cargarPlantillas(); refrescarParams();
 verSesion();
 api("/api/capacidades").then(({ datos }) => {
   // Llega asincrono y DESPUES del primer dibujo: sin este refresco, el chat
@@ -1273,4 +2848,597 @@ api("/api/capacidades").then(({ datos }) => {
   CAPS = datos || {};
   pistaDeModelo(); refrescarEditor(); verSesion();
 });
+
+// --- Dual Mode & Folder-First App Orchestrator ---
+let WORKSPACE_ACTUAL = "";
+let INFO_WS_ACTUAL = null;
+let APP_INTERVAL_ID = null;
+
+function cambiarModoVista(modo) {
+  if (modo === "studio") {
+    document.body.classList.remove("modo-app-activo");
+    document.body.classList.add("modo-studio-activo");
+    $("#btnModoStudio").classList.add("activo");
+    $("#btnModoApp").classList.remove("activo");
+    localStorage.setItem("orquester_modo", "studio");
+    pintar(); encuadrar();
+  } else {
+    document.body.classList.remove("modo-studio-activo");
+    document.body.classList.add("modo-app-activo");
+    $("#btnModoApp").classList.add("activo");
+    $("#btnModoStudio").classList.remove("activo");
+    localStorage.setItem("orquester_modo", "app");
+  }
+}
+
+$("#btnModoApp").onclick = () => cambiarModoVista("app");
+$("#btnModoStudio").onclick = () => cambiarModoVista("studio");
+$("#btnVerEnStudio").onclick = () => cambiarModoVista("studio");
+
+function guardarRecienteWs(ruta) {
+  if (!ruta) return;
+  try {
+    let recs = JSON.parse(localStorage.getItem("orquester_recientes") || "[]");
+    recs = [ruta, ...recs.filter(r => r !== ruta)].slice(0, 5);
+    localStorage.setItem("orquester_recientes", JSON.stringify(recs));
+    renderRecientesWs();
+  } catch (e) {}
+}
+
+function renderRecientesWs() {
+  const cont = $("#listaRecientesApp");
+  if (!cont) return;
+  try {
+    const recs = JSON.parse(localStorage.getItem("orquester_recientes") || "[]");
+    if (!recs.length) {
+      cont.innerHTML = "";
+      return;
+    }
+    cont.innerHTML = '<span style="font-size:11px; color:var(--tenue); align-self:center;">Recientes:</span>' +
+      recs.map(r => `<span class="chip-reciente" data-ruta="${esc(r)}" tabindex="0" role="button">${esc(r.split(/[\\\\/]/).pop() || r)}</span>`).join("");
+    cont.querySelectorAll(".chip-reciente").forEach(chip => {
+      chip.onclick = () => {
+        const r = chip.getAttribute("data-ruta");
+        $("#inputWorkspaceApp").value = r;
+        analizarWorkspaceApp(r);
+      };
+      chip.onkeydown = e => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); chip.click(); }
+      };
+    });
+  } catch (e) {}
+}
+
+async function analizarWorkspaceApp(ruta) {
+  const r = normalizarRuta(ruta || $("#inputWorkspaceApp").value);
+  if (!r) return avisar("Escribe o selecciona la ruta de una carpeta.", "error");
+  $("#btnAnalizarWorkspaceApp").disabled = true;
+  $("#btnAnalizarWorkspaceApp").textContent = "Analizando…";
+  const { ok, datos } = await api("/api/workspace/analizar", { ruta: r });
+  $("#btnAnalizarWorkspaceApp").disabled = false;
+  $("#btnAnalizarWorkspaceApp").textContent = "Abrir";
+  if (!ok || !datos) return avisar(datos?.error || "Error al analizar el workspace.", "error");
+
+  aplicarDiagnosticoWs(datos);
+}
+
+// Pintar el proyecto elegido. Vive aparte porque hay DOS caminos que traen un
+// workspace analizado --escribir la ruta y elegirla en el selector-- y duplicar
+// esto es como se desincronizan las dos mitades de una pantalla.
+function aplicarDiagnosticoWs(datos) {
+  WORKSPACE_ACTUAL = datos.ruta;
+  INFO_WS_ACTUAL = datos;
+  $("#txtNombreWsActual").textContent = datos.nombre || datos.ruta;
+  $("#txtNombreWsActual").title = datos.ruta;
+  $("#inputWorkspaceApp").value = datos.ruta;
+  guardarRecienteWs(datos.ruta);
+
+  $("#diagnosticoWsBox").style.display = "block";
+  $("#diagNombreProyecto").textContent = datos.nombre;
+  $("#diagStackBadge").textContent = datos.stack + (datos.frameworks?.length ? ` (${datos.frameworks.join(", ")})` : "");
+  $("#diagGitTxt").textContent = datos.es_git
+    ? `${datos.git_branch} ${datos.git_cambios_pendientes ? `(${datos.git_cambios_pendientes} cambios pendientes)` : "(limpio)"}`
+    : "No es un repositorio Git";
+  // "No detectado" y no "pytest": el servidor ya dejo de inventar un comando
+  // que el proyecto no tiene, y la UI no lo puede reintroducir.
+  $("#diagTestsTxt").textContent = datos.comando_tests || "No detectado";
+
+  avisar(`Proyecto '${datos.nombre}' abierto: ${datos.stack}.`, "ok");
+}
+
+// Una ruta puede llegar de tres formas y ninguna viene limpia: "Copiar como
+// ruta" de Windows la entrega ENTRE COMILLAS, un arrastre desde la barra de
+// direcciones la entrega como `file:///C:/...`, y una lista de URIs puede traer
+// varias lineas. Normalizar en un solo lugar evita tres parches distintos.
+function normalizarRuta(texto) {
+  let t = (texto || "").trim();
+  if (!t) return "";
+  t = t.split(/\r?\n/)[0].trim();
+  t = t.replace(/^["']+|["']+$/g, "").trim();
+  if (/^file:\/\//i.test(t)) {
+    try { t = decodeURIComponent(t.replace(/^file:\/\/\/?/i, "")); } catch (e) { /* se usa tal cual */ }
+    // Solo en rutas de Windows: en POSIX las barras ya son las correctas.
+    if (/^[a-zA-Z]:/.test(t)) t = t.replace(/\//g, "\\");
+  }
+  return t.trim();
+}
+
+// Soltar cosas sobre la ventana.
+//
+// Un arrastre de CARPETA no sirve para lo que uno esperaria: el navegador
+// entrega un `FileSystemDirectoryEntry` cuyo `.name` es el nombre de la carpeta
+// y cuyo `fullPath` es "/nombre", nunca la ruta absoluta del disco. Es el mismo
+// muro que el selector (por eso el selector lo abre el servidor). Asi que en vez
+// de fingir que funciona, el gesto se convierte en un clic al selector, que es
+// lo unico que si puede resolverlo.
+//
+// Lo que SI funciona entero: soltar un `.json` de grafo --ahi alcanza el
+// contenido, no hace falta la ruta-- y soltar TEXTO con una ruta, que es lo que
+// entrega arrastrar desde la barra de direcciones del explorador.
+let _profundidadArrastre = 0;
+
+document.addEventListener("dragenter", e => {
+  if (![...(e.dataTransfer?.types || [])].some(t => t === "Files" || t.startsWith("text/"))) return;
+  // Contador y no un booleano: `dragleave` dispara al pasar por CADA hijo, y
+  // con un booleano el velo parpadeaba al mover el mouse por adentro.
+  _profundidadArrastre++;
+  document.body.classList.add("arrastrando-algo");
+});
+document.addEventListener("dragleave", () => {
+  if (--_profundidadArrastre <= 0) {
+    _profundidadArrastre = 0;
+    document.body.classList.remove("arrastrando-algo");
+  }
+});
+// `dragover` con `preventDefault` es obligatorio: sin el, `drop` no dispara y
+// el navegador se lleva el archivo a una pestana nueva.
+document.addEventListener("dragover", e => e.preventDefault());
+
+document.addEventListener("drop", async e => {
+  e.preventDefault();
+  _profundidadArrastre = 0;
+  document.body.classList.remove("arrastrando-algo");
+  const dt = e.dataTransfer;
+  if (!dt) return;
+
+  const archivo = [...(dt.files || [])].find(f => f.name.toLowerCase().endsWith(".json"));
+  if (archivo) {
+    let g;
+    try {
+      g = JSON.parse(await archivo.text());
+    } catch (err) {
+      return avisar(`'${archivo.name}' no es JSON valido: ${err.message}`, "error");
+    }
+    if (!Array.isArray(g?.nodos)) {
+      return avisar(`'${archivo.name}' no parece un grafo: no tiene 'nodos'.`, "error");
+    }
+    anotar();                                  // que se pueda deshacer
+    abrirGrafo(g, g.board || archivo.name.replace(/\.json$/i, ""));
+    cambiarModoVista("studio");
+    return avisar(`Grafo '${archivo.name}' abierto (${g.nodos.length} nodo(s)).`, "ok");
+  }
+
+  const ruta = normalizarRuta(dt.getData("text/uri-list") || dt.getData("text/plain"));
+  if (ruta) {
+    cambiarModoVista("app");
+    $("#inputWorkspaceApp").value = ruta;
+    return analizarWorkspaceApp(ruta);
+  }
+
+  if (dt.files?.length || [...(dt.items || [])].some(i => i.kind === "file")) {
+    return avisar("El navegador no le da al Studio la ruta de una carpeta soltada. " +
+                  "Usá Examinar… (o arrastrá desde la barra de direcciones, que sí manda la ruta).",
+                  "tibio");
+  }
+});
+
+// "Copiar como ruta" de Windows pega la ruta entre comillas, y asi no existe.
+$("#inputWorkspaceApp").addEventListener("paste", e => {
+  const pegado = e.clipboardData?.getData("text");
+  const limpio = normalizarRuta(pegado);
+  if (limpio && limpio !== (pegado || "").trim()) {
+    e.preventDefault();
+    $("#inputWorkspaceApp").value = limpio;
+  }
+});
+
+// Escribir a mano una ruta absoluta es la peor parte del flujo, y el navegador
+// no puede ayudar: ni `showDirectoryPicker()` ni `<input webkitdirectory>`
+// entregan la ruta absoluta que el motor necesita para el `cwd` del agente.
+// Como el Studio corre en la misma maquina, el dialogo lo abre el servidor.
+$("#btnExaminarCarpeta").onclick = async () => {
+  const boton = $("#btnExaminarCarpeta");
+  boton.disabled = true;
+  boton.textContent = "Elegí una carpeta…";
+  avisar("Abrí el selector de carpetas (puede quedar detrás de esta ventana).", "ok");
+  const { ok, datos } = await api("/api/workspace/elegir", {});
+  boton.disabled = false;
+  boton.textContent = "Examinar…";
+  if (!ok || !datos?.ok) {
+    // Cancelar no es un error: se calla y no se pisa lo que ya estaba escrito.
+    if (datos?.cancelado) return avisar("No elegiste ninguna carpeta.", "tibio");
+    return avisar((datos?.motivo || datos?.error || "No se pudo abrir el selector") +
+                  " — podés pegar la ruta a mano en el campo de al lado.", "error");
+  }
+  // Vuelve YA analizada, asi que se pinta lo mismo que hace `analizarWorkspaceApp`.
+  $("#inputWorkspaceApp").value = datos.ruta;
+  aplicarDiagnosticoWs(datos);
+};
+
+$("#btnAnalizarWorkspaceApp").onclick = () => analizarWorkspaceApp();
+$("#btnUsarRaizActual").onclick = async () => {
+  const { datos } = await api("/api/doctor");
+  const raizPath = datos?.plataforma?.cwd || "";
+  if (raizPath) {
+    $("#inputWorkspaceApp").value = raizPath;
+    analizarWorkspaceApp(raizPath);
+  }
+};
+
+// Un clic mas mientras el anterior viaja compila OTRO board y arranca OTRO
+// dispatcher sobre la misma carpeta: dos agentes escribiendo en el mismo repo.
+// El boton no alcanza como candado porque las tarjetas de intencion llaman a
+// esto directo.
+let ORQUESTANDO = false;
+
+async function lanzarOrquestacionApp(intencion, promptTexto) {
+  if (ORQUESTANDO) return avisar("Ya hay una orquestacion en curso.", "tibio");
+  if (!WORKSPACE_ACTUAL) {
+    const r = ($("#inputWorkspaceApp").value || "").trim();
+    if (!r) return avisar("Primero selecciona y analiza una carpeta de proyecto.", "error");
+    await analizarWorkspaceApp(r);
+    if (!WORKSPACE_ACTUAL) return;
+  }
+
+  const cuerpo = {
+    workspace: WORKSPACE_ACTUAL,
+    intencion: intencion,
+    prompt: promptTexto || "",
+    ejecutar: true
+  };
+
+  avisar("Orquestando agentes y compilando grafo...", "ok");
+  ORQUESTANDO = true;
+  let ok, datos;
+  try {
+    ({ ok, datos } = await api("/api/orquestar-intencion", cuerpo));
+  } finally {
+    // En `finally`: si la llamada explota, el candado tiene que soltarse igual
+    // o el modo App queda inutilizable hasta recargar.
+    ORQUESTANDO = false;
+  }
+  if (!ok || !datos) return avisar(datos?.error || "Error al orquestar.", "error");
+  // Que el agente no haya diseñado nada se DICE. Un flujo armado con la
+  // plantilla de emergencia se ve igual que uno diseñado, y es lo unico que el
+  // usuario del modo App tiene para saber que paso por atras.
+  if (datos.degradado) avisar(`Sin diseño de un agente: ${datos.motivo}`, "tibio");
+  if (datos.arranque && datos.arranque.ok === false) {
+    avisar(`El grafo quedo compilado pero no arranco: ${datos.arranque.motivo}`, "tibio");
+  }
+
+  // Actualizar datos del grafo en Studio
+  if (datos.grafo) {
+    anotar();
+    abrirGrafo(datos.grafo, datos.board);
+    pintar(); encuadrar();
+  }
+
+  // Mostrar sección de ejecución
+  $("#seccionEjecucionApp").style.display = "block";
+  $("#appBoardTitulo").textContent = datos.board;
+  $("#appProgresoSubtxt").textContent = `Plantilla: ${datos.plantilla} · ${datos.total_nodos} nodos en ejecución`;
+  $("#appBarraProgreso").style.transform = "scaleX(0)";
+  $("#appEntregableRender").innerHTML = '<div class="d">Ejecutando nodos del DAG en segundo plano…</div>';
+
+  if (APP_INTERVAL_ID) clearInterval(APP_INTERVAL_ID);
+  APP_INTERVAL_ID = setInterval(() => monitorearProgresoApp(datos.board), 2000);
+  monitorearProgresoApp(datos.board);          // sin esperar los primeros 2s
+}
+
+// Catálogo de plantillas para modo App con paginación
+const PLANTILLAS_CATALOGO = [
+  { id: "seguridad", nom: "Auditoría de Seguridad", desc: "Auditoría de dependencias y código: escanea fallos conocidos, busca patrones inseguros y propone parches con Strix.", prompt: "Auditar la seguridad del proyecto: dependencias, escaneo SAST de código y propuesta de correcciones con Strix." },
+  { id: "web", nom: "Diseño Web Deliberate", desc: "Página o componente web: maquetado HTML/CSS con tokens, verificación de accesibilidad y captura en navegador.", prompt: "Construir y pulir interfaz web con tokens de diseño Deliberate, verificación visual y accesibilidad." },
+  { id: "refactor", nom: "Refactor y Poda YAGNI", desc: "Simplificación de código: busca duplicaciones y complejidad innecesaria, aplica Ponytail y corre la suite de tests.", prompt: "Simplificar y podar complejidad innecesaria en el código con Ponytail y verificar con tests." },
+  { id: "feature", nom: "Pipeline de Feature", desc: "Ciclo completo: especificación de contrato, backend seguro, frontend reactivo, QA y documentación.", prompt: "Implementar una feature completa con especificación, backend, interfaz de usuario y pruebas de regresión." },
+  { id: "diff", nom: "Revisión de Cambios", desc: "Análisis en paralelo de bugs, cobertura de tests, seguridad y alcance antes de mergear.", prompt: "Revisar los últimos cambios del repositorio, verificar cobertura de tests y detectar posibles regresiones." },
+  { id: "explicar", nom: "Explicar Arquitectura", desc: "Mapeo de módulos, dependencias de código y flujo de datos del repositorio.", prompt: "Analizar la estructura del proyecto y generar un mapa claro de arquitectura y módulos principales." },
+  { id: "triage-de-bug", nom: "Triage y Depuración de Bug", desc: "Investigación sistemática de causa raíz, análisis de stack trace y prueba de regresión.", prompt: "Investigar la causa raíz del bug reportado, aislar la falla y preparar un fix reproducible." },
+  { id: "segunda-opinion", nom: "Segunda Opinión / Desafío", desc: "Revisión adversarial del diseño o código para encontrar puntos ciegos y casos borde.", prompt: "Desafiar las decisiones de arquitectura del código en busca de casos borde, fallos de escala y suposiciones débiles." },
+  { id: "documentar-cambios", nom: "Documentar Cambios y Release", desc: "Actualización post-cambio: documentación Diataxis, sincronización de README y notas de versión.", prompt: "Generar y actualizar la documentación técnica, guías y notas de cambios del proyecto." }
+];
+
+let PLANTILLA_SELECCIONADA = null;
+let PAGINA_ACTUAL_PLANTILLAS = 0;
+const PLANTILLAS_POR_PAGINA = 6;
+
+function renderizarPlantillasApp() {
+  const cont = $("#gridIntencionesApp");
+  if (!cont) return;
+  const total = PLANTILLAS_CATALOGO.length;
+  const totalPaginas = Math.ceil(total / PLANTILLAS_POR_PAGINA) || 1;
+  if (PAGINA_ACTUAL_PLANTILLAS >= totalPaginas) PAGINA_ACTUAL_PLANTILLAS = totalPaginas - 1;
+  if (PAGINA_ACTUAL_PLANTILLAS < 0) PAGINA_ACTUAL_PLANTILLAS = 0;
+
+  const inicio = PAGINA_ACTUAL_PLANTILLAS * PLANTILLAS_POR_PAGINA;
+  const pagina = PLANTILLAS_CATALOGO.slice(inicio, inicio + PLANTILLAS_POR_PAGINA);
+
+  cont.innerHTML = pagina.map(p => {
+    const sel = (PLANTILLA_SELECCIONADA === p.id) ? " seleccionada" : "";
+    return `<div class="card-intencion${sel}" data-intencion="${esc(p.id)}" tabindex="0" role="button">
+      <b>${esc(p.nom)}</b>
+      <p>${esc(p.desc)}</p>
+    </div>`;
+  }).join("");
+
+  $("#txtInfoPaginacionPlantillas").textContent = `Página ${PAGINA_ACTUAL_PLANTILLAS + 1} de ${totalPaginas}`;
+  $("#txtEstadoPaginacionPlantillas").textContent = `${PAGINA_ACTUAL_PLANTILLAS + 1} / ${totalPaginas} (${total} plantillas)`;
+  $("#btnPaginaAntPlantillas").disabled = (PAGINA_ACTUAL_PLANTILLAS === 0);
+  $("#btnPaginaSigPlantillas").disabled = (PAGINA_ACTUAL_PLANTILLAS >= totalPaginas - 1);
+
+  cont.querySelectorAll(".card-intencion").forEach(card => {
+    const it = card.getAttribute("data-intencion");
+    const item = PLANTILLAS_CATALOGO.find(x => x.id === it);
+    const seleccionar = () => {
+      PLANTILLA_SELECCIONADA = it;
+      renderizarPlantillasApp();
+      if (item) {
+        $("#inputPromptApp").value = item.prompt;
+        $("#txtNombrePlantillaSeleccionada").textContent = item.nom;
+        $("#badgePlantillaSeleccionada").style.display = "inline-flex";
+      }
+      $("#inputPromptApp").focus();
+    };
+    card.onclick = seleccionar;
+    card.onkeydown = e => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); seleccionar(); }
+    };
+  });
+}
+
+$("#btnPaginaAntPlantillas").onclick = () => {
+  if (PAGINA_ACTUAL_PLANTILLAS > 0) {
+    PAGINA_ACTUAL_PLANTILLAS--;
+    renderizarPlantillasApp();
+  }
+};
+
+$("#btnPaginaSigPlantillas").onclick = () => {
+  const totalPaginas = Math.ceil(PLANTILLAS_CATALOGO.length / PLANTILLAS_POR_PAGINA);
+  if (PAGINA_ACTUAL_PLANTILLAS < totalPaginas - 1) {
+    PAGINA_ACTUAL_PLANTILLAS++;
+    renderizarPlantillasApp();
+  }
+};
+
+$("#btnQuitarPlantilla").onclick = () => {
+  PLANTILLA_SELECCIONADA = null;
+  $("#badgePlantillaSeleccionada").style.display = "none";
+  renderizarPlantillasApp();
+};
+
+$("#btnEjecutarPromptApp").onclick = () => {
+  const p = ($("#inputPromptApp").value || "").trim();
+  if (!p) return avisar("Escribí un objetivo para orquestar.", "error");
+  lanzarOrquestacionApp(PLANTILLA_SELECCIONADA || "custom", p);
+};
+
+$("#inputPromptApp").onkeydown = e => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    $("#btnEjecutarPromptApp").click();
+  }
+};
+
+$("#btnPararApp").onclick = async () => {
+  if (!grafo || !grafo.board) return;
+  const { datos } = await api("/api/parar", { board: grafo.board });
+  if (APP_INTERVAL_ID) { clearInterval(APP_INTERVAL_ID); APP_INTERVAL_ID = null; }
+  $("#appProgresoSubtxt").textContent = "Ejecución detenida por el usuario.";
+  avisar(datos.ok ? "Ejecución detenida: subprocesos cancelados y tareas bloqueadas." : datos.motivo,
+         datos.ok ? "ok" : "tibio");
+  monitorearProgresoApp(grafo.board);
+};
+
+async function monitorearProgresoApp(board) {
+  const [{ ok: okTel, datos: datosTel }, { ok: okEst, datos: datosEst }] = await Promise.all([
+    api(`/api/telemetria?board=${encodeURIComponent(board)}`),
+    api(`/api/estado?board=${encodeURIComponent(board)}`)
+  ]);
+
+  // Las claves salen de lo que los endpoints DEVUELVEN, no de como suenan.
+  // Estaban todas mal: `/api/telemetria` anida en `resumen` y `/api/estado`
+  // devuelve `titulo`/`estado`/`resumen`, no `title`/`status`/`result`. Nueve
+  // de nueve campos daban `undefined`, asi que la barra vivia en 0%, el
+  // timeline mostraba todo pendiente para siempre, el entregable no aparecia
+  // nunca y el `setInterval` no paraba jamas (comparaba `undefined === 0`).
+  if (okTel && datosTel && datosTel.resumen) {
+    const r = datosTel.resumen;
+    const pct = r.progreso_pct || 0;
+    $("#appBarraProgreso").style.transform = "scaleX(" + (pct / 100) + ")";
+    const gasto = (datosTel.consumo || {}).total || {};
+    $("#appProgresoSubtxt").textContent =
+      `${pct}% completado (${r.terminados}/${r.total} nodos)` +
+      (r.fallidos ? ` · ${r.fallidos} con problemas` : "") +
+      (gasto.costo_usd ? ` · US$ ${gasto.costo_usd.toFixed(4)}` : "");
+    // Se corta cuando el board dejo de avanzar, no solo cuando esta completo:
+    // un nodo bloqueado nunca llega a `terminados === total` y el sondeo
+    // quedaba latiendo cada 2s hasta que alguien recargara la pagina.
+    if (r.total > 0 && !datosTel.corriendo && r.activos === 0 && r.listos === 0) {
+      if (APP_INTERVAL_ID) { clearInterval(APP_INTERVAL_ID); APP_INTERVAL_ID = null; }
+      if (r.fallidos) avisar(`La corrida termino con ${r.fallidos} nodo(s) sin resolver.`, "tibio");
+    }
+  }
+
+  if (okEst && datosEst && datosEst.tareas) {
+    const tareas = datosEst.tareas;
+    const timeline = $("#appTimelineNodos");
+    // `failed` no es un estado del kanban: un fallo terminal cae en `triage` y
+    // uno del dispatcher en `blocked`. Pintar por un estado inexistente es no
+    // pintar nunca el unico caso que el usuario necesita ver.
+    const ICONO = {
+      done: '<span style="color:var(--done);">✓</span>',
+      running: '<span style="color:var(--running);">●</span>',
+      blocked: '<span style="color:var(--bloqueado);">✗</span>',
+      triage: '<span style="color:var(--bloqueado);">✗</span>',
+    };
+    timeline.innerHTML = Object.entries(tareas).map(([id, t]) => {
+      const st = t.estado || "todo";
+      const icon = ICONO[st] || '<span style="color:var(--tenue);">○</span>';
+      // El runtime viaja como sufijo del carril (`orquester-external:opencode`).
+      const rt = (t.assignee || "").includes(":") ? t.assignee.split(":")[1] : (t.assignee || "hermes");
+      const titulo = t.titulo || "";
+      return `<div class="timeline-nodo-app ${esc(st)}">
+        <span>${icon} <b class="dato">${esc(titulo.slice(0, 46) || id)}</b> <span style="color:var(--tenue); font-size:11px;">(${esc(rt)})</span></span>
+        <span style="font-size:10.5px; color:var(--tenue);">${esc(st)}</span>
+      </div>`;
+    }).join("");
+
+    // El entregable del ultimo nodo terminado. `resumen` es lo que `_estado`
+    // devuelve del `result` de la card (recortado a 400: para el texto entero
+    // esta el boton de Reporte Completo).
+    const hechos = Object.values(tareas).filter(t => t.estado === "done" && (t.resumen || "").trim());
+    if (hechos.length) {
+      $("#appEntregableRender").innerHTML = renderMarkdown(hechos[hechos.length - 1].resumen);
+    }
+  }
+}
+
+$("#btnCopiarEntregableApp").onclick = () => {
+  const texto = $("#appEntregableRender").innerText;
+  copiar(texto, () => {
+    $("#btnCopiarEntregableApp").textContent = "¡Copiado!";
+    setTimeout(() => { $("#btnCopiarEntregableApp").textContent = "Copiar"; }, 1500);
+  });
+};
+
+$("#btnReporteAuditApp").onclick = () => {
+  activarTab("obs");
+  cambiarModoVista("studio");
+  $("#btnGenerarReporte").click();
+};
+
+// Modal Cuotas, Modelos y Consumo
+async function cargarCuotasYModelos() {
+  const b = (grafo && grafo.board) ? grafo.board : "orquester";
+  $("#badgeCuotasBoard").textContent = `Board: ${b}`;
+  
+  const [{ ok: okCons, datos: datosCons }, { ok: okSec, datos: datosSec }, { ok: okCap, datos: datosCap }] = await Promise.all([
+    api(`/api/consumo?board=${encodeURIComponent(b)}`),
+    api("/api/secretos-status"),
+    api("/api/capacidades")
+  ]);
+
+  // Resumen global
+  const tot = (datosCons && datosCons.total) || { entrada: 0, salida: 0, total: 0, costo_usd: 0, intentos: 0 };
+  const tope = (datosCons && datosCons.tope_usd !== undefined && datosCons.tope_usd !== null) ? datosCons.tope_usd : "";
+  $("#inputTopePresupuestoCuotas").value = tope !== "" ? tope : "";
+  
+  const resCont = $("#cuotasResumenGlobal");
+  resCont.innerHTML = `
+    <div style="background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:10px;">
+      <div style="font-size:11px; color:var(--tenue);">Tokens Entrada</div>
+      <b class="dato" style="font-size:14px; color:var(--texto);">${Number(tot.entrada || 0).toLocaleString()}</b>
+    </div>
+    <div style="background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:10px;">
+      <div style="font-size:11px; color:var(--tenue);">Tokens Salida</div>
+      <b class="dato" style="font-size:14px; color:var(--texto);">${Number(tot.salida || 0).toLocaleString()}</b>
+    </div>
+    <div style="background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:10px;">
+      <div style="font-size:11px; color:var(--tenue);">Costo Acumulado</div>
+      <b class="dato" style="font-size:14px; color:var(--acento);">${tot.costo_usd ? 'US$ ' + tot.costo_usd.toFixed(4) : 'Plan / Gratis'}</b>
+    </div>
+    <div style="background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:10px;">
+      <div style="font-size:11px; color:var(--tenue);">Ejecuciones / Nodos</div>
+      <b class="dato" style="font-size:14px; color:var(--texto);">${tot.intentos || 0}</b>
+    </div>
+  `;
+
+  // Desglose por Runtime
+  const rtCont = $("#cuotasPorRuntime");
+  const runtimesConocidos = ["claude-code", "opencode", "hermes", "antigravity"];
+  const desgloseRt = (datosCons && datosCons.por_runtime) || {};
+  // `/api/capacidades` devuelve los runtimes en la raiz --`CAPS[rt]`, como los
+  // lee el resto del Studio--, no bajo `.runtimes`. Con el envoltorio de mas,
+  // `caps` quedaba en {} y los cuatro figuraban "No detectado" siempre.
+  const caps = datosCap || {};
+
+  rtCont.innerHTML = runtimesConocidos.map(rt => {
+    const uso = desgloseRt[rt] || { entrada: 0, salida: 0, costo_usd: 0, intentos: 0 };
+    // `disponible` es como se llama en `capacidades.tabla()`; `instalado` no
+    // existe, asi que la respuesta era `undefined` y el badge daba negativo.
+    const cap = caps[rt] || { disponible: false };
+    const estadoInst = cap.disponible 
+      ? '<span style="color:var(--done); font-size:10.5px;">● Instalado</span>' 
+      : '<span style="color:var(--tenue); font-size:10.5px;">○ No detectado</span>';
+    const costoTxt = uso.costo_usd > 0 
+      ? `US$ ${uso.costo_usd.toFixed(4)}` 
+      : (uso.intentos > 0 ? 'Suscripción / N/A' : '-');
+    return `
+      <div style="background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:10px; display:flex; flex-direction:column; gap:4px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <b style="font-size:12.5px;">${esc(rt)}</b>
+          ${estadoInst}
+        </div>
+        <div style="font-size:11px; color:var(--tenue);">
+          Tokens: <span class="dato" style="color:var(--texto);">${(uso.entrada + uso.salida).toLocaleString()}</span>
+        </div>
+        <div style="font-size:11px; color:var(--tenue);">
+          Costo: <b class="dato" style="color:var(--acento);">${costoTxt}</b> · Intentos: <span class="dato" style="color:var(--texto);">${uso.intentos}</span>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  // Estado de Secretos / Credenciales
+  const secCont = $("#cuotasEstadoSecretos");
+  // `secretos` es una LISTA de `{variable, proveedor, uso, presente,
+  // enmascarado}`. No hay ningun `proveedores`: la condicion daba falsa
+  // siempre y el panel mostraba "No se pudo consultar" con el dato en la mano.
+  if (okSec && Array.isArray(datosSec?.secretos)) {
+    secCont.innerHTML = datosSec.secretos.map(s => {
+      const okBadge = s.presente
+        ? `<span style="color:var(--done); font-weight:600;">✓ ${esc(s.enmascarado || "Configurada")}</span>`
+        : '<span style="color:var(--tenue);">No configurada</span>';
+      return `<div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.03);">
+        <span><b class="dato">${esc(s.variable)}</b> <span style="color:var(--tenue); font-size:10.5px;">(${esc(s.proveedor)})</span></span>
+        ${okBadge}
+      </div>`;
+    }).join("");
+  } else {
+    secCont.innerHTML = '<div class="d">No se pudo consultar el estado de secretos.</div>';
+  }
+}
+
+$("#btnAbrirCuotas").onclick = () => {
+  $("#modalCuotas").style.display = "flex";
+  $("#modalCuotas").focus();
+  cargarCuotasYModelos();
+};
+
+$("#btnCerrarModalCuotas").onclick = () => {
+  $("#modalCuotas").style.display = "none";
+};
+
+$("#modalCuotas").onclick = e => {
+  if (e.target === $("#modalCuotas")) $("#modalCuotas").style.display = "none";
+};
+
+$("#btnGuardarTopeCuotas").onclick = async () => {
+  const val = ($("#inputTopePresupuestoCuotas").value || "").trim();
+  const num = val === "" ? null : parseFloat(val);
+  if (num !== null && (isNaN(num) || num <= 0)) {
+    return avisar("El tope debe ser un número positivo mayor a 0.", "error");
+  }
+  grafo.presupuesto_usd = num;
+  anotar();
+  await api("/api/grafo", grafo);
+  avisar(num !== null ? `Tope de presupuesto fijado en US$ ${num.toFixed(2)}.` : "Tope de presupuesto eliminado (sin límite).", "ok");
+};
+
+// Inicialización de modo guardado y catálogo de plantillas
+const modoInicial = localStorage.getItem("orquester_modo") || "app";
+cambiarModoVista(modoInicial);
+renderRecientesWs();
+renderizarPlantillasApp();
 </script>

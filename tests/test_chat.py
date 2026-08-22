@@ -126,4 +126,122 @@ assert b._sesion_de_jsonl(eventos) == "ses_abc123"
 assert b._sesion_de_jsonl("sin json aca") is None
 print("8. el sessionID de opencode se extrae de los eventos: OK")
 
+# --- 9. El Studio lee la clave que el chat DEVUELVE ---
+# `_optimizar_goal` y `_generar_grafo` leian `res["respuesta"]`, y `chat_backend`
+# devuelve `res["texto"]`. Nadie en el repo producia "respuesta". Efecto: el
+# optimizador devolvia el goal sin tocar mientras el Studio anunciaba "Goal
+# optimizado con exito", y "generar grafo con IA" caia SIEMPRE a una plantilla
+# fija de tres nodos. Dos features muertas que se veian vivas.
+#
+# El falso se interpone en `b.CHAT`, no en `run_chat`: si se mockeara `run_chat`
+# el mock elegiria la clave y el test pasaria con el bug puesto. La clave la
+# tiene que producir `chat_backend` de verdad.
+loop.chat_backend = _chat                      # deshacer el espia del punto 6
+# El falso del punto 5 contesta "ok" fijo; aca hace falta uno que devuelva algo
+# reconocible para distinguir "leyo la respuesta" de "devolvio el goal sin tocar".
+b.CHAT["claude-code"] = (
+    lambda msg, sesion, modelo: ["python", "-c", FALSO, "-p", msg],
+    _original[1],
+)
+sys.path.insert(0, str(RAIZ / "compiler"))
+sys.path.insert(0, str(RAIZ / "mcp_exporter"))
+sys.path.insert(0, str(RAIZ / "ui"))
+import capacidades
+# Y hay que fingir que el runtime esta instalado: sin esto `_optimizar_goal`
+# corta antes de llamar a nadie y el test seria un no-op silencioso que "pasa"
+# en cualquier maquina sin CLIs.
+capacidades.tabla = lambda: {"claude-code": {"disponible": True}}
+import server
+
+r = server._optimizar_goal("contá los tests de {{repo}}", runtime="claude-code")
+assert r["degradado"] is False, r
+assert r["optimizado"].startswith("recibi:"), ("no leyo lo que el chat devolvio", r)
+assert "{{repo}}" in r["optimizado"], ("perdio el marcador", r)
+print("9. el optimizador usa la respuesta del agente, no el goal sin tocar: OK")
+
+# --- 10. Y cuando degrada, lo DICE ---
+# El fallback es correcto (sin CLI hay que degradar); lo que estaba mal era
+# hacerlo en silencio y en verde. Por eso el motivo viaja hasta la UI.
+capacidades.tabla = lambda: {}
+r = server._optimizar_goal("contá los tests", runtime="claude-code")
+assert r["degradado"] is True and "ejecutor" in r["motivo"], r
+g = server._generar_grafo("un flujo cualquiera", runtime="claude-code")
+assert g["degradado"] is True and g["motivo"], g
+assert g["grafo"]["nodos"], g
+# Y refinando SIN agente no se pisa el grafo: devolver una plantilla de tres
+# nodos porque no se pudo hablar con nadie seria perder el trabajo del usuario.
+mio = {"board": "mio", "aristas": [],
+       "nodos": [{"id": "unico", "titulo": "lo mio", "runtime": "opencode", "x": 7, "y": 9}]}
+g2 = server._generar_grafo("agregale un nodo", runtime="claude-code", actual=mio)
+assert g2["degradado"] is True and g2["grafo"] is mio, g2
+assert "sin cambios" in g2["motivo"], g2
+print("10. sin ejecutor, la degradacion se declara y refinar no pisa el grafo: OK")
+
+# --- 11. Refinar: el grafo se MEZCLA, no se reemplaza ---
+# El punto de la feature: "agregale un nodo de tests" tiene que conservar los
+# nodos que ya estaban Y donde el usuario los dejo en el lienzo. Re-acomodar
+# todo en cada refinamiento tira el arreglo manual, que es lo primero que uno
+# hace despues de generar.
+capacidades.tabla = lambda: {"claude-code": {"disponible": True}}
+GRAFO_NUEVO = {
+    "board": "mi-flujo", "reglas": "",
+    "nodos": [{"id": "build", "titulo": "compilar", "runtime": "opencode"},
+              {"id": "tests", "titulo": "correr los tests", "runtime": "opencode"}],
+    "aristas": [["build", "tests"]],
+}
+# El falso ignora el prompt y devuelve el grafo refinado; lo que se prueba es el
+# mecanismo de mezcla, no que el modelo diseñe bien.
+b.CHAT["claude-code"] = (
+    lambda msg, sesion, modelo: [
+        "python", "-c",
+        "import json,sys; print(json.dumps({'result': json.dumps(" 
+        + repr(GRAFO_NUEVO) + "), 'session_id': 'ses-refina'}))"],
+    _original[1],
+)
+# El nodo trae configuracion que el agente NI VE en el formato que se le pide
+# (id/titulo/runtime): modelo, presupuesto, herramientas, workspace. Refinar la
+# borraba en silencio.
+ACTUAL = {"board": "mi-flujo", "aristas": [],
+          "nodos": [{"id": "build", "titulo": "compilar", "runtime": "opencode",
+                     "x": 777, "y": 888, "modelo": "deepseek/deepseek-chat",
+                     "presupuesto_usd": 2.5, "herramientas": ["Read", "Bash"],
+                     "workspace": "/repo/mio"}]}
+res = server._generar_grafo("agregale un nodo de tests", runtime="claude-code",
+                            actual=ACTUAL, sesion="ses-previa")
+assert res["degradado"] is False, res
+ids = {n["id"]: n for n in res["grafo"]["nodos"]}
+assert set(ids) == {"build", "tests"}, ids
+# El que ya estaba, donde estaba.
+assert (ids["build"]["x"], ids["build"]["y"]) == (777, 888), ids["build"]
+# El nuevo, ubicado y sin pisar al viejo.
+assert not (abs(ids["tests"]["x"] - 777) < 196 and abs(ids["tests"]["y"] - 888) < 60), ids
+assert res["sesion"] == "ses-refina", res
+# Y la configuracion por nodo sobrevive: el agente devolvio `build` con solo
+# id/titulo/runtime, y sin conservar el nodo viejo esto se perdia entero.
+assert ids["build"]["modelo"] == "deepseek/deepseek-chat", ids["build"]
+assert ids["build"]["presupuesto_usd"] == 2.5, ids["build"]
+assert ids["build"]["herramientas"] == ["Read", "Bash"], ids["build"]
+assert ids["build"]["workspace"] == "/repo/mio", ids["build"]
+# Pero lo que el agente SI cambio manda: el titulo es el que devolvio.
+assert ids["build"]["titulo"] == "compilar", ids["build"]
+print("11. refinar conserva nodos, posiciones y su configuracion, y ubica los nuevos: OK")
+
+# --- 12. Y la sesion viaja, asi que dos refinamientos son una conversacion ---
+visto_argv = {}
+b.CHAT["claude-code"] = (
+    lambda msg, sesion, modelo: visto_argv.update(sesion=sesion, msg=msg) or [
+        "python", "-c",
+        "import json; print(json.dumps({'result': json.dumps("
+        + repr(GRAFO_NUEVO) + ")}))"],
+    _original[1],
+)
+server._generar_grafo("y otro mas", runtime="claude-code", actual=ACTUAL,
+                      sesion="ses-refina")
+assert visto_argv["sesion"] == "ses-refina", visto_argv
+# Y el grafo actual viaja en el prompt SIN coordenadas: son del lienzo, el
+# agente no las decide, y mandarlas es pagar tokens por ruido.
+assert '"id": "build"' in visto_argv["msg"], visto_argv["msg"][:300]
+assert "777" not in visto_argv["msg"], "las coordenadas viajaron al agente"
+print("12. la sesion encadena refinamientos y las coordenadas no viajan: OK")
+
 print("\nOK: el chat conversa con sesion y con las mismas barandas.")

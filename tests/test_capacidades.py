@@ -75,8 +75,11 @@ for rt in b.BACKENDS:
 print("5. acepta_permisos solo en el backend que los reenvia: OK")
 
 # --- 6. `faltantes()` detecta lo que no esta ---
-assert cap.faltantes({"claude-code", "opencode"}) == [] or \
-    all(x in cap.DECLARADO for x in cap.faltantes({"claude-code", "opencode"}))
+# Aca habia un `A == [] or all(x in DECLARADO for x in A)` que no podia fallar:
+# `faltantes` recorre `tabla()`, que se construye DESDE `DECLARADO`, asi que la
+# segunda mitad es cierta por construccion y la primera nunca se evalua. Lo que
+# sigue --inventar un runtime con un binario inexistente-- es la prueba de
+# verdad, y no necesitaba el preambulo.
 cap.DECLARADO["_fantasma"] = {**cap.DECLARADO["opencode"],
                               "binario": "binario-que-no-existe-jamas"}
 try:

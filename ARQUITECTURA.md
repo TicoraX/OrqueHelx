@@ -759,3 +759,49 @@ Además, `dispatch_once` toma un lock por board (:9500): dos dispatchers de
 Hermes no tickean a la vez, el perdedor devuelve `skipped_locked=True`. El loop
 de ORQUESTER **no** toma ese lock, porque usa `claim_task` directo — por eso el
 paso 3 del test es load-bearing y no un adorno.
+
+---
+
+## 13. La corrida vive en `dispatcher/corrida.py`, no en el servidor
+
+El bucle que despacha un board --pinchar al dispatcher de Hermes, correr un
+`tick` del carril propio, dormir, decidir si queda algo-- estaba escrito **tres
+veces**: dentro de `ui/server.py._arrancar`, dentro de `mcp_exporter.ejecutar` y
+en `loop.correr`. Ya habian divergido:
+
+| Copia | Lo que le faltaba |
+|---|---|
+| `mcp_exporter.ejecutar` | el `subprocess.run(timeout=180)` bloqueante: un Hermes colgado frenaba tres minutos el carril propio, arreglado solo en la copia del Studio |
+| `loop.correr` | no pinchaba a Hermes: un grafo mixto exportado como script se colgaba esperando cards que nadie iba a levantar |
+| las tres | no cortaban cuando el flujo quedaba trabado (abajo) |
+
+Ahora hay una sola, y los tres llamadores la comparten. `ui/server.py` conserva
+lo que es del Studio --el hilo, `_corriendo`, el tope que se esta aplicando-- y
+la peticion de parada pasa por `corrida.pedir_parada` / `corrida.matar_hermes`.
+
+### `orquester run`: el DAG sin Studio
+
+```bash
+uv run --python 3.11 --with jsonschema python orquester.py run grafo.json \
+    [--board X] [--tope 2] [--timeout 900]
+```
+
+Compila y corre. Codigo de salida **0 solo si todos los nodos quedaron `done`**;
+1 si alguno quedo bloqueado o la corrida se corto por tope o timeout. Eso es lo
+que lo hace util como gate de CI, y es lo que fija `tests/test_cli.py` (que
+corre un DAG de punta a punta reemplazando `run_backend`, o sea sin agentes de
+verdad ni servidor HTTP).
+
+### `_hay_futuro`: por que un flujo trabado ahora termina
+
+La condicion de corte miraba cada card por separado: `todo`, `ready` o
+`running` contaban como trabajo. Un hijo en `todo` cuyo padre habia quedado
+`blocked` de forma permanente contaba, y no se iba a mover nunca: **el bucle
+giraba sin fin sobre un flujo que ya no podia avanzar**. Se descubrio corriendo
+el CLI, no leyendo el codigo: A con un runtime que falla permanente y B
+colgando de A dejaba la corrida sin terminar.
+
+`corrida._hay_futuro` decide sobre el DAG y no sobre la card suelta: un `todo`
+cuenta solo si **todos** sus padres pueden llegar a `done`. La corrida termina
+con `motivo: "trabado"` en vez de `"sin trabajo"`, que son cosas distintas y el
+llamador decide distinto con cada una.

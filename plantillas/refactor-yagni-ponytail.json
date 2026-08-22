@@ -1,0 +1,53 @@
+{
+  "board": "refactor-yagni-ponytail",
+  "descripcion": "Poda sistemática de complejidad y deuda técnica aplicando principios YAGNI, Karpathy Guidelines y reemplazo de dependencias por la librería estándar.",
+  "reglas": "Lazy Senior Dev Mode activado. Eliminar únicamente código huérfano o complejidad no justificada. No introducir nuevas abstracciones. La meta es reducir líneas manteniendo el 100% de la funcionalidad. Responder en español técnico.",
+  "nodos": [
+    {
+      "id": "deteccion_bloat",
+      "titulo": "Inspeccionar el código en {{repo}} buscando over-engineering: abstracciones con una sola implementación, código muerto, wrappers innecesarios y dependencias externas que la stdlib del lenguaje ya resuelve nativamente.",
+      "runtime": "claude-code",
+      "workspace": "{{repo}}",
+      "x": 40,
+      "y": 60
+    },
+    {
+      "id": "cirugia_minimalista",
+      "titulo": "Aplicar diffs quirúrgicos en {{repo}} para podar ÚNICAMENTE la complejidad detectada en el paso anterior. Reemplazar código redundante por funciones estándar sin alterar la lógica de negocio. Reportar el total de líneas netas eliminadas como MEDICIÓN, no como meta: no hay cuota mínima, y si no hay bloat justificable no se borra nada. Borrar código en uso para llegar a un número es un fallo del refactor, no un éxito.",
+      "runtime": "opencode",
+      "workspace": "{{repo}}",
+      "x": 40,
+      "y": 240
+    },
+    {
+      "id": "verificacion_regresion",
+      "titulo": "Ejecutar la suite de pruebas completa en {{repo}} con: {{comando_tests}}\nVerificar que ninguna aserción se rompa y que el comportamiento del sistema permanezca idéntico.",
+      "runtime": "antigravity",
+      "workspace": "{{repo}}",
+      "x": 40,
+      "y": 420
+    },
+    {
+      "id": "informe_deuda",
+      "titulo": "Compilar el balance del refactor en {{repo}}: total de líneas netas eliminadas, dependencias podadas, simplificaciones logradas y lecciones operativas para prevenir reintroducción de bloat.",
+      "runtime": "claude-code",
+      "workspace": "{{repo}}",
+      "x": 340,
+      "y": 420
+    }
+  ],
+  "aristas": [
+    [
+      "deteccion_bloat",
+      "cirugia_minimalista"
+    ],
+    [
+      "cirugia_minimalista",
+      "verificacion_regresion"
+    ],
+    [
+      "verificacion_regresion",
+      "informe_deuda"
+    ]
+  ]
+}

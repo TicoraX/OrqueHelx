@@ -102,5 +102,15 @@ assert abs(visto["presupuesto"] - 1.5) < 1e-9, \
     f"le paso el tope entero en vez del resto: {visto.get('presupuesto')}"
 print("9. al nodo se le pasa lo que QUEDA del tope, no el tope entero: OK")
 
+# --- 10. Presupuesto individual por nodo acota el presupuesto efectivo ---
+g_nodo = {"board": "esf-nodo", "nodos": [
+    {"id": "n1", "titulo": "t1", "runtime": "claude-code", "presupuesto_usd": "0.75"}],
+    "aristas": []}
+ids_nodo = c.compilar(g_nodo, board="esf-nodo")
+visto.clear()
+loop.ejecutar_una(conn, ids_nodo["n1"], timeout=30, presupuesto=2.0)
+assert abs(visto["presupuesto"] - 0.75) < 1e-9, f"no aplico el tope por nodo: {visto}"
+print("10. el presupuesto individual por nodo acota el tope del backend: OK")
+
 loop.run_backend = _run
 print("\nOK: el esfuerzo se elige por nodo y el gasto tiene techo.")
