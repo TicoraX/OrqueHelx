@@ -7,7 +7,7 @@ dependencias y promueve a `ready`; esto solo levanta trabajo ya programado.
 Corre en Python, no en TypeScript, a proposito: usa `kanban_db` como libreria
 en vez de reimplementar el protocolo de claim contra la misma SQLite.
 """
-import os, re, sys, threading, time
+import os, re, sys, threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -395,18 +395,6 @@ def tick(conn, *, timeout: int = 600, board: str = None,
         return list(pool.map(_uno, listas))
 
 
-def correr(board: str, *, intervalo: int = 5, hasta_vacio: bool = True) -> None:
-    """Loop principal. Con `hasta_vacio`, termina cuando no queda trabajo."""
-    conn = k.connect(board=board)
-    while True:
-        hechas = tick(conn, board=board)
-        for tid, out in hechas:
-            print(f"  {tid} -> {out['status']}: {out['summary'][:90]}")
-        if hasta_vacio and not hechas and not _queda_trabajo(conn):
-            return
-        time.sleep(intervalo)
-
-
 def _queda_trabajo(conn) -> bool:
     """¿Hay algo que este loop pueda llegar a ejecutar?
 
@@ -427,4 +415,10 @@ def _queda_trabajo(conn) -> bool:
 
 
 if __name__ == "__main__":
-    correr(sys.argv[1] if len(sys.argv) > 1 else "orquester-test")
+    # El bucle esta en `corrida.py`, que importa este modulo: por eso el import
+    # va aca adentro y no arriba. `corrida` ademas pincha al dispatcher de
+    # Hermes, que esta version nunca hizo: un grafo mixto se colgaba esperando
+    # cards que nadie iba a levantar.
+    import corrida
+    corrida.correr(sys.argv[1] if len(sys.argv) > 1 else "orquester-test",
+                   log=corrida.imprimir)

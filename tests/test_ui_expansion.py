@@ -423,7 +423,7 @@ try:
         "aristas": []
     })
     assert codigo == 200 and "script" in datos_py, datos_py
-    assert "dispatcher.correr" in datos_py["script"] and "compilador.validar" in datos_py["script"], datos_py
+    assert "corrida.correr" in datos_py["script"] and "compilador.validar" in datos_py["script"], datos_py
     print("31. /api/exportar-python genera script Python autónomo: OK")
 
     # --- 32. /api/simular calcula camino crítico y paralelismo por capas ---

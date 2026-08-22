@@ -22,6 +22,7 @@ import hermes_cli.kanban_db as k
 import compile as compilador
 import disposicion
 import loop as dispatcher
+import corrida
 import exportar as mcp
 import capacidades
 
@@ -85,16 +86,11 @@ def _slug_yaml(s) -> str:
 # nada, es trabajo duplicado sin motivo.
 _corriendo: dict[str, threading.Thread] = {}
 
-# board -> proceso en vuelo del dispatcher de Hermes
-_hermes_en_vuelo: dict[str, list] = {}
-
-# Boards a los que se les pidio parar.
-_parar: set[str] = set()
 
 def _parar_board(board: str) -> dict:
     """Interrumpir inmediatamente y en su totalidad la corrida del board."""
     vivo = board in _corriendo
-    _parar.add(board)
+    corrida.pedir_parada(board)
     # 1. Matar subprocesos de agentes externos en ejecución
     try:
         # Con el board: sin el, parar una corrida mataba tambien los agentes de
@@ -103,13 +99,7 @@ def _parar_board(board: str) -> dict:
     except Exception:
         pass
     # 2. Matar proceso de Hermes si sigue en vuelo
-    hermes_proc = _hermes_en_vuelo.get(board)
-    if hermes_proc and hermes_proc[0] is not None and hermes_proc[0].poll() is None:
-        try:
-            hermes_proc[0].terminate()
-            hermes_proc[0].kill()
-        except Exception:
-            pass
+    corrida.matar_hermes(board)
     # 3. Marcar tareas en estado 'running' como blocked
     n_bloqueadas = 0
     try:
@@ -1105,6 +1095,7 @@ sys.path.insert(0, str(RAIZ / "hermes-agent"))
 
 import compile as compilador
 import loop as dispatcher
+import corrida
 import hermes_cli.kanban_db as k
 
 GRAFO = json.loads(r"""
@@ -1119,7 +1110,7 @@ def main():
     print(f"==> {{len(ids)}} tareas creadas en kanban.db (board: {{board}})")
     
     print("==> Iniciando ejecucion con dispatcher...")
-    dispatcher.correr(board, hasta_vacio=True)
+    corrida.correr(board, log=corrida.imprimir)
     
     conn = k.connect(board=board)
     tasks = k.list_tasks(conn)
@@ -1320,13 +1311,6 @@ def _generar_dataset_jsonl(board: str = None) -> dict:
     }
 
 
-def _quedan_de_hermes(conn) -> bool:
-    """Cards que espera el dispatcher de Hermes, no el nuestro."""
-    propios = {dispatcher.carril(rt) for rt in dispatcher.BACKENDS}
-    return any(t.status in ("todo", "ready", "running")
-               for t in k.list_tasks(conn) if t.assignee not in propios)
-
-
 def _arrancar(board: str, tope_usd: float = None) -> dict:
     # El nombre se valida ACA y no en la ruta: `_arrancar` tiene dos llamadores
     # (`/api/correr` y el modo App), y una guarda puesta en uno solo es como
@@ -1342,77 +1326,17 @@ def _arrancar(board: str, tope_usd: float = None) -> dict:
     if board in _corriendo and _corriendo[board].is_alive():
         return {"ok": False, "motivo": "ya hay un dispatcher corriendo en este board"}
 
-    # Los nodos `runtime: hermes` los lanza el dispatcher de Hermes, no el
-    # nuestro (§12). El exportador MCP ya lo tickeaba solo; el boton Ejecutar
-    # no, y obligaba a abrir otra terminal para un flujo mixto. Misma pieza,
-    # mismo comportamiento.
-    hermes = mcp._hermes_bin()
-
-    # `[0]` y no una variable suelta: el `_tick_hermes` de abajo necesita
-    # recordar el proceso ENTRE vueltas del loop, y una lista es el closure mas
-    # corto que hay para eso.
-    en_vuelo = [None]
-
-    def _tick_hermes():
-        """Pincha al dispatcher de Hermes sin quedarse esperandolo.
-
-        Era `subprocess.run(..., timeout=180)` adentro del while: un Hermes
-        colgado frenaba TRES MINUTOS el despacho de nuestro propio carril, que
-        no tiene nada que ver con el suyo. Ahora se lanza y se sigue; en la
-        vuelta siguiente, si el anterior no termino, no se lanza otro (dos
-        dispatchers sobre el mismo board se pisan el claim).
-        """
-        if not hermes:
-            return
-        if en_vuelo[0] is not None and en_vuelo[0].poll() is None:
-            return                         # el anterior sigue trabajando
-        try:
-            en_vuelo[0] = subprocess.Popen(
-                [hermes, "kanban", "--board", board, "dispatch"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL)
-        except Exception:
-            traceback.print_exc()          # que no tumbe el loop del carril propio
-
-    _parar.discard(board)          # un arranque anterior pudo dejarlo marcado
+    # El bucle vive en `dispatcher/corrida.py`, no aca: lo comparten el Studio,
+    # el exportador MCP y el CLI. Aca queda lo que es del Studio --el hilo, el
+    # registro de lo que corre y el tope que se esta aplicando-- y nada mas.
+    corrida.limpiar_parada(board)  # un arranque anterior pudo dejarlo marcado
     _topes[board] = tope_usd       # None = esta corrida va sin tope
-    _hermes_en_vuelo[board] = en_vuelo
 
     def _correr():
         try:
-            conn = k.connect(board=board)
-            while True:
-                if board in _parar:
-                    return
-                if tope_usd is not None and dispatcher.gasto_usd(conn) >= tope_usd:
-                    # Se anota como si lo hubieran parado a mano: el Studio ya
-                    # sabe mostrar ese estado, y el motivo se ve en el consumo.
-                    _parar.add(board)
-                    print(f"[{board}] tope de US$ {tope_usd} alcanzado: no se "
-                          f"arrancan nodos nuevos")
-                    return
-                _tick_hermes()
-                hechas = dispatcher.tick(conn, board=board, tope_usd=tope_usd)
-                sin_trabajo = (not hechas
-                               and not dispatcher._queda_trabajo(conn)
-                               and not _quedan_de_hermes(conn))
-                if sin_trabajo:
-                    return
-                time.sleep(3)
-        except Exception:
-            traceback.print_exc()
+            corrida.correr(board, tope_usd=tope_usd)
         finally:
-            # El hijo de Hermes no sobrevive a la corrida: si sigue vivo cuando
-            # esto termina, queda un dispatcher suelto sobre un board que el
-            # Studio ya da por cerrado.
-            if en_vuelo[0] is not None and en_vuelo[0].poll() is None:
-                en_vuelo[0].terminate()
             _corriendo.pop(board, None)
-            _parar.discard(board)
-            # Y la referencia al hijo de Hermes: sin esto, `_hermes_en_vuelo`
-            # crece una entrada por corrida y guarda para siempre un Popen
-            # muerto que `_parar_board` vuelve a mirar en cada parada.
-            _hermes_en_vuelo.pop(board, None)
 
     h = threading.Thread(target=_correr, daemon=True)
     _corriendo[board] = h
