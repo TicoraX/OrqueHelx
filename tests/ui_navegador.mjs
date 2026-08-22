@@ -174,12 +174,12 @@ await p.waitForFunction(
   null, { timeout: 5000 });
 
 const app = await p.evaluate(() => ({
-  ancho: document.querySelector('#appBarraProgreso').style.width,
+  transform: document.querySelector('#appBarraProgreso').style.transform,
   sub: document.querySelector('#appProgresoSubtxt').textContent,
   linea: document.querySelector('#appTimelineNodos').textContent,
   entregable: document.querySelector('#appEntregableRender').textContent,
 }));
-ok(app.ancho === '50%', `la barra usa el progreso real (${app.ancho})`);
+ok(app.transform === 'scaleX(0.5)' || app.transform === 'scaleX(0.50)', `la barra usa el progreso real (${app.transform})`);
 ok(!/undefined|NaN/.test(app.sub), `el subtitulo no dice undefined ("${app.sub}")`);
 ok(app.sub.includes('1/2'), `cuenta los nodos terminados ("${app.sub}")`);
 ok(app.sub.includes('0.1234'), `informa el gasto ("${app.sub}")`);

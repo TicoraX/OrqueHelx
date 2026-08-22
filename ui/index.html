@@ -139,8 +139,50 @@
   input.falta { border-color: #c9a227; }
   .nodo[data-estado="running"] rect { animation: pulso 1.6s ease-in-out infinite; }
   @keyframes pulso { 50% { stroke-opacity: .45; } }
+  .nodo.arrastrando rect { filter: drop-shadow(0 4px 10px rgba(0,0,0,.5)); }
+  .nodo rect { transition: filter 80ms ease-out; }
+
+  @keyframes avisoEntrar {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  #aviso { animation: avisoEntrar 140ms ease-out; }
+
+  @keyframes panelPlantillasEntrar {
+    from { opacity: 0; transform: scale(.98); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  #panelPlantillas.abierto {
+    display: block;
+    transform-origin: top right;
+    animation: panelPlantillasEntrar 140ms ease-out;
+  }
+
+  @keyframes modalBackdropEntrar {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes modalCajaEntrar {
+    from { opacity: 0; transform: scale(.98); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  #modalEntregable[style*="display: flex"],
+  #modalEntregable[style*="display:flex"] {
+    animation: modalBackdropEntrar 180ms ease-out;
+  }
+  #modalEntregable > div {
+    animation: modalCajaEntrar 180ms ease-out;
+  }
+
+  .barra-progreso-fill {
+    width: 100%; transform-origin: left; transform: scaleX(0);
+    transition: transform 180ms ease-out;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .nodo[data-estado="running"] rect { animation: none; }
+    #aviso, #panelPlantillas.abierto, #modalEntregable, #modalEntregable > div { animation: none !important; }
+    button, .card-intencion, .barra-progreso-fill, .nodo rect { transition: none !important; }
   }
   #chatMensaje { resize:vertical; min-height:42px; max-height:140px; }
   #chatHilo { display:flex; flex-direction:column; gap:var(--intra-2); max-height:46vh;
@@ -254,12 +296,12 @@
     margin-top: 10px;
   }
   .card-intencion {
-    background: #141720;
+    background: var(--hundido);
     border: 1px solid var(--linea);
     border-radius: var(--radio);
     padding: 12px;
     cursor: pointer;
-    transition: all .15s;
+    transition: border-color 140ms ease-out, background 140ms ease-out, transform 60ms ease-out;
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -280,7 +322,7 @@
     line-height: 1.35;
   }
   .chip-reciente {
-    background: #141720;
+    background: var(--hundido);
     border: 1px solid var(--linea);
     border-radius: 12px;
     padding: 3px 10px;
@@ -300,7 +342,7 @@
     padding: 6px 8px;
     border-radius: 4px;
     margin-bottom: 4px;
-    background: #0e1017;
+    background: var(--sobre-acento);
     border: 1px solid rgba(255,255,255,0.03);
     font-size: 12px;
   }
@@ -311,7 +353,8 @@
   .timeline-nodo-app.done {
     border-color: rgba(63,157,82,0.4);
   }
-  .timeline-nodo-app.failed {
+  .timeline-nodo-app.blocked,
+  .timeline-nodo-app.triage {
     border-color: rgba(192,80,77,0.5);
   }
   body.modo-app-activo #vistaApp { display: block; }
@@ -441,7 +484,7 @@
 
       <!-- Barra de progreso -->
       <div style="background:#13161f; border:1px solid var(--linea); border-radius:4px; height:8px; overflow:hidden; margin-bottom:12px;">
-        <div id="appBarraProgreso" style="background:var(--acento); width:0%; height:100%; transition:width .3s;"></div>
+        <div id="appBarraProgreso" class="barra-progreso-fill" style="background:var(--acento); height:100%;"></div>
       </div>
 
       <!-- Timeline de Nodos -->
@@ -710,7 +753,7 @@
           <span id="teleProgresoTxt" style="font-size:11px; font-weight:bold; color:var(--texto);">0%</span>
         </div>
         <div style="background:#1c202a; border:1px solid var(--linea); border-radius:4px; height:7px; overflow:hidden; margin-bottom:8px;">
-          <div id="teleProgresoBarra" style="background:var(--acento); width:0%; height:100%; transition:width .3s;"></div>
+          <div id="teleProgresoBarra" class="barra-progreso-fill" style="background:var(--acento); height:100%;"></div>
         </div>
         <div id="teleResumenStats" style="display:flex; justify-content:space-between; font-size:11px; color:var(--tenue); margin-bottom:8px;"></div>
         <div id="teleDistribucionGrafico" style="margin-top:6px; border-top:1px solid var(--linea); padding-top:6px;"></div>
@@ -964,7 +1007,8 @@ function pintar() {
     const nota = n.tipo === "nota";
     const est = nota ? null : estado[ids[n.id]]?.estado;
     const g = document.createElementNS(svg.namespaceURI, "g");
-    g.setAttribute("class", "nodo" + (sel === n.id ? " sel" : ""));
+    g.setAttribute("class", "nodo" + (sel === n.id ? " sel" : "") +
+                            (arrastre && arrastre.id === n.id ? " arrastrando" : ""));
     g.setAttribute("data-estado", est || "");
     g.setAttribute("transform", `translate(${n.x},${n.y})`);
 
@@ -2544,7 +2588,7 @@ async function cargarTelemetria() {
   caja.style.display = "block";
   const r = datos.resumen;
   $("#teleProgresoTxt").textContent = `${r.progreso_pct}% (${r.terminados}/${r.total})`;
-  $("#teleProgresoBarra").style.width = `${r.progreso_pct}%`;
+  $("#teleProgresoBarra").style.transform = "scaleX(" + (r.progreso_pct / 100) + ")";
   if (r.fallidos > 0) $("#teleProgresoBarra").style.background = "var(--bloqueado)";
   else if (r.activos > 0) $("#teleProgresoBarra").style.background = "var(--running)";
   else if (r.progreso_pct === 100) $("#teleProgresoBarra").style.background = "var(--done)";
@@ -2624,8 +2668,8 @@ async function cargarConsumo() {
           <span class="et">tope de gasto${aplicado == null ? " (sin arrancar)" : ""}</span>
           <span class="val">${t.con_costo ? `US$ ${costoActual.toFixed(4)}` : "—"} / US$ ${pres.toFixed(2)} (${pct.toFixed(0)}%)</span>
         </div>
-        <div style="background:#141720; border:1px solid var(--linea); border-radius:4px; height:8px; overflow:hidden; margin:4px 0 6px;">
-          <div style="background:${col}; width:${anchoBarra}%; height:100%; transition:width .3s;"></div>
+        <div style="background:var(--hundido); border:1px solid var(--linea); border-radius:4px; height:8px; overflow:hidden; margin:4px 0 6px;">
+          <div class="barra-progreso-fill" style="background:${col}; height:100%; transform:scaleX(${anchoBarra / 100});"></div>
         </div>
         <div class="nota" style="border-top:none; padding-top:0;">
           El corte es entre nodos: lo que ya corre termina y cierra su card.
@@ -2821,7 +2865,7 @@ async function lanzarOrquestacionApp(intencion, promptTexto) {
   $("#seccionEjecucionApp").style.display = "block";
   $("#appBoardTitulo").textContent = datos.board;
   $("#appProgresoSubtxt").textContent = `Plantilla: ${datos.plantilla} · ${datos.total_nodos} nodos en ejecución`;
-  $("#appBarraProgreso").style.width = "0%";
+  $("#appBarraProgreso").style.transform = "scaleX(0)";
   $("#appEntregableRender").innerHTML = '<div class="d">Ejecutando nodos del DAG en segundo plano…</div>';
 
   if (APP_INTERVAL_ID) clearInterval(APP_INTERVAL_ID);
@@ -2860,7 +2904,7 @@ async function monitorearProgresoApp(board) {
   if (okTel && datosTel && datosTel.resumen) {
     const r = datosTel.resumen;
     const pct = r.progreso_pct || 0;
-    $("#appBarraProgreso").style.width = `${pct}%`;
+    $("#appBarraProgreso").style.transform = "scaleX(" + (pct / 100) + ")";
     const gasto = (datosTel.consumo || {}).total || {};
     $("#appProgresoSubtxt").textContent =
       `${pct}% completado (${r.terminados}/${r.total} nodos)` +
