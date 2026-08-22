@@ -10,6 +10,15 @@
   * { box-sizing:border-box; }
   body { margin:0; height:100vh; display:flex; background:var(--bg); color:var(--texto);
          font:14px/1.5 ui-sans-serif,system-ui,sans-serif; }
+  ::selection { background: color-mix(in oklab, var(--acento) 35%, transparent); }
+  input, textarea { caret-color: var(--acento); }
+  /* Firefox y Chromium. El panel scrollea mucho y la barra por defecto es del
+     sistema, o sea de otro producto. */
+  * { scrollbar-width: thin; scrollbar-color: var(--linea) transparent; }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: var(--linea); border-radius: 6px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3b4250; }
+  ::-webkit-scrollbar-track { background: transparent; }
   #lienzo { flex:1; cursor:crosshair; }
   aside { width:340px; border-left:1px solid var(--linea); background:var(--panel);
           display:flex; flex-direction:column; height:100vh; overflow:hidden; }
@@ -36,9 +45,22 @@
     width:100%; padding:7px 9px; background:#141720; color:var(--texto);
     border:1px solid var(--linea); border-radius:6px; font:inherit; }
   textarea { resize:vertical; min-height:56px; }
-  button { cursor:pointer; background:#232833; }
+  button { cursor:pointer; background:#232833; transition: transform 60ms ease-out, border-color 120ms ease-out; }
   button:hover:not(:disabled) { border-color:var(--acento); }
+  /* 60ms: el receipt de un click tiene que sentirse en el pointer-down, no
+     despues. Mas lento se percibe como lag, no como respuesta. */
+  button:not(:disabled):active { transform: scale(.97); }
   button:disabled { opacity:.45; cursor:default; }
+  /* Un solo anillo para todo lo enfocable. `:focus-visible` y no `:focus`:
+     el anillo aparece con teclado y no en cada clic del mouse. */
+  button:focus-visible, input:focus-visible, select:focus-visible,
+  textarea:focus-visible, .tab:focus-visible, .card-intencion:focus-visible,
+  .chip-reciente:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--acento);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  .card-intencion:active { transform: scale(.99); }
   button.primario { background:var(--acento); border-color:var(--acento); color:#0d1117; font-weight:600; }
   button.peligro { border-color:#7a3b39; color:#e0706d; }
   button.peligro:hover:not(:disabled) { border-color:#c0504d; background:#2d1a1b; }
@@ -333,27 +355,27 @@
       <p class="ayuda" style="margin:0 0 10px;">Elige una acción pre-configurada o escribe tu requerimiento abajo. ORQUESTER orquestará los agentes en segundo plano.</p>
       
       <div class="grid-intenciones">
-        <div class="card-intencion" data-intencion="seguridad">
+        <div class="card-intencion" data-intencion="seguridad" tabindex="0" role="button">
           <b>Auditoría de Seguridad</b>
           <p>Arqueología de secretos, modelado STRIDE, análisis de dependencias y pruebas de exploits con Strix.</p>
         </div>
-        <div class="card-intencion" data-intencion="web">
+        <div class="card-intencion" data-intencion="web" tabindex="0" role="button">
           <b>Diseño Web Deliberate</b>
           <p>Arquitectura frontend anti-AI-slop con paleta OKLCH calibrada, tipografía intencional y micro-motion.</p>
         </div>
-        <div class="card-intencion" data-intencion="refactor">
+        <div class="card-intencion" data-intencion="refactor" tabindex="0" role="button">
           <b>Refactor y Poda YAGNI</b>
           <p>Poda de complejidad, eliminación de código muerto y reemplazo por biblioteca estándar (Ponytail).</p>
         </div>
-        <div class="card-intencion" data-intencion="feature">
+        <div class="card-intencion" data-intencion="feature" tabindex="0" role="button">
           <b>Pipeline de Feature</b>
           <p>Ciclo completo: especificación de contrato, backend seguro, frontend reactivo, QA y docs.</p>
         </div>
-        <div class="card-intencion" data-intencion="diff">
+        <div class="card-intencion" data-intencion="diff" tabindex="0" role="button">
           <b>Revisión de Cambios</b>
           <p>Análisis en paralelo de bugs, cobertura de tests, seguridad y alcance antes de mergear.</p>
         </div>
-        <div class="card-intencion" data-intencion="explicar">
+        <div class="card-intencion" data-intencion="explicar" tabindex="0" role="button">
           <b>Explicar Arquitectura</b>
           <p>Mapeo de módulos, dependencias de código y flujo de datos del repositorio.</p>
         </div>
@@ -385,7 +407,7 @@
       </div>
 
       <!-- Timeline de Nodos -->
-      <div id="appTimelineNodos" style="background:#141720; border:1px solid var(--linea); border-radius:6px; padding:10px 12px; margin-bottom:14px; max-height:220px; overflow-y:auto;"></div>
+      <div id="appTimelineNodos" style="background:#141720; border:1px solid var(--linea); border-radius:6px; padding:10px 12px; margin-bottom:14px; max-height:220px; overflow-y:auto;"><div class="d">Los nodos aparecen acá cuando arranca la corrida.</div></div>
 
       <!-- Entregables en Vivo -->
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
@@ -2656,12 +2678,15 @@ function renderRecientesWs() {
       return;
     }
     cont.innerHTML = '<span style="font-size:11px; color:var(--tenue); align-self:center;">Recientes:</span>' +
-      recs.map(r => `<span class="chip-reciente" data-ruta="${esc(r)}">${esc(r.split(/[\\\\/]/).pop() || r)}</span>`).join("");
+      recs.map(r => `<span class="chip-reciente" data-ruta="${esc(r)}" tabindex="0" role="button">${esc(r.split(/[\\\\/]/).pop() || r)}</span>`).join("");
     cont.querySelectorAll(".chip-reciente").forEach(chip => {
       chip.onclick = () => {
         const r = chip.getAttribute("data-ruta");
         $("#inputWorkspaceApp").value = r;
         analizarWorkspaceApp(r);
+      };
+      chip.onkeydown = e => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); chip.click(); }
       };
     });
   } catch (e) {}
@@ -2770,6 +2795,9 @@ document.querySelectorAll(".card-intencion").forEach(card => {
   card.onclick = () => {
     const it = card.getAttribute("data-intencion");
     lanzarOrquestacionApp(it, "");
+  };
+  card.onkeydown = e => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); card.click(); }
   };
 });
 
