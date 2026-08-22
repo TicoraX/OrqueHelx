@@ -86,9 +86,16 @@ def _slug_yaml(s) -> str:
 # nada, es trabajo duplicado sin motivo.
 _corriendo: dict[str, threading.Thread] = {}
 
+# Alta y baja de `_corriendo` bajo lock. `ThreadingHTTPServer` atiende cada
+# pedido en su propio hilo: entre el "¿ya hay uno corriendo?" y el alta no habia
+# nada, asi que dos clics seguidos en Ejecutar --o el modo App y `/api/correr` a
+# la vez-- pasaban los dos y arrancaban dos dispatchers sobre el mismo board.
+_LOCK_ARRANQUE = threading.Lock()
+
 
 def _parar_board(board: str) -> dict:
     """Interrumpir inmediatamente y en su totalidad la corrida del board."""
+    board = corrida.slug(board)
     vivo = board in _corriendo
     corrida.pedir_parada(board)
     # 1. Matar subprocesos de agentes externos en ejecución
@@ -102,6 +109,7 @@ def _parar_board(board: str) -> dict:
     corrida.matar_hermes(board)
     # 3. Marcar tareas en estado 'running' como blocked
     n_bloqueadas = 0
+    conn = None
     try:
         conn = _conn(board)
         for t in k.list_tasks(conn, status="running"):
@@ -112,6 +120,10 @@ def _parar_board(board: str) -> dict:
                 pass
     except Exception:
         pass
+    finally:
+        # Una conexion por clic en Parar, y ninguna se cerraba.
+        if conn is not None:
+            conn.close()
     return {
         "ok": vivo,
         "parado": vivo,
@@ -122,12 +134,14 @@ def _parar_board(board: str) -> dict:
 
 def _parar_nodo(board: str, task_id: str) -> dict:
     """Detener inmediatamente un nodo especifico en ejecucion."""
+    board = corrida.slug(board)
     muerto = False
     try:
         muerto = dispatcher.matar_proceso_task(board, task_id)
     except Exception:
         pass
     bloqueado = False
+    conn = None
     try:
         conn = _conn(board)
         t = k.get_task(conn, task_id)
@@ -136,6 +150,9 @@ def _parar_nodo(board: str, task_id: str) -> dict:
             bloqueado = True
     except Exception:
         pass
+    finally:
+        if conn is not None:
+            conn.close()
     # `ok` refleja si se hizo ALGO, igual que en `_parar_board`. Decia `True`
     # fijo: sobre un task_id inexistente --o vacio, que es lo que llega si el
     # cuerpo no lo trae-- el Studio anunciaba "nodo detenido" sin haber tocado
@@ -1319,27 +1336,32 @@ def _arrancar(board: str, tope_usd: float = None) -> dict:
     # NO es por inyeccion de comandos: se probo. `subprocess.run` con lista y
     # sin `shell=True` cita los argumentos incluso para un `.cmd` (Python 3.11.14
     # devolvio `arg=["inocente & echo pwned"]` y no ejecuto nada), y ademas
-    # `_resolver_argv` ya resuelve el shim de npm al `.exe` real. Es por lo
-    # aburrido: un nombre con `/` o `..` llega a `k.connect`, que hace
-    # `mkdir(parents=True)`, y termina creando directorios donde no va.
+    # `_resolver_argv` ya resuelve el shim de npm al `.exe` real. Es por el
+    # `.json` del grafo, que se escribe con este nombre.
     _ruta_segura(board, GRAFOS, "board")
-    if board in _corriendo and _corriendo[board].is_alive():
-        return {"ok": False, "motivo": "ya hay un dispatcher corriendo en este board"}
+    # Y ademas por el slug: `_ruta_segura` acepta mayusculas y espacios, y el
+    # kanban no. Un `POST /api/correr {"board": "mi board"}` pasaba, arrancaba
+    # el hilo, devolvia `{"ok": true}` y moria adentro con un ValueError que
+    # nadie leia: el Studio decia que arranco y no habia arrancado nada.
+    board = corrida.slug(board)
 
     # El bucle vive en `dispatcher/corrida.py`, no aca: lo comparten el Studio,
     # el exportador MCP y el CLI. Aca queda lo que es del Studio --el hilo, el
     # registro de lo que corre y el tope que se esta aplicando-- y nada mas.
-    corrida.limpiar_parada(board)  # un arranque anterior pudo dejarlo marcado
-    _topes[board] = tope_usd       # None = esta corrida va sin tope
-
     def _correr():
         try:
             corrida.correr(board, tope_usd=tope_usd)
         finally:
             _corriendo.pop(board, None)
 
+    # Chequeo y alta bajo el mismo lock: ver `_LOCK_ARRANQUE`.
     h = threading.Thread(target=_correr, daemon=True)
-    _corriendo[board] = h
+    with _LOCK_ARRANQUE:
+        if board in _corriendo and _corriendo[board].is_alive():
+            return {"ok": False, "motivo": "ya hay un dispatcher corriendo en este board"}
+        corrida.limpiar_parada(board)  # un arranque anterior pudo dejarlo marcado
+        _topes[board] = tope_usd       # None = esta corrida va sin tope
+        _corriendo[board] = h
     h.start()
     return {"ok": True}
 
@@ -1870,8 +1892,19 @@ class Handler(BaseHTTPRequestHandler):
                     ultimo_hash = est_raw
                 time.sleep(0.5)
             except (BrokenPipeError, ConnectionResetError, OSError):
-                break
-            except Exception:
+                break                      # el cliente se fue: nada que decirle
+            except Exception as e:
+                # Las cabeceras ya salieron, asi que un 500 no es opcion. Sin
+                # este evento el navegador ve un stream cortado, lo toma por
+                # caida y reconecta para siempre: un hilo y una apertura de
+                # SQLite por intento, y ningun error visible en la UI.
+                try:
+                    aviso = json.dumps({"error": str(e)})
+                    self.wfile.write(
+                        f"event: error\ndata: {aviso}\n\n".encode("utf-8"))
+                    self.wfile.flush()
+                except Exception:
+                    pass
                 break
 
     def _get(self, ruta, params):

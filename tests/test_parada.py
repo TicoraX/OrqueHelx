@@ -133,11 +133,34 @@ try:
     sys.path.insert(0, str(RAIZ / "compiler"))
     import server as srv
 
+    # Board y card propios: `_parar_nodo` envuelve todo en `except Exception`,
+    # asi que sobre un board que no existe daria ok=False igual y el caso
+    # pasaria sin haber ejercitado la rama que dice probar.
+    _board = f"parada-test-{int(time.time() * 1000) % 10_000_000}"
+    import hermes_cli.kanban_db as kb
+    kb.create_board(_board)
+    _c = kb.connect(board=_board)
+    _card = kb.create_task(_c, title="nodo vivo",
+                           assignee="orquester-external:claude-code")
+
     for _tid, _esperado in (("t_no_existe", "no existe"), ("", "falta el task_id")):
-        _r = srv._parar_nodo("orquester", _tid)
+        _r = srv._parar_nodo(_board, _tid)
         assert _r["ok"] is False, f"dijo que paro algo que no existe: {_r}"
         assert _esperado in _r["motivo"], f"el motivo no explica nada: {_r}"
-    print("7. parar un nodo inexistente devuelve ok=False con motivo: OK")
+
+    # Y el positivo, que es el que prueba que el ok=False de arriba significa
+    # algo: sobre una card de verdad tiene que decir que si, y bloquearla.
+    _r = srv._parar_nodo(_board, _card)
+    assert _r["ok"] is True and _r["tarea_bloqueada"] is True, _r
+    assert kb.get_task(_c, _card).status == "blocked", "la card quedo suelta"
+
+    # El nombre del board se normaliza como en el kanban: con la clave cruda,
+    # `Mi-Board` y `mi-board` eran dos registros para la misma SQLite.
+    _r = srv._parar_nodo(_board.upper(), _card)
+    assert _r["board"] == _board, f"no normalizo el board: {_r}"
+    _c.close()
+    kb.remove_board(_board, archive=False)
+    print("7. parar un nodo: ok=False con motivo si no existe, ok=True si existe: OK")
 
     print("\nOK: parar una corrida corta esa corrida y ninguna otra.")
 finally:

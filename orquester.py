@@ -12,7 +12,7 @@ Codigo de salida: 0 si todos los nodos terminaron en `done`, 1 si alguno quedo
 `blocked`/`triage` o la corrida se corto por tope o timeout. Eso es lo que hace
 que sirva en CI.
 """
-import argparse, json, re, sys
+import argparse, json, sys
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent
@@ -28,13 +28,13 @@ import corrida
 def run(args) -> int:
     ruta = Path(args.grafo).expanduser().resolve()
     grafo = json.loads(ruta.read_text(encoding="utf-8"))
-    board = args.board or grafo.get("board") or ruta.stem
-    # Misma regla que `_ruta_segura` en el Studio: el board termina en un
-    # `mkdir(parents=True)` de `k.connect`, y un nombre con `/` o `..` crea
-    # directorios fuera de donde va. Aca el nombre puede venir del .json, que
-    # no siempre lo escribio quien corre el comando.
-    if ".." in board or not re.fullmatch(r"[\w .-]+", board, re.UNICODE):
-        sys.exit(f"board invalido: {board!r} (solo letras, numeros, guiones y puntos)")
+    # El nombre puede venir del .json, que no siempre lo escribio quien corre
+    # el comando. `corrida.slug` aplica la regla del kanban --que rechaza
+    # mayusculas, espacios, `/` y `..`-- y da un mensaje en vez de un traceback.
+    try:
+        board = corrida.slug(args.board or grafo.get("board") or ruta.stem)
+    except ValueError as e:
+        sys.exit(str(e))
 
     # `capacidades=True`: si falta el binario de un runtime, es mejor saberlo
     # ahora que ver la card bloquearse a los tres minutos. Es la misma guarda

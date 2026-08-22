@@ -71,6 +71,14 @@ def sustituir(grafo: dict, valores: dict) -> dict:
     # estaba muerto: `resolve()` SIEMPRE devuelve una ruta absoluta, asi que esa
     # mitad de la condicion era `not True` en los tres casos posibles
     # (verificado con una ruta absoluta, una con '..' y una relativa).
+    #
+    # Una ruta ABSOLUTA no se rechaza, y no es un descuido: `{{workspace}}` con
+    # el valor de la carpeta elegida es EL caso de uso del modo App, y ahi el
+    # valor absoluto es lo correcto. Se probo rechazarlo --"un parametro no
+    # puede volver absoluto un workspace relativo"-- y rompe el flujo normal
+    # del Studio: `test_modo_app` y `test_ui_expansion` fallan en el camino
+    # feliz. No hay arbol declarado del que salirse; lo que se acota es el
+    # `..`, que si es una forma de escapar de una ruta que el autor escribio.
     for n in resultado.get("nodos") or []:
         ws = n.get("workspace") or ""
         if ws and ".." in Path(ws).parts:
@@ -106,13 +114,18 @@ def ejecutar(grafo: dict, valores: dict, *, timeout: int = 900) -> dict:
     # `failed` y `cancelled` estaban en esta lista y no existen en
     # `VALID_STATUSES`: eran ramas muertas, y estados fantasma ya costaron
     # cuatro bugs en este repo.
-    conn = k.connect(board=board)
     corrida.correr(
         board, timeout=timeout,
         listo=lambda c: all(k.get_task(c, t).status in ("done", "blocked", "triage")
                             for t in ids.values()))
 
-    tareas = {nid: k.get_task(conn, tid) for nid, tid in ids.items()}
+    # La conexion se abre DESPUES de la corrida y se cierra: la de antes
+    # quedaba viva por invocacion de la tool, en un proceso de larga vida.
+    conn = k.connect(board=board)
+    try:
+        tareas = {nid: k.get_task(conn, tid) for nid, tid in ids.items()}
+    finally:
+        conn.close()
     # Las hojas son la salida del flujo: los nodos de los que nadie depende.
     con_hijos = {p for p, _ in (concreto.get("aristas") or [])}
     hojas = [nid for nid in ids if nid not in con_hijos]

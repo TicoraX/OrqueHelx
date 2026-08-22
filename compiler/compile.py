@@ -242,7 +242,23 @@ def compilar(grafo: dict, *, board: str = None) -> dict[str, str]:
                 # el nuestro y lo pasa como --effort/--variant. Un campo, dos
                 # consumidores, igual que el modelo.
                 **({"reasoning_effort": nodo["esfuerzo"]} if nodo.get("esfuerzo") else {}),
-                **({"skills": list(nodo["herramientas"])} if nodo.get("herramientas") else {}),
+                # `skills` SOLO en un nodo `claude-code`, que es el unico
+                # runtime que aplica los permisos (`--allowedTools` en
+                # `backends.run_backend`). En un nodo `hermes` este campo
+                # significa otra cosa --carga de contexto para un worker
+                # nativo, `loop.py` lo explica-- y meterle `["Read","Bash"]` le
+                # pedia a Hermes que cargara skills con esos nombres en una
+                # card que SI va a lanzar.
+                #
+                # ponytail: en `opencode` y `agy` las herramientas del nodo
+                # siguen sin aplicarse; sus CLIs no tienen un flag equivalente.
+                # Que no viajen es mejor que viajar a un campo que hace otra
+                # cosa, pero el hueco sigue: el Studio deja marcarlas y no
+                # rigen. Cerrarlo es rechazarlas en `validar`, y eso invalida
+                # grafos ya guardados: va aparte.
+                **({"skills": list(nodo["herramientas"])}
+                   if nodo.get("herramientas") and nodo.get("runtime") == "claude-code"
+                   else {}),
                 **({"provider_override": nodo["proveedor"]} if nodo.get("proveedor") else {}),
                 **({"tenant": f"budget:{nodo['presupuesto_usd']}"} if nodo.get("presupuesto_usd") else {}),
             )

@@ -22,6 +22,7 @@ sys.path.insert(0, str(RAIZ))
 import hermes_cli.kanban_db as k
 import compile as compilador
 import loop as dispatcher
+import corrida
 from backends import ErrorPermanente
 import orquester
 
@@ -117,10 +118,43 @@ try:
             assert "board invalido" in str(e.code), f"{malo!r} -> {e.code!r}"
     print("4. un board con '..' o '/' se rechaza: OK")
 
+    # --- 5. El tope de gasto corta la corrida, y eso tampoco sale 0 ---------
+    # El docstring del CLI promete salir 1 tambien "si la corrida se corto por
+    # tope o timeout", y eso no estaba probado. Con el agente falso gastando
+    # 0.01 por nodo, un tope de 0.005 se pasa en el primer nodo.
+    llamadas.clear()
+    dispatcher.run_backend = _agente_falso
+    board3 = BOARD + "-tope"
+    codigo = orquester.main(["run", str(ARCHIVO), "--board", board3, "--tope", "0.005"])
+    assert codigo == 1, f"cortar por tope no puede salir 0, salio {codigo}"
+    assert len(llamadas) == 1, (
+        f"el tope tenia que frenar despues del primer nodo, corrieron {llamadas}")
+    print("5. el tope de gasto corta la corrida y la salida es 1: OK")
+
+    # --- 6. El slug del board dice lo mismo que el kanban -------------------
+    # `corrida.slug` copia la regla de `kanban_db._normalize_board_slug`, que es
+    # privada del clon pineado. Si un bump del pin la cambia, tiene que fallar
+    # aca y no en produccion.
+    for nombre in ("Mi-Board", "mi-board", "board_1", "b"):
+        assert corrida.slug(nombre) == k._normalize_board_slug(nombre), nombre
+    for malo in ("mi board", "../fuera", "sub/dir", "-empieza-mal", "", "x" * 65):
+        nuestro = kanban = None
+        try:
+            nuestro = corrida.slug(malo)
+        except ValueError:
+            pass
+        try:
+            kanban = k._normalize_board_slug(malo)
+        except ValueError:
+            pass
+        assert nuestro == kanban, (
+            f"{malo!r}: nosotros {nuestro!r}, el kanban {kanban!r}")
+    print("6. `corrida.slug` y el kanban aceptan y rechazan lo mismo: OK")
+
     print("\nOK: el CLI corre un DAG sin Studio y su codigo de salida informa.")
 finally:
     _cerrar_todo()
-    for slug in (BOARD, BOARD + "-roto"):
+    for slug in (BOARD, BOARD + "-roto", BOARD + "-tope"):
         try:
             k.remove_board(slug, archive=False)
         except Exception:

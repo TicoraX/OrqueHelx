@@ -13,7 +13,7 @@ que usa `orquester.py run`.
 
     uv run --python 3.11 --with jsonschema python dispatcher/corrida.py
 """
-import os, shutil, subprocess, sys, threading, time, traceback
+import os, re, shutil, subprocess, sys, threading, time, traceback
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -40,25 +40,50 @@ def hermes_bin() -> str | None:
                 "hermes/hermes-agent/venv/Scripts/hermes.exe"] if p.is_file()), None))
 
 
+# La regla del kanban, copiada a proposito: `kanban_db._normalize_board_slug`
+# es privada del clon pineado. `tests/test_cli.py` verifica que las dos digan lo
+# mismo, asi que un bump del pin que la cambie se ve en la suite y no en
+# produccion.
+_SLUG = re.compile(r"^[a-z0-9][a-z0-9\-_]{0,63}$")
+
+
+def slug(board: str) -> str:
+    """El nombre del board como lo guarda el kanban: minusculas y sin espacios.
+
+    `k.connect` normaliza a minusculas por su cuenta, asi que `Mi-Board` y
+    `mi-board` son EL MISMO board en disco. Los registros en memoria
+    (`_PARAR`, `_HERMES`, y `_corriendo`/`_topes` del Studio) se indexaban por
+    el nombre crudo: arrancar `Mi-Board` con `mi-board` corriendo pasaba el
+    "ya hay un dispatcher en este board" y dejaba dos escribiendo sobre la
+    misma SQLite, y parar uno no paraba el otro.
+    """
+    limpio = str(board or "").strip().lower()
+    if not _SLUG.match(limpio):
+        raise ValueError(
+            f"board invalido: {board!r} (1-64 caracteres, minusculas, numeros, "
+            "guiones y guiones bajos, sin empezar con guion)")
+    return limpio
+
+
 def pedir_parada(board: str) -> None:
     with _LOCK:
-        _PARAR.add(board)
+        _PARAR.add(slug(board))
 
 
 def limpiar_parada(board: str) -> None:
     """Antes de arrancar: una corrida anterior pudo dejar el board marcado."""
     with _LOCK:
-        _PARAR.discard(board)
+        _PARAR.discard(slug(board))
 
 
 def parando(board: str) -> bool:
     with _LOCK:
-        return board in _PARAR
+        return slug(board) in _PARAR
 
 
 def matar_hermes(board: str) -> bool:
     """El hijo de Hermes de este board, si sigue vivo. Devuelve si mato algo."""
-    proc = (_HERMES.get(board) or [None])[0]
+    proc = (_HERMES.get(slug(board)) or [None])[0]
     if proc is None or proc.poll() is not None:
         return False
     try:
@@ -165,6 +190,8 @@ def correr(board: str, *, tope_usd: float = None, listo=None, espera: float = 3.
     avanzar y hay cards abiertas), `listo`, `parado`, `tope`, `timeout`,
     `error`.
     """
+    board = slug(board)            # el registro en memoria y la SQLite, la
+                                   # misma clave: ver `slug`
     binario = hermes_bin()
     en_vuelo = [None]
     _HERMES[board] = en_vuelo
@@ -179,9 +206,10 @@ def correr(board: str, *, tope_usd: float = None, listo=None, espera: float = 3.
             if limite is not None and time.monotonic() > limite:
                 return {"motivo": "timeout", "vueltas": vueltas, "nodos": nodos}
             if tope_usd is not None and dispatcher.gasto_usd(conn) >= tope_usd:
-                # Se anota como si lo hubieran parado a mano: el Studio ya sabe
-                # mostrar ese estado, y el motivo se ve en el consumo.
-                pedir_parada(board)
+                # Antes se hacia `pedir_parada(board)` aca "para que el Studio
+                # muestre el estado de parado". Era un no-op: el `finally` de
+                # esta misma salida hace `limpiar_parada`. Lo que informa es el
+                # `motivo` que se devuelve.
                 print(f"[{board}] tope de US$ {tope_usd} alcanzado: no se "
                       f"arrancan nodos nuevos")
                 return {"motivo": "tope", "vueltas": vueltas, "nodos": nodos}
