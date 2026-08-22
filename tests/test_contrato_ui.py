@@ -538,8 +538,11 @@ finally:
     # donde el usuario guarda SUS flujos y `list_boards` es lo que llena el
     # desplegable de corridas previas del Studio: un test que deja tres boards y
     # un .json por corrida le ensucia la interfaz a quien lo corra dos veces.
-    for f in (RAIZ / "ui" / "grafos").glob(f"{BOARD}*.json"):
-        f.unlink(missing_ok=True)
+    # Por board y no por glob de `BOARD*`: `_orquestar_intencion` bautiza el
+    # suyo `sintesis-ia-<azar>`, que no empieza con `BOARD` y se quedaba.
+    for slug in _creados:
+        if slug:
+            (RAIZ / "ui" / "grafos" / f"{slug}.json").unlink(missing_ok=True)
     # Antes de borrar: soltar las conexiones que este proceso dejo abiertas. En
     # Windows un `.db` con un handle vivo no se puede borrar, y `compilar`,
     # `ejecutar_una` y `_orquestar_intencion` abren la suya adentro sin

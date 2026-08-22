@@ -14,31 +14,67 @@ Las reglas de abajo salieron de la fase de verificacion, no del gusto:
 import json, os, re, shutil, subprocess, tempfile, threading
 from pathlib import Path
 
+# Los subprocesos de agente en vuelo, POR BOARD. La clave no es un adorno: dos
+# boards pueden estar corriendo a la vez --es el escenario de ARQUITECTURA SS12 y
+# el que cubre `test_dos_dispatchers`-- y sin ella, parar uno mataba los agentes
+# del otro. Verificado con dos procesos registrados y un solo pedido de parada:
+# morian los dos.
 _PROCESOS_LOCK = threading.Lock()
-_PROCESOS_ACTIVOS: set[subprocess.Popen] = set()
+_PROCESOS_ACTIVOS: dict[str, set] = {}
+
+# En que board esta trabajando ESTE hilo. `threading.local` y no un parametro
+# nuevo: entre `tick` --que es quien sabe el board-- y `Popen` hay cuatro
+# llamadas, y sumarle un argumento a las cuatro para un dato que solo usa la
+# ultima es peor que dejarlo en el hilo. Un hilo sin marcar (el chat del Studio,
+# que no pertenece a ningun board) cae en `None` y no lo alcanza ninguna parada
+# de board, que es lo correcto.
+_HILO = threading.local()
+
+
+def marcar_board(board: str | None):
+    """Decir en que board trabaja este hilo, para que su Popen quede fichado."""
+    _HILO.board = board
+
 
 def registrar_proceso(p: subprocess.Popen):
     with _PROCESOS_LOCK:
-        _PROCESOS_ACTIVOS.add(p)
+        _PROCESOS_ACTIVOS.setdefault(getattr(_HILO, "board", None), set()).add(p)
+
 
 def desregistrar_proceso(p: subprocess.Popen):
     with _PROCESOS_LOCK:
-        _PROCESOS_ACTIVOS.discard(p)
+        for board, vivos in list(_PROCESOS_ACTIVOS.items()):
+            vivos.discard(p)
+            # Y la clave vacia tambien: si no, el diccionario junta una entrada
+            # por board que haya corrido alguna vez en la vida del proceso.
+            if not vivos:
+                _PROCESOS_ACTIVOS.pop(board, None)
 
-def matar_procesos_activos():
-    """Interrumpir inmediatamente todos los subprocesos de agentes externos en ejecución."""
+
+def matar_procesos_activos(board: str | None = None):
+    """Cortar los agentes en vuelo. Con `board`, solo los de ese board.
+
+    Sin `board` mata todo: es el apagado del proceso entero, no la parada de una
+    corrida. Quien para UNA corrida tiene que pasar el suyo.
+    """
     with _PROCESOS_LOCK:
-        procs = list(_PROCESOS_ACTIVOS)
+        if board is None:
+            procs = [p for vivos in _PROCESOS_ACTIVOS.values() for p in vivos]
+        else:
+            procs = list(_PROCESOS_ACTIVOS.get(board, ()))
+    muertos = 0
     for p in procs:
         try:
             if p.poll() is None:
-                p.terminate()
-                try:
-                    p.kill()
-                except Exception:
-                    pass
+                # `kill` a secas y no `terminate` seguido de `kill` sin esperar
+                # nada en el medio: asi el SIGTERM no le daba ni un ciclo al CLI
+                # para cerrar, o sea que la cortesia era decorativa. Esto se
+                # llama desde "parar YA": que lo diga el codigo.
+                p.kill()
+                muertos += 1
         except Exception:
             pass
+    return muertos
 
 # SS5: jsonschema es dependencia DURA, y por eso se importa aca arriba. Estaba
 # adentro de `_validar`, y cuando faltaba el ModuleNotFoundError salia envuelto

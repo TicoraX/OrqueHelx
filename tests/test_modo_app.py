@@ -256,6 +256,55 @@ finally:
     srv.subprocess.run = _run_real
 print("8. el selector distingue elegir, cancelar, sin-display y timeout: OK")
 
+# --- 9. Cada tarjeta del modo App llega a su plantilla ------------------------
+# El catalogo de tarjetas vive hardcodeado en `index.html` y el mapa que las
+# traduce a un archivo vive en `server.py`. Son dos listas separadas que tienen
+# que decir lo mismo, y no lo decian: `triage-de-bug`, `documentar-cambios` y
+# `segunda-opinion` no estaban en el mapa --el mapa decia `triage` y
+# `documentar`, y de la tercera no sabia nada--, asi que esas tres tarjetas
+# caian al `elif prompt` y el usuario recibia un diseno generico del agente en
+# vez de la plantilla que eligio. Sin error, sin aviso: se veia igual.
+#
+# Se prueba yendo hasta la plantilla que sale, no comparando las dos listas: lo
+# que importa no es que las claves coincidan, es que la tarjeta que uno aprieta
+# termine en el flujo que promete.
+import re as _re
+_html = (RAIZ / "ui" / "index.html").read_text(encoding="utf-8")
+_i = _html.index("const PLANTILLAS_CATALOGO")
+_tarjetas = _re.findall(r'id:\s*["\']([^"\']+)', _html[_i:_i + 3000])
+assert len(_tarjetas) >= 6, f"no se pudo leer el catalogo de tarjetas: {_tarjetas}"
+
+_arrancar_real = srv._arrancar
+srv._arrancar = lambda board, tope: {"ok": True, "motivo": ""}
+try:
+    _sueltas, _dejados = [], []
+    for _cid in _tarjetas:
+        _r = srv._orquestar_intencion({
+            "workspace": str(RAIZ), "intencion": _cid, "prompt": "revisa el repo",
+            # `dry_run`: si la tarjeta cae al disenador, que no llame a nadie.
+            "ejecutar": False, "dry_run": True})
+        if _r.get("plantilla") == "sintesis-ia":
+            _sueltas.append(_cid)
+        # Cada llamada compila un board y guarda su grafo: nueve por corrida,
+        # en el kanban y en la carpeta donde el usuario guarda los suyos.
+        _dejados.append(_r.get("board", ""))
+finally:
+    srv._arrancar = _arrancar_real
+    for _b in _dejados:
+        if not _b:
+            continue
+        (RAIZ / "ui" / "grafos" / f"{_b}.json").unlink(missing_ok=True)
+        try:
+            srv.k.remove_board(_b, archive=False)
+        except Exception as _e:
+            print(f"   [aviso] quedo el board {_b}: {type(_e).__name__}")
+
+assert not _sueltas, (
+    "tarjetas del modo App que no llegan a ninguna plantilla y caen al "
+    f"disenador: {_sueltas}\n  (agregalas a `mapa_plantillas` en server.py "
+    "con el nombre del archivo en plantillas/)")
+print(f"9. las {len(_tarjetas)} tarjetas del modo App llegan a su plantilla: OK")
+
 # Los grafos que estos casos dejaron en ui/grafos.
 for f in (RAIZ / "ui" / "grafos").glob("auditoria-seguridad-cso-strix-*.json"):
     f.unlink(missing_ok=True)

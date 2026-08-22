@@ -97,7 +97,9 @@ def _parar_board(board: str) -> dict:
     _parar.add(board)
     # 1. Matar subprocesos de agentes externos en ejecución
     try:
-        dispatcher.matar_procesos_activos()
+        # Con el board: sin el, parar una corrida mataba tambien los agentes de
+        # cualquier otro board corriendo en paralelo.
+        dispatcher.matar_procesos_activos(board)
     except Exception:
         pass
     # 2. Matar proceso de Hermes si sigue en vuelo
@@ -1332,6 +1334,10 @@ def _arrancar(board: str, tope_usd: float = None) -> dict:
                 en_vuelo[0].terminate()
             _corriendo.pop(board, None)
             _parar.discard(board)
+            # Y la referencia al hijo de Hermes: sin esto, `_hermes_en_vuelo`
+            # crece una entrada por corrida y guarda para siempre un Popen
+            # muerto que `_parar_board` vuelve a mirar en cada parada.
+            _hermes_en_vuelo.pop(board, None)
 
     h = threading.Thread(target=_correr, daemon=True)
     _corriendo[board] = h
@@ -1670,8 +1676,14 @@ def _orquestar_intencion(cuerpo: dict) -> dict:
         "feature": "pipeline-feature-fullstack",
         "diff": "revision-de-repo",
         "explicar": "explicar-un-repo",
-        "triage": "triage-de-bug",
-        "documentar": "documentar-cambios",
+        # Las claves son los `id` de las tarjetas del modo App, no una version
+        # corta de ellos: `triage` y `documentar` no coincidian con
+        # `triage-de-bug` y `documentar-cambios`, y `segunda-opinion` no estaba.
+        # Esas tres tarjetas caian al `elif prompt` y en vez de su plantilla el
+        # usuario recibia un diseno generico del agente, sin ningun aviso.
+        "triage-de-bug": "triage-de-bug",
+        "documentar-cambios": "documentar-cambios",
+        "segunda-opinion": "segunda-opinion",
     }
 
     degradado, motivo = False, ""
