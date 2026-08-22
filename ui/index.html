@@ -215,6 +215,23 @@
     padding: 3px 6px; box-shadow: 0 4px 12px rgba(0, 0, 0, .4);
   }
   body.modo-zen #barraCanvasFlotante { right: 16px; left: auto; top: 12px; }
+
+  /* Velo de arrastre. Sin una senal visible, soltar algo sobre la ventana es
+     una apuesta: no sabes si te va a escuchar. Se pinta sobre todo, incluso
+     sobre el modal, porque el arrastre es lo unico que esta pasando. */
+  #velo {
+    display: none; position: fixed; inset: 0; z-index: 200;
+    background: rgba(20, 23, 32, .82); backdrop-filter: blur(3px);
+    align-items: center; justify-content: center; pointer-events: none;
+  }
+  body.arrastrando-algo #velo { display: flex; }
+  #velo .caja {
+    border: 2px dashed var(--acento); border-radius: var(--radio);
+    padding: 22px 30px; text-align: center; background: var(--panel);
+    max-width: 460px;
+  }
+  #velo b { display: block; font-size: 15px; margin-bottom: 6px; }
+  #velo span { font-size: 12.5px; color: var(--tenue); line-height: 1.5; }
   body.modo-zen #barraSuperiorApp { display: none !important; }
   body.modo-zen #lienzo { margin-top: 0 !important; }
 
@@ -818,11 +835,17 @@
   </div>
 </aside>
 
-<div id="modalEntregable" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.75); z-index:100; align-items:center; justify-content:center; padding:24px;">
+<div id="velo" aria-hidden="true"><div class="caja">
+  <b>Soltá acá</b>
+  <span>Un <code>.json</code> de grafo se abre en el lienzo.<br>
+        Una carpeta o una ruta de texto se abre como proyecto.</span>
+</div></div>
+
+<div id="modalEntregable" role="dialog" aria-modal="true" aria-labelledby="modalTitulo" tabindex="-1" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.75); z-index:100; align-items:center; justify-content:center; padding:24px;">
   <div style="background:var(--panel); border:1px solid var(--linea); border-radius:8px; width:90vw; max-width:960px; max-height:85vh; display:flex; flex-direction:column; box-shadow:0 16px 48px rgba(0,0,0,0.6);">
     <div style="padding:10px 16px; border-bottom:1px solid var(--linea); display:flex; justify-content:space-between; align-items:center;">
       <div style="display:flex; align-items:center; gap:12px;">
-        <b style="font-size:13px;">Entregable Completo</b>
+        <b id="modalTitulo" style="font-size:13px;">Entregable Completo</b>
         <div style="display:inline-flex; border:1px solid var(--linea); border-radius:4px; overflow:hidden;">
           <button id="btnModoPreview" style="border:none; border-radius:0; padding:2px 8px; font-size:11px; background:var(--acento); color:#fff; width:auto;">Formato</button>
           <button id="btnModoRaw" style="border:none; border-radius:0; padding:2px 8px; font-size:11px; background:transparent; color:var(--tenue); width:auto;">Texto plano</button>
@@ -1193,7 +1216,7 @@ async function cargarTraza() {
     btnExpandir.onclick = () => {
       $("#modalEntregableRender").innerHTML = renderMarkdown(ULTIMO_RESULTADO);
       $("#modalEntregableTexto").textContent = ULTIMO_RESULTADO;
-      $("#modalEntregable").style.display = "flex";
+      abrirModalEntregable();
       mostrarModoPreview();
     };
   }
@@ -1797,7 +1820,7 @@ document.addEventListener("keydown", e => {
   if (e.key === "Escape") {
     if ($("#modalEntregable") && $("#modalEntregable").style.display === "flex") {
       e.preventDefault();
-      $("#modalEntregable").style.display = "none";
+      cerrarModalEntregable();
       return;
     }
     if (sel) {
@@ -2148,7 +2171,7 @@ $("#exportarDataset").onclick = async () => {
   `;
   $("#modalEntregableRender").innerHTML = modalHtml;
   $("#modalEntregableTexto").textContent = datos.jsonl;
-  $("#modalEntregable").style.display = "flex";
+  abrirModalEntregable();
   mostrarModoPreview();
 };
 
@@ -2193,7 +2216,7 @@ $("#btnSimular").onclick = async () => {
   `;
   $("#modalEntregableRender").innerHTML = modalHtml;
   $("#modalEntregableTexto").textContent = JSON.stringify(datos, null, 2);
-  $("#modalEntregable").style.display = "flex";
+  abrirModalEntregable();
   mostrarModoPreview();
 };
 
@@ -2224,7 +2247,7 @@ $("#btnLintGrafo").onclick = async () => {
   `;
   $("#modalEntregableRender").innerHTML = modalHtml;
   $("#modalEntregableTexto").textContent = JSON.stringify(hallazgos, null, 2);
-  $("#modalEntregable").style.display = "flex";
+  abrirModalEntregable();
   mostrarModoPreview();
 };
 
@@ -2270,9 +2293,45 @@ function mostrarModoRaw() {
 $("#btnModoPreview").onclick = mostrarModoPreview;
 $("#btnModoRaw").onclick = mostrarModoRaw;
 
+// Quien tenia el foco antes de abrir. Al cerrar hay que devolverselo: si no, el
+// foco vuelve al principio del documento y quien navega con teclado tiene que
+// recorrer la interfaz entera para volver al boton que apreto.
+let FOCO_PREVIO = null;
+
+function abrirModalEntregable() {
+  FOCO_PREVIO = document.activeElement;
+  const m = $("#modalEntregable");
+  m.style.display = "flex";
+  // Al contenedor y no al primer boton: con `role="dialog"` y `aria-labelledby`
+  // un lector anuncia "Entregable Completo, dialogo" en vez de leer un boton
+  // suelto sin contexto.
+  m.focus();
+}
+
 function cerrarModalEntregable() {
   $("#modalEntregable").style.display = "none";
+  // `?.` porque el elemento pudo desaparecer mientras el modal estaba abierto
+  // (el panel se repinta solo cuando llega estado nuevo del board).
+  FOCO_PREVIO?.focus?.();
+  FOCO_PREVIO = null;
 }
+
+// Trampa de foco: sin esto, tabular dentro del modal se va a los controles de
+// atras, que estan tapados por el fondo negro. Uno tabula a ciegas.
+$("#modalEntregable").addEventListener("keydown", e => {
+  if (e.key !== "Tab") return;
+  const focos = [...$("#modalEntregable").querySelectorAll(
+    "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])")]
+    .filter(el => el.offsetParent !== null);
+  if (!focos.length) return;
+  const primero = focos[0], ultimo = focos[focos.length - 1];
+  if (e.shiftKey && (document.activeElement === primero ||
+                     document.activeElement === $("#modalEntregable"))) {
+    e.preventDefault(); ultimo.focus();
+  } else if (!e.shiftKey && document.activeElement === ultimo) {
+    e.preventDefault(); primero.focus();
+  }
+});
 $("#modalBtnCerrar").onclick = cerrarModalEntregable;
 $("#modalEntregable").onclick = e => {
   if (e.target === $("#modalEntregable")) cerrarModalEntregable();
@@ -2352,7 +2411,7 @@ $("#btnDiffSnapshot").onclick = async () => {
   `;
   $("#modalEntregableRender").innerHTML = modalHtml;
   $("#modalEntregableTexto").textContent = JSON.stringify(datos, null, 2);
-  $("#modalEntregable").style.display = "flex";
+  abrirModalEntregable();
   mostrarModoPreview();
 };
 
@@ -2477,7 +2536,7 @@ $("#btnGenerarReporte").onclick = async () => {
 
   $("#modalEntregableRender").innerHTML = renderMarkdown(datos.reporte);
   $("#modalEntregableTexto").textContent = datos.reporte;
-  $("#modalEntregable").style.display = "flex";
+  abrirModalEntregable();
   mostrarModoPreview();
 };
 
@@ -2807,7 +2866,7 @@ function renderRecientesWs() {
 }
 
 async function analizarWorkspaceApp(ruta) {
-  const r = (ruta || $("#inputWorkspaceApp").value || "").trim();
+  const r = normalizarRuta(ruta || $("#inputWorkspaceApp").value);
   if (!r) return avisar("Escribe o selecciona la ruta de una carpeta.", "error");
   $("#btnAnalizarWorkspaceApp").disabled = true;
   $("#btnAnalizarWorkspaceApp").textContent = "Analizando…";
@@ -2842,6 +2901,102 @@ function aplicarDiagnosticoWs(datos) {
 
   avisar(`Proyecto '${datos.nombre}' abierto: ${datos.stack}.`, "ok");
 }
+
+// Una ruta puede llegar de tres formas y ninguna viene limpia: "Copiar como
+// ruta" de Windows la entrega ENTRE COMILLAS, un arrastre desde la barra de
+// direcciones la entrega como `file:///C:/...`, y una lista de URIs puede traer
+// varias lineas. Normalizar en un solo lugar evita tres parches distintos.
+function normalizarRuta(texto) {
+  let t = (texto || "").trim();
+  if (!t) return "";
+  t = t.split(/\r?\n/)[0].trim();
+  t = t.replace(/^["']+|["']+$/g, "").trim();
+  if (/^file:\/\//i.test(t)) {
+    try { t = decodeURIComponent(t.replace(/^file:\/\/\/?/i, "")); } catch (e) { /* se usa tal cual */ }
+    // Solo en rutas de Windows: en POSIX las barras ya son las correctas.
+    if (/^[a-zA-Z]:/.test(t)) t = t.replace(/\//g, "\\");
+  }
+  return t.trim();
+}
+
+// Soltar cosas sobre la ventana.
+//
+// Un arrastre de CARPETA no sirve para lo que uno esperaria: el navegador
+// entrega un `FileSystemDirectoryEntry` cuyo `.name` es el nombre de la carpeta
+// y cuyo `fullPath` es "/nombre", nunca la ruta absoluta del disco. Es el mismo
+// muro que el selector (por eso el selector lo abre el servidor). Asi que en vez
+// de fingir que funciona, el gesto se convierte en un clic al selector, que es
+// lo unico que si puede resolverlo.
+//
+// Lo que SI funciona entero: soltar un `.json` de grafo --ahi alcanza el
+// contenido, no hace falta la ruta-- y soltar TEXTO con una ruta, que es lo que
+// entrega arrastrar desde la barra de direcciones del explorador.
+let _profundidadArrastre = 0;
+
+document.addEventListener("dragenter", e => {
+  if (![...(e.dataTransfer?.types || [])].some(t => t === "Files" || t.startsWith("text/"))) return;
+  // Contador y no un booleano: `dragleave` dispara al pasar por CADA hijo, y
+  // con un booleano el velo parpadeaba al mover el mouse por adentro.
+  _profundidadArrastre++;
+  document.body.classList.add("arrastrando-algo");
+});
+document.addEventListener("dragleave", () => {
+  if (--_profundidadArrastre <= 0) {
+    _profundidadArrastre = 0;
+    document.body.classList.remove("arrastrando-algo");
+  }
+});
+// `dragover` con `preventDefault` es obligatorio: sin el, `drop` no dispara y
+// el navegador se lleva el archivo a una pestana nueva.
+document.addEventListener("dragover", e => e.preventDefault());
+
+document.addEventListener("drop", async e => {
+  e.preventDefault();
+  _profundidadArrastre = 0;
+  document.body.classList.remove("arrastrando-algo");
+  const dt = e.dataTransfer;
+  if (!dt) return;
+
+  const archivo = [...(dt.files || [])].find(f => f.name.toLowerCase().endsWith(".json"));
+  if (archivo) {
+    let g;
+    try {
+      g = JSON.parse(await archivo.text());
+    } catch (err) {
+      return avisar(`'${archivo.name}' no es JSON valido: ${err.message}`, "error");
+    }
+    if (!Array.isArray(g?.nodos)) {
+      return avisar(`'${archivo.name}' no parece un grafo: no tiene 'nodos'.`, "error");
+    }
+    anotar();                                  // que se pueda deshacer
+    abrirGrafo(g, g.board || archivo.name.replace(/\.json$/i, ""));
+    cambiarModoVista("studio");
+    return avisar(`Grafo '${archivo.name}' abierto (${g.nodos.length} nodo(s)).`, "ok");
+  }
+
+  const ruta = normalizarRuta(dt.getData("text/uri-list") || dt.getData("text/plain"));
+  if (ruta) {
+    cambiarModoVista("app");
+    $("#inputWorkspaceApp").value = ruta;
+    return analizarWorkspaceApp(ruta);
+  }
+
+  if (dt.files?.length || [...(dt.items || [])].some(i => i.kind === "file")) {
+    return avisar("El navegador no le da al Studio la ruta de una carpeta soltada. " +
+                  "Usá Examinar… (o arrastrá desde la barra de direcciones, que sí manda la ruta).",
+                  "tibio");
+  }
+});
+
+// "Copiar como ruta" de Windows pega la ruta entre comillas, y asi no existe.
+$("#inputWorkspaceApp").addEventListener("paste", e => {
+  const pegado = e.clipboardData?.getData("text");
+  const limpio = normalizarRuta(pegado);
+  if (limpio && limpio !== (pegado || "").trim()) {
+    e.preventDefault();
+    $("#inputWorkspaceApp").value = limpio;
+  }
+});
 
 // Escribir a mano una ruta absoluta es la peor parte del flujo, y el navegador
 // no puede ayudar: ni `showDirectoryPicker()` ni `<input webkitdirectory>`

@@ -223,6 +223,75 @@ await p.waitForFunction(() => APP_INTERVAL_ID === null, null, { timeout: 8000 })
   .then(() => ok(true, 'el sondeo se detiene cuando el board termina'))
   .catch(() => ok(false, 'el sondeo sigue latiendo con el board terminado'));
 
+// 8. El modal devuelve el foco y no lo deja escapar.
+// Se abria desde SEIS lugares con `style.display = "flex"`; el foco quedaba
+// donde estuviera, tabular se iba a los controles tapados por el fondo negro, y
+// al cerrar volvia al principio del documento.
+await p.click('#btnModoStudio');
+await p.waitForFunction(() => document.body.classList.contains('modo-studio-activo'),
+                        null, { timeout: 5000 });
+const modal = await p.evaluate(async () => {
+  const disparador = document.querySelector('#btnZoomIn');
+  disparador.focus();
+  const antes = document.activeElement.id;
+  ULTIMO_RESULTADO = 'contenido de prueba';
+  document.querySelector('#modalEntregableTexto').textContent = 'contenido de prueba';
+  abrirModalEntregable();
+  const dentro = document.activeElement.id;
+  const m = document.querySelector('#modalEntregable');
+  const attrs = { rol: m.getAttribute('role'), modal: m.getAttribute('aria-modal'),
+                  etiqueta: document.getElementById(m.getAttribute('aria-labelledby'))?.textContent };
+  cerrarModalEntregable();
+  return { antes, dentro, despues: document.activeElement.id, attrs };
+});
+ok(modal.attrs.rol === 'dialog' && modal.attrs.modal === 'true',
+   `el modal se declara dialogo (${modal.attrs.rol}/${modal.attrs.modal})`);
+ok(modal.attrs.etiqueta === 'Entregable Completo',
+   `y tiene nombre accesible ("${modal.attrs.etiqueta}")`);
+ok(modal.dentro === 'modalEntregable', `al abrir, el foco entra al dialogo (${modal.dentro})`);
+ok(modal.despues === modal.antes,
+   `al cerrar, el foco vuelve a quien lo abrio (${modal.antes} -> ${modal.despues})`);
+
+// 9. Soltar cosas: las tres salidas que el navegador permite.
+const soltar = (tipo, valor, nombre) => p.evaluate(([tipo, valor, nombre]) => {
+  const dt = new DataTransfer();
+  if (tipo === 'file') dt.items.add(new File([valor], nombre, { type: 'application/json' }));
+  else dt.setData(tipo, valor);
+  document.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+}, [tipo, valor, nombre]);
+
+// 9a. Un .json de grafo se abre entero: aca alcanza el contenido, no hace falta
+// la ruta, asi que es el unico caso que funciona de punta a punta.
+await soltar('file', JSON.stringify({
+  board: 'soltado', aristas: [],
+  nodos: [{ id: 'x', titulo: 'vino por drag', runtime: 'opencode', x: 20, y: 20 }],
+}), 'soltado.json');
+await p.waitForFunction(() => grafo.nodos.some(n => n.id === 'x'), null, { timeout: 5000 });
+ok(true, 'soltar un .json de grafo lo abre en el lienzo');
+
+// 9b. Un .json que no es un grafo se rechaza nombrando el archivo, no con un
+// stack trace ni con el lienzo ya vacio.
+await soltar('file', '{"otra":"cosa"}', 'ajeno.json');
+await p.waitForFunction(
+  () => document.querySelector('#aviso').textContent.includes('no parece un grafo'),
+  null, { timeout: 5000 });
+ok((await p.evaluate(() => grafo.nodos.some(n => n.id === 'x'))),
+   'y no se lleva puesto el grafo que ya estaba');
+
+// 9c. Texto con una ruta: es lo que entrega arrastrar desde la barra de
+// direcciones. Se normaliza `file:///` y las comillas de "Copiar como ruta".
+const normalizada = await p.evaluate(() => [
+  normalizarRuta('"C:\\Users\\santi\\proyecto"'),
+  normalizarRuta('file:///C:/Users/santi/mi%20proyecto'),
+  normalizarRuta('  /home/user/repo\nsegunda-linea  '),
+]);
+ok(normalizada[0] === 'C:\\Users\\santi\\proyecto',
+   `saca las comillas de "Copiar como ruta" (${normalizada[0]})`);
+ok(normalizada[1] === 'C:\\Users\\santi\\mi proyecto',
+   `decodifica file:/// y los %20 (${normalizada[1]})`);
+ok(normalizada[2] === '/home/user/repo',
+   `toma solo la primera linea de una lista de URIs (${normalizada[2]})`);
+
 ok(errores.length === 0, `sin errores de JS en toda la corrida${errores.length ? ': ' + errores[0] : ''}`);
 if (process.argv[3]) await p.screenshot({ path: process.argv[3], fullPage: false });
 console.log(fallos ? `\n${fallos} FALLA(S)` : '\nTODO OK');
