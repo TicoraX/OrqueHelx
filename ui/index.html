@@ -9,7 +9,7 @@
   :root {
     --bg:#14161a; --panel:#1c1f26; --linea:#2c313b; --texto:#e6e8ec;
     --tenue:#8b93a1; --acento:#5b9dd9;
-    --todo:#4a5160; --ready:#c9a227; --running:#3d8bcd; --done:#3f9d52; --bloqueado:#c0504d; --triage:#d1743a;
+    --todo:#4a5160; --ready:#c9a227; --running:#3d8bcd; --done:#3f9d52; --bloqueado:#c0504d; --triage:#d1743a; --review:#8e6bc0;
     --hundido:#141720; --control:#232833; --sobre-acento:#0d1117;
     --acento-claro:#7dd3fc; --peligro-texto:#e0706d; --control-frio:#1e293b;
     --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
@@ -200,7 +200,20 @@
                padding:7px 9px; font-family:var(--mono);
                font-size:11px; max-height:180px; overflow-y:auto; color:var(--texto); white-space:pre-wrap; }
   body.modo-zen #panel, body.modo-zen #panelDerecho { display: none !important; }
-  body.modo-zen #barraCanvasFlotante { right: 16px; top: 12px; }
+  /* El `top` vivia en el atributo `style=` del div, y una declaracion inline le
+     gana a cualquier selector: las dos reglas de abajo que lo corrigen por modo
+     NUNCA se aplicaban. Resultado: la barra quedaba en `top:12px`, o sea 32 de
+     sus 34px detras del header de 44px, y los botones de zoom eran inclicables
+     desde que existe la barra superior. Medido en el navegador, no deducido.
+     Flota sobre el lienzo, asi que le toca sombra y no escalon tonal. */
+  #barraCanvasFlotante {
+    position: fixed; top: 56px; left: 12px; z-index: 20;
+    display: flex; gap: var(--intra-1);
+    background: rgba(20, 23, 32, .85); backdrop-filter: blur(8px);
+    border: 1px solid var(--linea); border-radius: var(--radio);
+    padding: 3px 6px; box-shadow: 0 4px 12px rgba(0, 0, 0, .4);
+  }
+  body.modo-zen #barraCanvasFlotante { right: 16px; left: auto; top: 12px; }
   body.modo-zen #barraSuperiorApp { display: none !important; }
   body.modo-zen #lienzo { margin-top: 0 !important; }
 
@@ -520,7 +533,7 @@
      stroke-dasharray="4 3" fill="none"></path>
 </svg>
 
-<div id="barraCanvasFlotante" style="position:fixed; top:12px; left:12px; z-index:20; display:flex; gap:4px; background:rgba(20,23,32,0.85); backdrop-filter:blur(8px); border:1px solid var(--linea); border-radius:6px; padding:3px 6px; box-shadow:0 4px 12px rgba(0,0,0,0.4);">
+<div id="barraCanvasFlotante">
   <button id="btnZoomIn" title="Acercar zoom" style="font-size:12px; padding:3px 8px; width:auto; font-weight:bold;">+</button>
   <button id="btnZoomOut" title="Alejar zoom" style="font-size:12px; padding:3px 8px; width:auto; font-weight:bold;">-</button>
   <button id="btnZoomReset" title="Zoom 100%" style="font-size:10.5px; padding:3px 8px; width:auto;">1:1</button>
@@ -826,9 +839,23 @@
 </div>
 
 <script>
-const COLOR = { todo:"#4a5160", ready:"#c9a227", running:"#3d8bcd", blocked:"#4a5160",
-                done:"#3f9d52", failed:"#c0504d", review:"#8e6bc0", cancelled:"#3a3f4a",
-                triage:"#d1743a" };
+// El color de un estado sale de la MISMA variable CSS que pinta la leyenda.
+// Antes era un objeto con hex propios, duplicando la paleta, y se
+// desincronizo: la leyenda prometia rojo para `bloqueada` y el lienzo pintaba
+// `blocked` con "#4a5160", o sea el MISMO gris que `todo`. Un nodo trabado se
+// veia identico a uno que todavia no arranco, que es justo lo que uno mira el
+// lienzo para saber.
+//
+// Ademas tenia claves `failed` y `cancelled`, que NO existen en
+// `kanban_db.VALID_STATUSES`: el rojo estaba asignado a un estado que no llega
+// nunca. Es la cuarta vez que ese `failed` inventado causa un bug en esta rama,
+// y `tests/test_modo_app.py` ahora falla si alguien lo reintroduce.
+const VAR_ESTADO = { todo:"--todo", scheduled:"--todo", ready:"--ready",
+                     running:"--running", done:"--done", blocked:"--bloqueado",
+                     triage:"--triage", review:"--review", archived:"--tenue" };
+const _cssRaiz = getComputedStyle(document.documentElement);
+const COLOR = Object.fromEntries(Object.entries(VAR_ESTADO).map(
+  ([estado, variable]) => [estado, _cssRaiz.getPropertyValue(variable).trim()]));
 const RT_COLOR = { hermes:"#8e9aab", "claude-code":"#d0873f", opencode:"#4f9c8a",
                    antigravity:"#a297fc" };
 const A = 196, ALTO = 60;
@@ -1143,7 +1170,10 @@ async function cargarTraza() {
 
   const boxReintento = $("#boxReintentarNodo");
   if (boxReintento) {
-    const esFallido = Boolean(datos.block_kind || datos.estado === "failed" || datos.estado === "blocked" || datos.estado === "triage");
+    // Sin `=== "failed"`: no es un estado del kanban y esa rama no se cumplia
+    // jamas. Los dos que si llegan son `blocked` y `triage`.
+    const esFallido = Boolean(datos.block_kind || datos.estado === "blocked"
+                              || datos.estado === "triage");
     boxReintento.style.display = esFallido ? "block" : "none";
   }
 

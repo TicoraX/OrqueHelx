@@ -180,6 +180,39 @@ else:
           "detectando el cambio: OK")
     shutil.rmtree(hostil.parent, ignore_errors=True)
 
+# --- 7. La UI no puede pintar estados que el kanban no tiene -----------------
+# Cuarta aparicion del mismo bug en esta rama: la UI tenia un mapa
+# estado -> color con las claves `failed` y `cancelled`, que NO existen en
+# `VALID_STATUSES`. El rojo estaba asignado a `failed`, o sea a nada, y
+# `blocked` --el estado que si llega-- quedaba con el MISMO gris que `todo`. El
+# lienzo no podia mostrar que un nodo se habia trabado, mientras la leyenda de
+# al lado prometia rojo para "bloqueada".
+import re
+import hermes_cli.kanban_db as kdb
+
+html = (RAIZ / "ui" / "index.html").read_text(encoding="utf-8")
+m = re.search(r"const VAR_ESTADO = \{(.*?)\};", html, re.S)
+assert m, "no se encontro el mapa VAR_ESTADO en ui/index.html"
+variables = dict(re.findall(r"(\w+)\s*:\s*\"(--[\w-]+)\"", m.group(1)))
+assert variables, "el mapa VAR_ESTADO quedo vacio o cambio de forma"
+
+inventados = set(variables) - set(kdb.VALID_STATUSES)
+assert not inventados, f"la UI pinta estados que el kanban no tiene: {sorted(inventados)}"
+
+# Y al reves: un `blocked` con el mismo color que un `todo` es un nodo roto que
+# se ve sano. `scheduled` y `archived` pueden compartir con otro; esos dos no.
+assert variables.get("blocked") != variables.get("todo"), \
+    "un nodo bloqueado se pinta igual que uno en espera"
+avance = [variables.get(e) for e in ("ready", "running", "done")]
+assert len(set(avance)) == 3, f"estados de avance con colores repetidos: {avance}"
+
+# Todo color que la UI nombre tiene que existir en `:root`, o el nodo sale
+# pintado de vacio.
+for estado, variable in variables.items():
+    assert f"{variable}:" in html, f"'{estado}' usa {variable} y no esta en :root"
+print(f"7. los {len(variables)} estados que pinta la UI existen en el kanban, "
+      "tienen variable propia y `blocked` se distingue de `todo`: OK")
+
 # Los grafos que estos casos dejaron en ui/grafos.
 for f in (RAIZ / "ui" / "grafos").glob("auditoria-seguridad-cso-strix-*.json"):
     f.unlink(missing_ok=True)

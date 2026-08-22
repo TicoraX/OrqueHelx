@@ -139,6 +139,27 @@ await p.waitForFunction(
 const cls = await p.getAttribute('#aviso', 'class');
 ok(cls === 'tibio', `la degradacion se pinta en ambar, no en verde (class="${cls}")`);
 
+// 6b. Los botones del lienzo se pueden apretar de verdad.
+// El `top` de la barra flotante vivia en el atributo `style=` del div, y una
+// declaracion inline le gana a cualquier selector: las dos reglas que la
+// corrigen por modo nunca se aplicaban y la barra quedaba 32 de sus 34px detras
+// del header. Un linter de CSS no lo ve y un screenshot casi tampoco; lo que lo
+// prueba es preguntar QUIEN recibe el click en ese punto.
+await p.click('#btnModoStudio');
+await p.waitForFunction(() => document.body.classList.contains('modo-studio-activo'),
+                        null, { timeout: 5000 });
+const zoom = await p.evaluate(() => {
+  const b = document.querySelector('#btnZoomIn').getBoundingClientRect();
+  const encima = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+  const cabecera = document.querySelector('#barraSuperiorApp').getBoundingClientRect();
+  return { recibe: encima ? encima.id : null, barraTop: Math.round(b.top),
+           finCabecera: Math.round(cabecera.bottom) };
+});
+ok(zoom.recibe === 'btnZoomIn',
+   `el boton de zoom recibe su propio click (lo recibe: ${zoom.recibe})`);
+ok(zoom.barraTop >= zoom.finCabecera,
+   `la barra del lienzo arranca debajo del header (${zoom.barraTop} vs ${zoom.finCabecera})`);
+
 // 7. Modo App: el timeline y la barra leen las claves que el servidor manda.
 // Las nueve que leia el overhaul no existian (`hechas`, `total_tareas`,
 // `status`, `title`, `result`...), asi que la barra vivia en 0%, todo nodo
