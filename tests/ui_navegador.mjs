@@ -378,6 +378,47 @@ ok(deseleccionado, 'quitar plantilla limpia la seleccion y oculta el badge');
 await p.click('#btnAbrirCuotas');
 const modalCuotasAbierto = await p.evaluate(() => document.querySelector('#modalCuotas').style.display === 'flex');
 ok(modalCuotasAbierto, 'abrir cuotas despliega el modal');
+
+// Y lo que el modal MUESTRA, que es donde estaba el bug. Abrirlo andaba; adentro
+// leia tres claves inventadas: `datosCap.runtimes` (los runtimes van en la raiz)
+// con `instalado` en vez de `disponible`, y `datosSec.proveedores` en vez de la
+// lista `secretos`. Ninguna de las dos redes que ya existen lo veia: la tabla de
+// `test_contrato_ui` prueba lo que el SERVIDOR manda, no lo que la UI lee, y el
+// barrido de `undefined` no dispara porque el panel pintaba "No detectado" y
+// "No se pudo consultar", que son textos validos. Un bug que se ve prolijo.
+//
+// Por eso se afirma el SIGNIFICADO y no la presencia: cada badge tiene que
+// coincidir con el `disponible` que el servidor mando para ese runtime, sea cual
+// sea esta maquina.
+await p.waitForFunction(
+  () => document.querySelector('#cuotasPorRuntime').children.length > 0,
+  null, { timeout: 5000 });
+const cuotas = await p.evaluate(() => {
+  const fila = rt => [...document.querySelectorAll('#cuotasPorRuntime > div')]
+    .find(d => d.querySelector('b')?.textContent.trim() === rt);
+  const badges = {};
+  for (const rt of Object.keys(CAPS)) {
+    const f = fila(rt);
+    if (f) badges[rt] = /Instalado/.test(f.textContent);
+  }
+  return {
+    badges,
+    esperados: Object.fromEntries(
+      Object.entries(CAPS).map(([rt, c]) => [rt, !!c.disponible])),
+    secretos: document.querySelector('#cuotasEstadoSecretos').textContent,
+    filasSecretos: document.querySelectorAll('#cuotasEstadoSecretos > div').length,
+  };
+});
+const malBadge = Object.keys(cuotas.esperados)
+  .filter(rt => cuotas.badges[rt] !== cuotas.esperados[rt]);
+ok(malBadge.length === 0,
+   `el badge de cada runtime coincide con su \`disponible\`${malBadge.length
+     ? `: ${malBadge.map(rt => `${rt} dice ${cuotas.badges[rt]} y es ${cuotas.esperados[rt]}`).join(', ')}` : ''}`);
+ok(!cuotas.secretos.includes('No se pudo consultar'),
+   'el panel de secretos lista las credenciales en vez del mensaje de error');
+ok(cuotas.filasSecretos > 0,
+   `y pinta una fila por credencial revisada (${cuotas.filasSecretos})`);
+
 await p.keyboard.press('Escape');
 const modalCuotasCerrado = await p.evaluate(() => document.querySelector('#modalCuotas').style.display === 'none');
 ok(modalCuotasCerrado, 'tecla Escape cierra el modal de cuotas');

@@ -41,7 +41,7 @@ FIJAS = json.loads((RAIZ / "tests" / "fixtures" / "respuestas_ui.json")
 # Diccionarios cuyas CLAVES son datos, no contrato: ids de tarea, nombres de
 # estado. Comparar sus claves diria que `t_a` != `t_5ed7a52b`, que es cierto y
 # no significa nada. De estos se compara la forma de los VALORES.
-CLAVES_LIBRES = {"tareas", "por_nodo", "estados"}
+CLAVES_LIBRES = {"tareas", "por_nodo", "por_runtime", "estados"}
 
 # Un contenedor vacio no puede probar la forma de lo que llevaria adentro.
 SIN_DATOS = object()
@@ -130,6 +130,10 @@ def TABLA(grafo, board, repo, tarea, snap, sucio, plantilla, copia):
             "total_configuradas", "total_revisadas",
             "secretos[].presente", "secretos[].enmascarado",
             "secretos[].variable", "secretos[].proveedor",
+            # El panel de Cuotas lo lee entero otra vez, y leia `proveedores`,
+            # un diccionario que no existe: la condicion daba falsa siempre y
+            # mostraba "No se pudo consultar" con el dato en la mano.
+            "secretos[].presente", "secretos[].enmascarado",
         ]),
         ("/api/workspaces", None, ["total_workspaces", "tamano_total_humano"]),
 
@@ -145,8 +149,11 @@ def TABLA(grafo, board, repo, tarea, snap, sucio, plantilla, copia):
         ]),
         # `CAPS[runtime]`: el desplegable de esfuerzo y la pista de modelo salen
         # de aca, y llegan asincronos DESPUES del primer dibujo.
+        # `*` y no `runtimes.*`: los runtimes van en la RAIZ. El panel de Cuotas
+        # leia `datos.runtimes`, un envoltorio inventado, y despues `instalado`
+        # en vez de `disponible`: los cuatro figuraban "No detectado" siempre.
         ("/api/capacidades", None,
-         ["*.tope_gasto_flag", "*.modelo_forma", "*.esfuerzos"]),
+         ["*.tope_gasto_flag", "*.modelo_forma", "*.esfuerzos", "*.disponible"]),
         ("/api/snapshot", {"board": board, "grafo": grafo, "descripcion": "tabla"}, []),
         (f"/api/snapshots?board={board}", None,
          ["snapshots[].id", "snapshots[].descripcion", "snapshots[].total_nodos"]),
@@ -180,7 +187,10 @@ def TABLA(grafo, board, repo, tarea, snap, sucio, plantilla, copia):
         # --- Lo que depende del board ya compilado ----------------------------
         (f"/api/consumo?board={board}", None,
          ["total.intentos", "total.con_costo", "total.costo_usd",
-          "por_nodo", "tope_usd"]),
+          "total.entrada", "total.salida", "por_nodo", "tope_usd",
+          # El desglose por runtime del panel de Cuotas.
+          "por_runtime.*.entrada", "por_runtime.*.salida",
+          "por_runtime.*.costo_usd", "por_runtime.*.intentos"]),
         (f"/api/reporte-corrida?board={board}", None, ["reporte"]),
         (f"/api/exportar-dataset?board={board}", None,
          ["board", "total_registros", "jsonl"]),

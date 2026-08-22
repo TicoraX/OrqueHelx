@@ -3358,12 +3358,17 @@ async function cargarCuotasYModelos() {
   const rtCont = $("#cuotasPorRuntime");
   const runtimesConocidos = ["claude-code", "opencode", "hermes", "antigravity"];
   const desgloseRt = (datosCons && datosCons.por_runtime) || {};
-  const caps = (datosCap && datosCap.runtimes) || {};
+  // `/api/capacidades` devuelve los runtimes en la raiz --`CAPS[rt]`, como los
+  // lee el resto del Studio--, no bajo `.runtimes`. Con el envoltorio de mas,
+  // `caps` quedaba en {} y los cuatro figuraban "No detectado" siempre.
+  const caps = datosCap || {};
 
   rtCont.innerHTML = runtimesConocidos.map(rt => {
     const uso = desgloseRt[rt] || { entrada: 0, salida: 0, costo_usd: 0, intentos: 0 };
-    const cap = caps[rt] || { instalado: false };
-    const estadoInst = cap.instalado 
+    // `disponible` es como se llama en `capacidades.tabla()`; `instalado` no
+    // existe, asi que la respuesta era `undefined` y el badge daba negativo.
+    const cap = caps[rt] || { disponible: false };
+    const estadoInst = cap.disponible 
       ? '<span style="color:var(--done); font-size:10.5px;">● Instalado</span>' 
       : '<span style="color:var(--tenue); font-size:10.5px;">○ No detectado</span>';
     const costoTxt = uso.costo_usd > 0 
@@ -3387,13 +3392,16 @@ async function cargarCuotasYModelos() {
 
   // Estado de Secretos / Credenciales
   const secCont = $("#cuotasEstadoSecretos");
-  if (okSec && datosSec && datosSec.proveedores) {
-    secCont.innerHTML = Object.entries(datosSec.proveedores).map(([k, v]) => {
-      const okBadge = v.ok 
-        ? '<span style="color:var(--done); font-weight:600;">✓ Configurada</span>' 
+  // `secretos` es una LISTA de `{variable, proveedor, uso, presente,
+  // enmascarado}`. No hay ningun `proveedores`: la condicion daba falsa
+  // siempre y el panel mostraba "No se pudo consultar" con el dato en la mano.
+  if (okSec && Array.isArray(datosSec?.secretos)) {
+    secCont.innerHTML = datosSec.secretos.map(s => {
+      const okBadge = s.presente
+        ? `<span style="color:var(--done); font-weight:600;">✓ ${esc(s.enmascarado || "Configurada")}</span>`
         : '<span style="color:var(--tenue);">No configurada</span>';
       return `<div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.03);">
-        <span><b class="dato">${esc(k)}</b> <span style="color:var(--tenue); font-size:10.5px;">(${esc(v.variables?.join(", ") || "")})</span></span>
+        <span><b class="dato">${esc(s.variable)}</b> <span style="color:var(--tenue); font-size:10.5px;">(${esc(s.proveedor)})</span></span>
         ${okBadge}
       </div>`;
     }).join("");
