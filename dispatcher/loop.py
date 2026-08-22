@@ -17,7 +17,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ / "hermes-agent"))
 import hermes_cli.kanban_db as k
 
-from backends import run_backend, chat_backend, BackendError, BACKENDS
+from backends import run_backend, chat_backend, BackendError, BACKENDS, matar_procesos_activos
 
 # El carril va en `assignee`, y el runtime como sufijo: `orquester-external:opencode`.
 # Informacion de ruteo en el campo de ruteo. Dos razones para no usar `skills`:

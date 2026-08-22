@@ -319,6 +319,69 @@ const basuraStudio = await sinBasura('body');
 ok(basuraStudio === null,
    `el Studio tampoco muestra claves sin resolver${basuraStudio ? `: "${basuraStudio.texto}" en ${basuraStudio.donde}` : ''}`);
 
+// 10. Modo Zen: la barra flotante no salta a la derecha
+await p.click('#btnModoStudio');
+await p.click('#btnModoZen');
+const posZen = await p.evaluate(() => {
+  const r = document.querySelector('#barraCanvasFlotante').getBoundingClientRect();
+  return { left: r.left, right: r.right };
+});
+ok(posZen.left < 50, `la barra canvas queda a la izquierda en modo zen (left=${posZen.left})`);
+await p.click('#btnModoZen'); // salir de zen
+
+// 11. Modo App: paginación de plantillas y selección no-intrusiva
+await p.click('#btnModoApp');
+const cardsP1 = await p.evaluate(() => document.querySelectorAll('#gridIntencionesApp .card-intencion').length);
+ok(cardsP1 === 6, `la pagina 1 muestra 6 plantillas (hay ${cardsP1})`);
+
+await p.click('#btnPaginaSigPlantillas');
+const cardsP2 = await p.evaluate(() => document.querySelectorAll('#gridIntencionesApp .card-intencion').length);
+ok(cardsP2 === 3, `la pagina 2 muestra 3 plantillas (hay ${cardsP2})`);
+
+await p.click('#btnPaginaAntPlantillas');
+// Ocultar sección de ejecución previa para verificar que seleccionar no la activa
+await p.evaluate(() => { document.querySelector('#seccionEjecucionApp').style.display = 'none'; });
+let orquestacionInvocada = false;
+await p.route('**/api/orquestar-intencion', route => {
+  orquestacionInvocada = true;
+  return route.fulfill({ json: FIJAS['/api/orquestar-intencion'] });
+});
+
+// Seleccionar la primera tarjeta
+await p.evaluate(() => document.querySelector('#gridIntencionesApp .card-intencion').click());
+const estadoSeleccion = await p.evaluate(() => {
+  const card = document.querySelector('#gridIntencionesApp .card-intencion');
+  const promptVal = document.querySelector('#inputPromptApp').value;
+  const badgeVis = document.querySelector('#badgePlantillaSeleccionada').style.display;
+  const ejecVis = document.querySelector('#seccionEjecucionApp').style.display;
+  return {
+    seleccionada: card.classList.contains('seleccionada'),
+    tienePrompt: promptVal.length > 0,
+    badgeVisible: badgeVis !== 'none',
+    ejecucionOculta: ejecVis === 'none'
+  };
+});
+ok(estadoSeleccion.seleccionada, 'al cliquear plantilla queda marcada como seleccionada');
+ok(estadoSeleccion.tienePrompt, 'precarga el prompt recomendado en el input');
+ok(estadoSeleccion.badgeVisible, 'muestra el badge de plantilla activa');
+ok(estadoSeleccion.ejecucionOculta && !orquestacionInvocada, 'no arranca la ejecucion automaticamente al seleccionar');
+
+await p.click('#btnQuitarPlantilla');
+const deseleccionado = await p.evaluate(() => {
+  const card = document.querySelector('#gridIntencionesApp .card-intencion');
+  const badgeVis = document.querySelector('#badgePlantillaSeleccionada').style.display;
+  return !card.classList.contains('seleccionada') && badgeVis === 'none';
+});
+ok(deseleccionado, 'quitar plantilla limpia la seleccion y oculta el badge');
+
+// 12. Modal Cuotas y Modelos
+await p.click('#btnAbrirCuotas');
+const modalCuotasAbierto = await p.evaluate(() => document.querySelector('#modalCuotas').style.display === 'flex');
+ok(modalCuotasAbierto, 'abrir cuotas despliega el modal');
+await p.keyboard.press('Escape');
+const modalCuotasCerrado = await p.evaluate(() => document.querySelector('#modalCuotas').style.display === 'none');
+ok(modalCuotasCerrado, 'tecla Escape cierra el modal de cuotas');
+
 ok(errores.length === 0, `sin errores de JS en toda la corrida${errores.length ? ': ' + errores[0] : ''}`);
 if (process.argv[3]) await p.screenshot({ path: process.argv[3], fullPage: false });
 console.log(fallos ? `\n${fallos} FALLA(S)` : '\nTODO OK');

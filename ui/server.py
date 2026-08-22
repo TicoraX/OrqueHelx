@@ -85,10 +85,47 @@ def _slug_yaml(s) -> str:
 # nada, es trabajo duplicado sin motivo.
 _corriendo: dict[str, threading.Thread] = {}
 
-# Boards a los que se les pidio parar. No se mata nada a mitad de camino: un
-# `kill` dejaria la card reclamada y el proceso hijo huerfano. Se deja de
-# LEVANTAR trabajo nuevo, y lo que ya arranco termina y se cierra bien.
+# board -> proceso en vuelo del dispatcher de Hermes
+_hermes_en_vuelo: dict[str, list] = {}
+
+# Boards a los que se les pidio parar.
 _parar: set[str] = set()
+
+def _parar_board(board: str) -> dict:
+    """Interrumpir inmediatamente y en su totalidad la corrida del board."""
+    vivo = board in _corriendo
+    _parar.add(board)
+    # 1. Matar subprocesos de agentes externos en ejecución
+    try:
+        dispatcher.matar_procesos_activos()
+    except Exception:
+        pass
+    # 2. Matar proceso de Hermes si sigue en vuelo
+    hermes_proc = _hermes_en_vuelo.get(board)
+    if hermes_proc and hermes_proc[0] is not None and hermes_proc[0].poll() is None:
+        try:
+            hermes_proc[0].terminate()
+            hermes_proc[0].kill()
+        except Exception:
+            pass
+    # 3. Marcar tareas en estado 'running' como blocked
+    n_bloqueadas = 0
+    try:
+        conn = _conn(board)
+        for t in k.list_tasks(conn, status="running"):
+            try:
+                k.block_task(conn, t.id, reason="Detenido por el usuario", kind="capability")
+                n_bloqueadas += 1
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return {
+        "ok": vivo,
+        "parado": vivo,
+        "motivo": "" if vivo else "no hay nada corriendo en este board",
+        "tareas_bloqueadas": n_bloqueadas
+    }
 
 # board -> tope de gasto con el que se arranco. El Studio tiene que mostrar el
 # que se esta APLICANDO, no el que hay tipeado en el campo: editar el campo con
@@ -377,7 +414,7 @@ def _traza(board: str, task_id: str) -> dict:
 
 
 def _consumo(board: str) -> dict:
-    """Consumo del board: por nodo y agregado.
+    """Consumo del board: por nodo, por runtime y agregado.
 
     Se suma sobre los **runs**, no sobre las tasks: un nodo reintentado gasto en
     cada intento, y el total del flujo tiene que reflejarlo.
@@ -392,31 +429,43 @@ def _consumo(board: str) -> dict:
     total = {"entrada": 0, "salida": 0, "total": 0, "cache_lectura": 0,
              "costo_usd": 0.0, "intentos": 0, "con_costo": 0, "sin_costo": 0}
     por_nodo = {}
+    por_runtime = {}
     for t in k.list_tasks(conn):
         acum = None
         for r in k.list_runs(conn, t.id):
             u = (r.metadata or {}).get("uso")
             if not u:
                 continue
+            rt = u.get("runtime") or (t.assignee.split(":")[1] if ":" in (t.assignee or "") else (t.assignee or "hermes"))
+            if rt not in por_runtime:
+                por_runtime[rt] = {"entrada": 0, "salida": 0, "total": 0, "cache_lectura": 0,
+                                   "costo_usd": 0.0, "intentos": 0, "con_costo": 0, "sin_costo": 0}
             acum = acum or {"entrada": 0, "salida": 0, "total": 0,
                             "cache_lectura": 0, "costo_usd": None,
-                            "runtime": u.get("runtime"), "intentos": 0}
+                            "runtime": rt, "intentos": 0}
             for campo in ("entrada", "salida", "total", "cache_lectura"):
-                acum[campo] += u.get(campo) or 0
-                total[campo] += u.get(campo) or 0
+                val = u.get(campo) or 0
+                acum[campo] += val
+                total[campo] += val
+                por_runtime[rt][campo] += val
             acum["intentos"] += 1
             total["intentos"] += 1
+            por_runtime[rt]["intentos"] += 1
             if u.get("costo_usd") is not None:
-                acum["costo_usd"] = (acum["costo_usd"] or 0) + u["costo_usd"]
-                total["costo_usd"] += u["costo_usd"]
+                cost = u["costo_usd"]
+                acum["costo_usd"] = (acum["costo_usd"] or 0) + cost
+                total["costo_usd"] += cost
                 total["con_costo"] += 1
+                por_runtime[rt]["costo_usd"] += cost
+                por_runtime[rt]["con_costo"] += 1
             else:
                 # Sin costo NO es cero: es un backend que corre por suscripcion
                 # y no informa medidor. Contarlo como 0 mentiria el promedio.
                 total["sin_costo"] += 1
+                por_runtime[rt]["sin_costo"] += 1
         if acum:
             por_nodo[t.id] = acum
-    return {"total": total, "por_nodo": por_nodo, "tope_usd": tope,
+    return {"total": total, "por_nodo": por_nodo, "por_runtime": por_runtime, "tope_usd": tope,
             "corriendo": board in _corriendo}
 
 
@@ -1250,6 +1299,7 @@ def _arrancar(board: str, tope_usd: float = None) -> dict:
 
     _parar.discard(board)          # un arranque anterior pudo dejarlo marcado
     _topes[board] = tope_usd       # None = esta corrida va sin tope
+    _hermes_en_vuelo[board] = en_vuelo
 
     def _correr():
         try:
@@ -2063,10 +2113,8 @@ class Handler(BaseHTTPRequestHandler):
                 })
             if self.path == "/api/parar":
                 board = cuerpo.get("board", "orquester")
-                vivo = board in _corriendo
-                _parar.add(board)
-                return self._responder(200, {"ok": vivo, "motivo":
-                                             "" if vivo else "no hay nada corriendo en este board"})
+                res = _parar_board(board)
+                return self._responder(200, res)
             if self.path == "/api/correr":
                 tope = cuerpo.get("presupuesto_usd")
                 try:

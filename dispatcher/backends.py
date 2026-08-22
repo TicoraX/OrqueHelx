@@ -11,8 +11,34 @@ Las reglas de abajo salieron de la fase de verificacion, no del gusto:
     invoque el binario y que no)
   - denylist de flags de bypass de permisos
 """
-import json, os, re, shutil, subprocess, tempfile
+import json, os, re, shutil, subprocess, tempfile, threading
 from pathlib import Path
+
+_PROCESOS_LOCK = threading.Lock()
+_PROCESOS_ACTIVOS: set[subprocess.Popen] = set()
+
+def registrar_proceso(p: subprocess.Popen):
+    with _PROCESOS_LOCK:
+        _PROCESOS_ACTIVOS.add(p)
+
+def desregistrar_proceso(p: subprocess.Popen):
+    with _PROCESOS_LOCK:
+        _PROCESOS_ACTIVOS.discard(p)
+
+def matar_procesos_activos():
+    """Interrumpir inmediatamente todos los subprocesos de agentes externos en ejecución."""
+    with _PROCESOS_LOCK:
+        procs = list(_PROCESOS_ACTIVOS)
+    for p in procs:
+        try:
+            if p.poll() is None:
+                p.terminate()
+                try:
+                    p.kill()
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
 # SS5: jsonschema es dependencia DURA, y por eso se importa aca arriba. Estaba
 # adentro de `_validar`, y cuando faltaba el ModuleNotFoundError salia envuelto
@@ -464,16 +490,26 @@ def _correr(runtime: str, argv: list[str], *, timeout: int, cwd: str = None):
     if prohibidos:
         raise ErrorPermanente(f"flags de bypass prohibidos: {sorted(prohibidos)}")
     try:
-        return subprocess.run(
-            _resolver_argv(argv), capture_output=True, text=True, timeout=timeout,
-            encoding="utf-8", errors="replace",
-            # stdin cerrado, SIEMPRE. Sin esto el CLI hereda el stdin del padre
-            # y puede quedarse leyendolo — y cuando el padre es el servidor MCP,
-            # ese stdin **es el canal JSON-RPC**: el agente se come los mensajes
-            # del protocolo y las dos partes se cuelgan. Verificado: opencode
-            # responde en 9s suelto y colgaba >600s lanzado desde el servidor.
+        proc = subprocess.Popen(
+            _resolver_argv(argv),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
             stdin=subprocess.DEVNULL,
             cwd=cwd,
+        )
+        registrar_proceso(proc)
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        finally:
+            desregistrar_proceso(proc)
+        return subprocess.CompletedProcess(
+            args=argv,
+            returncode=proc.returncode,
+            stdout=stdout or "",
+            stderr=stderr or "",
         )
     except OSError as e:
         # OSError y no solo FileNotFoundError: un `cwd` inexistente tira
@@ -481,6 +517,11 @@ def _correr(runtime: str, argv: list[str], *, timeout: int, cwd: str = None):
         # mataba el tick entero por un nodo mal configurado.
         raise ErrorPermanente(f"no se pudo lanzar {runtime}: {e}") from e
     except subprocess.TimeoutExpired as e:
+        try:
+            proc.kill()
+            proc.communicate()
+        except Exception:
+            pass
         raise BackendError(f"{runtime} excedio {timeout}s") from e
 
 

@@ -214,7 +214,7 @@
     border: 1px solid var(--linea); border-radius: var(--radio);
     padding: 3px 6px; box-shadow: 0 4px 12px rgba(0, 0, 0, .4);
   }
-  body.modo-zen #barraCanvasFlotante { right: 16px; left: auto; top: 12px; }
+  body.modo-zen #barraCanvasFlotante { left: 12px; top: 12px; }
 
   /* Velo de arrastre. Sin una senal visible, soltar algo sobre la ventana es
      una apuesta: no sabes si te va a escuchar. Se pinta sobre todo, incluso
@@ -342,6 +342,11 @@
     background: #191e2b;
     transform: translateY(-1px);
   }
+  .card-intencion.seleccionada {
+    border-color: var(--acento);
+    background: #182233;
+    box-shadow: 0 0 0 1px var(--acento);
+  }
   .card-intencion b {
     font-size: 12.5px;
     color: var(--texto);
@@ -428,6 +433,7 @@
     </div>
   </div>
   <div style="display:flex; align-items:center; gap:8px;">
+    <button id="btnAbrirCuotas" style="width:auto; padding:4px 10px; font-size:11.5px; background:var(--control); border:1px solid var(--linea); color:var(--texto); border-radius:var(--radio); cursor:pointer;">Cuotas & Modelos</button>
     <div class="modo-selector">
       <button id="btnModoApp" class="btn-modo activo">App</button>
       <button id="btnModoStudio" class="btn-modo">Studio</button>
@@ -462,42 +468,32 @@
       </div>
     </div>
 
-    <!-- Card 2: Intenciones Rápidas (1-Click) -->
+    <!-- Card 2: Intenciones Rápidas & Plantillas -->
     <div class="seccion-card">
-      <h2 style="margin:0 0 4px;">2. ¿Qué querés correr en este proyecto?</h2>
-      <p class="ayuda" style="margin:0 0 10px;">Elegí una acción rápida o escribí un objetivo abajo. ORQUESTER orquesta los agentes en segundo plano.</p>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+        <h2 style="margin:0;">2. ¿Qué querés correr en este proyecto?</h2>
+        <span id="txtInfoPaginacionPlantillas" class="tenue" style="font-size:11px;">Página 1 de 2</span>
+      </div>
+      <p class="ayuda" style="margin:0 0 10px;">Elegí una plantilla para precargar el objetivo o escribí uno personalizado abajo. ORQUESTER orquesta los agentes al presionar <b>Orquestar</b>.</p>
       
-      <div class="grid-intenciones">
-        <div class="card-intencion" data-intencion="seguridad" tabindex="0" role="button">
-          <b>Auditoría de Seguridad</b>
-          <p>Auditoría de dependencias y código: escanea fallos conocidos, busca patrones inseguros y propone parches con Strix.</p>
-        </div>
-        <div class="card-intencion" data-intencion="web" tabindex="0" role="button">
-          <b>Diseño Web Deliberate</b>
-          <p>Página o componente web: maquetado HTML/CSS con tokens, verificación de accesibilidad y captura en navegador.</p>
-        </div>
-        <div class="card-intencion" data-intencion="refactor" tabindex="0" role="button">
-          <b>Refactor y Poda YAGNI</b>
-          <p>Simplificación de código: busca duplicaciones y complejidad innecesaria, aplica Ponytail y corre la suite de tests.</p>
-        </div>
-        <div class="card-intencion" data-intencion="feature" tabindex="0" role="button">
-          <b>Pipeline de Feature</b>
-          <p>Ciclo completo: especificación de contrato, backend seguro, frontend reactivo, QA y documentación.</p>
-        </div>
-        <div class="card-intencion" data-intencion="diff" tabindex="0" role="button">
-          <b>Revisión de Cambios</b>
-          <p>Análisis en paralelo de bugs, cobertura de tests, seguridad y alcance antes de mergear.</p>
-        </div>
-        <div class="card-intencion" data-intencion="explicar" tabindex="0" role="button">
-          <b>Explicar Arquitectura</b>
-          <p>Mapeo de módulos, dependencias de código y flujo de datos del repositorio.</p>
-        </div>
+      <div id="gridIntencionesApp" class="grid-intenciones"></div>
+
+      <div id="paginacionPlantillasApp" style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; border-top:1px solid var(--linea); padding-top:8px;">
+        <button id="btnPaginaAntPlantillas" style="width:auto; font-size:11.5px; padding:3px 10px;" disabled>← Anterior</button>
+        <span id="txtEstadoPaginacionPlantillas" class="dato tenue">1 / 2 (9 plantillas)</span>
+        <button id="btnPaginaSigPlantillas" style="width:auto; font-size:11.5px; padding:3px 10px;">Siguiente →</button>
       </div>
     </div>
 
-    <!-- Card 3: Chat / Objetivo Libre -->
+    <!-- Card 3: Objetivo para los Agentes -->
     <div class="seccion-card">
-      <h2 style="margin:0 0 6px;">3. O escribí un objetivo personalizado</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <h2 style="margin:0;">3. Objetivo para los Agentes</h2>
+        <div id="badgePlantillaSeleccionada" style="display:none; align-items:center; gap:6px; font-size:11px; background:#182438; border:1px solid var(--acento); color:var(--acento-claro); padding:2px 8px; border-radius:4px;">
+          <span>Plantilla: <b id="txtNombrePlantillaSeleccionada" class="dato"></b></span>
+          <button id="btnQuitarPlantilla" style="width:auto; border:none; background:transparent; color:var(--peligro-texto); cursor:pointer; padding:0; font-size:12px; line-height:1;" title="Quitar plantilla">✕</button>
+        </div>
+      </div>
       <div style="display:flex; gap:8px;">
         <input id="inputPromptApp" placeholder="Ej: Auditar el módulo de autenticación y agregar tests unitarios para casos borde..." style="font-size:13px;" />
         <button id="btnEjecutarPromptApp" class="primario" style="width:auto; white-space:nowrap; padding:6px 16px; font-size:12.5px;">Orquestar</button>
@@ -511,7 +507,10 @@
           <h2 style="margin:0; color:var(--acento);">Ejecución en Curso: <span id="appBoardTitulo" class="dato" style="color:#fff;">-</span></h2>
           <div id="appProgresoSubtxt" style="font-size:11.5px; color:var(--tenue); margin-top:2px;">Iniciando agentes...</div>
         </div>
-        <button id="btnVerEnStudio" style="width:auto; font-size:11.5px; padding:3px 10px; background:#223042;">Ver en Studio ↗</button>
+        <div style="display:flex; gap:6px;">
+          <button id="btnPararApp" class="peligro" style="width:auto; font-size:11.5px; padding:3px 10px;">Parar</button>
+          <button id="btnVerEnStudio" style="width:auto; font-size:11.5px; padding:3px 10px; background:#223042;">Ver en Studio ↗</button>
+        </div>
       </div>
 
       <!-- Barra de progreso -->
@@ -859,6 +858,46 @@
     <div style="padding:16px; overflow:auto; flex:1;">
       <div id="modalEntregableRender" style="font-size:12.5px; line-height:1.6; color:var(--texto);"></div>
       <pre id="modalEntregableTexto" style="display:none; margin:0; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; white-space:pre-wrap; color:var(--texto); line-height:1.5;"></pre>
+    </div>
+  </div>
+</div>
+
+<div id="modalCuotas" role="dialog" aria-modal="true" aria-labelledby="modalCuotasTitulo" tabindex="-1" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.75); z-index:100; align-items:center; justify-content:center; padding:24px;">
+  <div style="background:var(--panel); border:1px solid var(--linea); border-radius:var(--radio); width:90vw; max-width:760px; max-height:85vh; display:flex; flex-direction:column; box-shadow:0 16px 48px rgba(0,0,0,0.6);">
+    <div style="padding:12px 16px; border-bottom:1px solid var(--linea); display:flex; justify-content:space-between; align-items:center;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <b id="modalCuotasTitulo" style="font-size:14px;">Cuotas, Modelos y Consumo</b>
+        <span id="badgeCuotasBoard" class="dato" style="font-size:11px; color:var(--acento); background:var(--hundido); padding:2px 8px; border-radius:4px;"></span>
+      </div>
+      <button id="btnCerrarModalCuotas" style="width:auto; padding:3px 9px; font-size:11.5px;">Cerrar (Esc)</button>
+    </div>
+    <div style="padding:16px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:16px;">
+      <!-- Resumen global -->
+      <div id="cuotasResumenGlobal" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:8px;"></div>
+      <!-- Desglose por modelo / runtime -->
+      <div>
+        <h2 style="margin:0 0 8px; color:var(--tenue); font-size:11px; text-transform:uppercase; letter-spacing:.08em;">Modelos y Runtimes</h2>
+        <div id="cuotasPorRuntime" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px;"></div>
+      </div>
+      <!-- Ajuste de Presupuesto / Tope -->
+      <div style="background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <div>
+            <b style="font-size:12.5px;">Tope de Presupuesto Global</b>
+            <div style="font-size:11px; color:var(--tenue);">Límite en USD para frenar automáticamente la ejecución de nodos nuevos.</div>
+          </div>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <span style="font-size:12px; color:var(--tenue);">US$</span>
+            <input id="inputTopePresupuestoCuotas" type="number" step="0.10" min="0" placeholder="Sin límite" style="width:100px; padding:4px 8px; font-size:12px;" />
+            <button id="btnGuardarTopeCuotas" style="width:auto; padding:4px 10px; font-size:12px;">Aplicar</button>
+          </div>
+        </div>
+      </div>
+      <!-- Estado de Secretos / Credenciales -->
+      <div>
+        <h2 style="margin:0 0 8px; color:var(--tenue); font-size:11px; text-transform:uppercase; letter-spacing:.08em;">Estado de Credenciales y Claves API</h2>
+        <div id="cuotasEstadoSecretos" style="display:flex; flex-direction:column; gap:4px; font-size:11.5px;"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -1818,6 +1857,11 @@ document.addEventListener("keydown", e => {
 
   // Deseleccionar o cerrar modal (Escape)
   if (e.key === "Escape") {
+    if ($("#modalCuotas") && $("#modalCuotas").style.display === "flex") {
+      e.preventDefault();
+      $("#modalCuotas").style.display = "none";
+      return;
+    }
     if ($("#modalEntregable") && $("#modalEntregable").style.display === "flex") {
       e.preventDefault();
       cerrarModalEntregable();
@@ -2087,9 +2131,9 @@ $("#correr").onclick = async () => {
 
 $("#parar").onclick = async () => {
   const { datos } = await api("/api/parar", { board: grafo.board });
-  avisar(datos.ok ? "Pedido de parada: no arranca nodos nuevos. Lo que ya está " +
-                    "corriendo termina y cierra su card."
+  avisar(datos.ok ? "Ejecución detenida: subprocesos cancelados y tareas en vuelo bloqueadas."
                   : datos.motivo, datos.ok ? "ok" : "error");
+  sondearEstado();
 };
 
 let CONFIG_MCP = "";
@@ -3091,20 +3135,109 @@ async function lanzarOrquestacionApp(intencion, promptTexto) {
   monitorearProgresoApp(datos.board);          // sin esperar los primeros 2s
 }
 
-document.querySelectorAll(".card-intencion").forEach(card => {
-  card.onclick = () => {
+// Catálogo de plantillas para modo App con paginación
+const PLANTILLAS_CATALOGO = [
+  { id: "seguridad", nom: "Auditoría de Seguridad", desc: "Auditoría de dependencias y código: escanea fallos conocidos, busca patrones inseguros y propone parches con Strix.", prompt: "Auditar la seguridad del proyecto: dependencias, escaneo SAST de código y propuesta de correcciones con Strix." },
+  { id: "web", nom: "Diseño Web Deliberate", desc: "Página o componente web: maquetado HTML/CSS con tokens, verificación de accesibilidad y captura en navegador.", prompt: "Construir y pulir interfaz web con tokens de diseño Deliberate, verificación visual y accesibilidad." },
+  { id: "refactor", nom: "Refactor y Poda YAGNI", desc: "Simplificación de código: busca duplicaciones y complejidad innecesaria, aplica Ponytail y corre la suite de tests.", prompt: "Simplificar y podar complejidad innecesaria en el código con Ponytail y verificar con tests." },
+  { id: "feature", nom: "Pipeline de Feature", desc: "Ciclo completo: especificación de contrato, backend seguro, frontend reactivo, QA y documentación.", prompt: "Implementar una feature completa con especificación, backend, interfaz de usuario y pruebas de regresión." },
+  { id: "diff", nom: "Revisión de Cambios", desc: "Análisis en paralelo de bugs, cobertura de tests, seguridad y alcance antes de mergear.", prompt: "Revisar los últimos cambios del repositorio, verificar cobertura de tests y detectar posibles regresiones." },
+  { id: "explicar", nom: "Explicar Arquitectura", desc: "Mapeo de módulos, dependencias de código y flujo de datos del repositorio.", prompt: "Analizar la estructura del proyecto y generar un mapa claro de arquitectura y módulos principales." },
+  { id: "triage-de-bug", nom: "Triage y Depuración de Bug", desc: "Investigación sistemática de causa raíz, análisis de stack trace y prueba de regresión.", prompt: "Investigar la causa raíz del bug reportado, aislar la falla y preparar un fix reproducible." },
+  { id: "segunda-opinion", nom: "Segunda Opinión / Desafío", desc: "Revisión adversarial del diseño o código para encontrar puntos ciegos y casos borde.", prompt: "Desafiar las decisiones de arquitectura del código en busca de casos borde, fallos de escala y suposiciones débiles." },
+  { id: "documentar-cambios", nom: "Documentar Cambios y Release", desc: "Actualización post-cambio: documentación Diataxis, sincronización de README y notas de versión.", prompt: "Generar y actualizar la documentación técnica, guías y notas de cambios del proyecto." }
+];
+
+let PLANTILLA_SELECCIONADA = null;
+let PAGINA_ACTUAL_PLANTILLAS = 0;
+const PLANTILLAS_POR_PAGINA = 6;
+
+function renderizarPlantillasApp() {
+  const cont = $("#gridIntencionesApp");
+  if (!cont) return;
+  const total = PLANTILLAS_CATALOGO.length;
+  const totalPaginas = Math.ceil(total / PLANTILLAS_POR_PAGINA) || 1;
+  if (PAGINA_ACTUAL_PLANTILLAS >= totalPaginas) PAGINA_ACTUAL_PLANTILLAS = totalPaginas - 1;
+  if (PAGINA_ACTUAL_PLANTILLAS < 0) PAGINA_ACTUAL_PLANTILLAS = 0;
+
+  const inicio = PAGINA_ACTUAL_PLANTILLAS * PLANTILLAS_POR_PAGINA;
+  const pagina = PLANTILLAS_CATALOGO.slice(inicio, inicio + PLANTILLAS_POR_PAGINA);
+
+  cont.innerHTML = pagina.map(p => {
+    const sel = (PLANTILLA_SELECCIONADA === p.id) ? " seleccionada" : "";
+    return `<div class="card-intencion${sel}" data-intencion="${esc(p.id)}" tabindex="0" role="button">
+      <b>${esc(p.nom)}</b>
+      <p>${esc(p.desc)}</p>
+    </div>`;
+  }).join("");
+
+  $("#txtInfoPaginacionPlantillas").textContent = `Página ${PAGINA_ACTUAL_PLANTILLAS + 1} de ${totalPaginas}`;
+  $("#txtEstadoPaginacionPlantillas").textContent = `${PAGINA_ACTUAL_PLANTILLAS + 1} / ${totalPaginas} (${total} plantillas)`;
+  $("#btnPaginaAntPlantillas").disabled = (PAGINA_ACTUAL_PLANTILLAS === 0);
+  $("#btnPaginaSigPlantillas").disabled = (PAGINA_ACTUAL_PLANTILLAS >= totalPaginas - 1);
+
+  cont.querySelectorAll(".card-intencion").forEach(card => {
     const it = card.getAttribute("data-intencion");
-    lanzarOrquestacionApp(it, "");
-  };
-  card.onkeydown = e => {
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); card.click(); }
-  };
-});
+    const item = PLANTILLAS_CATALOGO.find(x => x.id === it);
+    const seleccionar = () => {
+      PLANTILLA_SELECCIONADA = it;
+      renderizarPlantillasApp();
+      if (item) {
+        $("#inputPromptApp").value = item.prompt;
+        $("#txtNombrePlantillaSeleccionada").textContent = item.nom;
+        $("#badgePlantillaSeleccionada").style.display = "inline-flex";
+      }
+      $("#inputPromptApp").focus();
+    };
+    card.onclick = seleccionar;
+    card.onkeydown = e => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); seleccionar(); }
+    };
+  });
+}
+
+$("#btnPaginaAntPlantillas").onclick = () => {
+  if (PAGINA_ACTUAL_PLANTILLAS > 0) {
+    PAGINA_ACTUAL_PLANTILLAS--;
+    renderizarPlantillasApp();
+  }
+};
+
+$("#btnPaginaSigPlantillas").onclick = () => {
+  const totalPaginas = Math.ceil(PLANTILLAS_CATALOGO.length / PLANTILLAS_POR_PAGINA);
+  if (PAGINA_ACTUAL_PLANTILLAS < totalPaginas - 1) {
+    PAGINA_ACTUAL_PLANTILLAS++;
+    renderizarPlantillasApp();
+  }
+};
+
+$("#btnQuitarPlantilla").onclick = () => {
+  PLANTILLA_SELECCIONADA = null;
+  $("#badgePlantillaSeleccionada").style.display = "none";
+  renderizarPlantillasApp();
+};
 
 $("#btnEjecutarPromptApp").onclick = () => {
   const p = ($("#inputPromptApp").value || "").trim();
   if (!p) return avisar("Escribí un objetivo para orquestar.", "error");
-  lanzarOrquestacionApp("custom", p);
+  lanzarOrquestacionApp(PLANTILLA_SELECCIONADA || "custom", p);
+};
+
+$("#inputPromptApp").onkeydown = e => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    $("#btnEjecutarPromptApp").click();
+  }
+};
+
+$("#btnPararApp").onclick = async () => {
+  if (!grafo || !grafo.board) return;
+  const { datos } = await api("/api/parar", { board: grafo.board });
+  if (APP_INTERVAL_ID) { clearInterval(APP_INTERVAL_ID); APP_INTERVAL_ID = null; }
+  $("#appProgresoSubtxt").textContent = "Ejecución detenida por el usuario.";
+  avisar(datos.ok ? "Ejecución detenida: subprocesos cancelados y tareas bloqueadas." : datos.motivo,
+         datos.ok ? "ok" : "tibio");
+  monitorearProgresoApp(grafo.board);
 };
 
 async function monitorearProgresoApp(board) {
@@ -3185,8 +3318,119 @@ $("#btnReporteAuditApp").onclick = () => {
   $("#btnGenerarReporte").click();
 };
 
-// Inicialización de modo guardado
+// Modal Cuotas, Modelos y Consumo
+async function cargarCuotasYModelos() {
+  const b = (grafo && grafo.board) ? grafo.board : "orquester";
+  $("#badgeCuotasBoard").textContent = `Board: ${b}`;
+  
+  const [{ ok: okCons, datos: datosCons }, { ok: okSec, datos: datosSec }, { ok: okCap, datos: datosCap }] = await Promise.all([
+    api(`/api/consumo?board=${encodeURIComponent(b)}`),
+    api("/api/secretos-status"),
+    api("/api/capacidades")
+  ]);
+
+  // Resumen global
+  const tot = (datosCons && datosCons.total) || { entrada: 0, salida: 0, total: 0, costo_usd: 0, intentos: 0 };
+  const tope = (datosCons && datosCons.tope_usd !== undefined && datosCons.tope_usd !== null) ? datosCons.tope_usd : "";
+  $("#inputTopePresupuestoCuotas").value = tope !== "" ? tope : "";
+  
+  const resCont = $("#cuotasResumenGlobal");
+  resCont.innerHTML = `
+    <div style="background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:10px;">
+      <div style="font-size:11px; color:var(--tenue);">Tokens Entrada</div>
+      <b class="dato" style="font-size:14px; color:var(--texto);">${Number(tot.entrada || 0).toLocaleString()}</b>
+    </div>
+    <div style="background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:10px;">
+      <div style="font-size:11px; color:var(--tenue);">Tokens Salida</div>
+      <b class="dato" style="font-size:14px; color:var(--texto);">${Number(tot.salida || 0).toLocaleString()}</b>
+    </div>
+    <div style="background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:10px;">
+      <div style="font-size:11px; color:var(--tenue);">Costo Acumulado</div>
+      <b class="dato" style="font-size:14px; color:var(--acento);">${tot.costo_usd ? 'US$ ' + tot.costo_usd.toFixed(4) : 'Plan / Gratis'}</b>
+    </div>
+    <div style="background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:10px;">
+      <div style="font-size:11px; color:var(--tenue);">Ejecuciones / Nodos</div>
+      <b class="dato" style="font-size:14px; color:var(--texto);">${tot.intentos || 0}</b>
+    </div>
+  `;
+
+  // Desglose por Runtime
+  const rtCont = $("#cuotasPorRuntime");
+  const runtimesConocidos = ["claude-code", "opencode", "hermes", "antigravity"];
+  const desgloseRt = (datosCons && datosCons.por_runtime) || {};
+  const caps = (datosCap && datosCap.runtimes) || {};
+
+  rtCont.innerHTML = runtimesConocidos.map(rt => {
+    const uso = desgloseRt[rt] || { entrada: 0, salida: 0, costo_usd: 0, intentos: 0 };
+    const cap = caps[rt] || { instalado: false };
+    const estadoInst = cap.instalado 
+      ? '<span style="color:var(--done); font-size:10.5px;">● Instalado</span>' 
+      : '<span style="color:var(--tenue); font-size:10.5px;">○ No detectado</span>';
+    const costoTxt = uso.costo_usd > 0 
+      ? `US$ ${uso.costo_usd.toFixed(4)}` 
+      : (uso.intentos > 0 ? 'Suscripción / N/A' : '-');
+    return `
+      <div style="background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:10px; display:flex; flex-direction:column; gap:4px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <b style="font-size:12.5px;">${esc(rt)}</b>
+          ${estadoInst}
+        </div>
+        <div style="font-size:11px; color:var(--tenue);">
+          Tokens: <span class="dato" style="color:var(--texto);">${(uso.entrada + uso.salida).toLocaleString()}</span>
+        </div>
+        <div style="font-size:11px; color:var(--tenue);">
+          Costo: <b class="dato" style="color:var(--acento);">${costoTxt}</b> · Intentos: <span class="dato" style="color:var(--texto);">${uso.intentos}</span>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  // Estado de Secretos / Credenciales
+  const secCont = $("#cuotasEstadoSecretos");
+  if (okSec && datosSec && datosSec.proveedores) {
+    secCont.innerHTML = Object.entries(datosSec.proveedores).map(([k, v]) => {
+      const okBadge = v.ok 
+        ? '<span style="color:var(--done); font-weight:600;">✓ Configurada</span>' 
+        : '<span style="color:var(--tenue);">No configurada</span>';
+      return `<div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.03);">
+        <span><b class="dato">${esc(k)}</b> <span style="color:var(--tenue); font-size:10.5px;">(${esc(v.variables?.join(", ") || "")})</span></span>
+        ${okBadge}
+      </div>`;
+    }).join("");
+  } else {
+    secCont.innerHTML = '<div class="d">No se pudo consultar el estado de secretos.</div>';
+  }
+}
+
+$("#btnAbrirCuotas").onclick = () => {
+  $("#modalCuotas").style.display = "flex";
+  $("#modalCuotas").focus();
+  cargarCuotasYModelos();
+};
+
+$("#btnCerrarModalCuotas").onclick = () => {
+  $("#modalCuotas").style.display = "none";
+};
+
+$("#modalCuotas").onclick = e => {
+  if (e.target === $("#modalCuotas")) $("#modalCuotas").style.display = "none";
+};
+
+$("#btnGuardarTopeCuotas").onclick = async () => {
+  const val = ($("#inputTopePresupuestoCuotas").value || "").trim();
+  const num = val === "" ? null : parseFloat(val);
+  if (num !== null && (isNaN(num) || num <= 0)) {
+    return avisar("El tope debe ser un número positivo mayor a 0.", "error");
+  }
+  grafo.presupuesto_usd = num;
+  anotar();
+  await api("/api/grafo", grafo);
+  avisar(num !== null ? `Tope de presupuesto fijado en US$ ${num.toFixed(2)}.` : "Tope de presupuesto eliminado (sin límite).", "ok");
+};
+
+// Inicialización de modo guardado y catálogo de plantillas
 const modoInicial = localStorage.getItem("orquester_modo") || "app";
 cambiarModoVista(modoInicial);
 renderRecientesWs();
+renderizarPlantillasApp();
 </script>
