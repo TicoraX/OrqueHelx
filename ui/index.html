@@ -547,9 +547,20 @@
     </pattern>
   </defs>
   <rect width="100000" height="100000" x="-50000" y="-50000" fill="url(#grid)" pointer-events="none"></rect>
-  <g id="aristas"></g><g id="nodos"></g><path id="fantasma" stroke="#5b9dd9"
-     stroke-dasharray="4 3" fill="none"></path>
+  <g id="aristas"></g><g id="nodos"></g>
+  <path id="fantasma" stroke="#5b9dd9" stroke-dasharray="4 3" fill="none"></path>
+  <rect id="boxSelect" style="display:none; fill:rgba(91,157,217,0.15); stroke:var(--acento); stroke-dasharray:4 4; stroke-width:1.5; pointer-events:none;"></rect>
 </svg>
+
+<div id="busquedaCanvas" style="display:none; position:fixed; top:16px; left:20px; background:var(--panel); border:1px solid var(--acento); border-radius:6px; padding:6px 10px; z-index:95; box-shadow:0 8px 24px rgba(0,0,0,0.6); align-items:center; gap:8px;">
+  <input id="inputBusquedaCanvas" type="text" placeholder="Buscar en lienzo... (Enter centra, Esc cierra)" style="border:none; background:transparent; color:var(--texto); font-size:12px; outline:none; width:220px; padding:2px;" autocomplete="off" />
+  <span id="cantBusquedaCanvas" style="font-size:10.5px; color:var(--tenue); font-family:var(--mono);"></span>
+  <button id="btnCerrarBusquedaCanvas" style="width:auto; border:none; background:transparent; color:var(--tenue); font-size:11px; padding:0 4px; cursor:pointer;">✕</button>
+</div>
+
+<div id="minimapaBox" style="position:fixed; bottom:16px; right:356px; width:150px; height:100px; background:rgba(20,23,32,0.85); border:1px solid var(--linea); border-radius:6px; overflow:hidden; z-index:80; pointer-events:none; box-shadow:0 4px 16px rgba(0,0,0,0.4);">
+  <svg id="minimapaSvg" style="width:100%; height:100%; display:block;"></svg>
+</div>
 
 <div id="barraCanvasFlotante">
   <button id="btnZoomIn" title="Acercar zoom" style="font-size:12px; padding:3px 8px; width:auto; font-weight:bold;">+</button>
@@ -1076,12 +1087,40 @@ $("#btnModoZen").onclick = () => {
 // `pintar` corre mucho antes: con el `let` más abajo es zona muerta temporal.
 let SESION_IA = null;
 
-// --- Deshacer ------------------------------------------------------------
+// --- Deshacer / Rehacer Bidireccional & Multi-Selección ------------------
 let pila = [];
+let pilaRehacer = [];
+const selGroup = new Set();
+let boxSelect = null;
+
 const anotar = () => {
-  pila.push(JSON.stringify({ nodos:grafo.nodos, aristas:grafo.aristas }));
+  pila.push(JSON.stringify({ nodos: grafo.nodos, aristas: grafo.aristas, titulo: grafo.titulo, board: grafo.board }));
   if (pila.length > 60) pila.shift();
+  pilaRehacer.length = 0;
 };
+
+function deshacer() {
+  const previo = pila.pop();
+  if (!previo) return;
+  pilaRehacer.push(JSON.stringify({ nodos: grafo.nodos, aristas: grafo.aristas, titulo: grafo.titulo, board: grafo.board }));
+  Object.assign(grafo, JSON.parse(previo));
+  if (sel && !buscar(sel)) sel = null;
+  selGroup.clear();
+  refrescarEditor(); pintar(); refrescarParams();
+  avisar("Deshecho (Ctrl+Z)", "ok");
+}
+
+function rehacer() {
+  const siguiente = pilaRehacer.pop();
+  if (!siguiente) return;
+  pila.push(JSON.stringify({ nodos: grafo.nodos, aristas: grafo.aristas, titulo: grafo.titulo, board: grafo.board }));
+  Object.assign(grafo, JSON.parse(siguiente));
+  if (sel && !buscar(sel)) sel = null;
+  selGroup.clear();
+  refrescarEditor(); pintar(); refrescarParams();
+  avisar("Rehecho (Ctrl+Y)", "ok");
+}
+
 const nuevoId = () => "n" + Math.random().toString(36).slice(2, 7);
 const buscar = id => grafo.nodos.find(n => n.id === id);
 
@@ -1130,6 +1169,8 @@ function pintar() {
   const gn = $("#nodos"), ga = $("#aristas");
   gn.innerHTML = ""; ga.innerHTML = "";
 
+  const conectados = new Set(grafo.aristas.flatMap(x => [x[0], x[1]]));
+
   for (const [p, h] of grafo.aristas) {
     const a = buscar(p), b = buscar(h);
     if (!a || !b) continue;
@@ -1159,25 +1200,32 @@ function pintar() {
   }
 
   for (const n of grafo.nodos) {
-    // Una nota no se ejecuta: no tiene estado, no tiene color de ejecutor y no
-    // se pinta como algo que este por correr.
     const nota = n.tipo === "nota";
     const gate = n.tipo === "gate" || n.tipo === "aprobacion";
     const est = nota ? null : estado[ids[n.id]]?.estado;
+    const esSel = sel === n.id || selGroup.has(n.id);
+    const esAislado = !nota && grafo.nodos.length > 1 && !conectados.has(n.id);
+
     const g = document.createElementNS(svg.namespaceURI, "g");
-    g.setAttribute("class", "nodo" + (sel === n.id ? " sel" : "") +
+    g.setAttribute("class", "nodo" + (esSel ? " sel" : "") +
                             (arrastre && arrastre.id === n.id ? " arrastrando" : ""));
+    g.setAttribute("data-id", n.id);
     g.setAttribute("data-estado", est || "");
     g.setAttribute("transform", `translate(${n.x},${n.y})`);
 
     const r = document.createElementNS(svg.namespaceURI, "rect");
-    // La nota es mas alta y mas ancha: es texto para leer, no una etiqueta.
     const ancho = nota ? A * 1.35 : A, alto = nota ? ALTO * 1.9 : ALTO;
     r.setAttribute("width", ancho); r.setAttribute("height", alto); r.setAttribute("rx", "8");
     r.setAttribute("fill", est ? COLOR[est] || "#4a5160" : (nota ? "#1b1f2a" : (gate ? "#251e2b" : "#252a34")));
-    r.setAttribute("stroke", nota ? "#5c6478" : (gate ? "#e5c07b" : (RT_COLOR[n.runtime] || "#8e9aab")));
+    
+    let strokeColor = nota ? "#5c6478" : (gate ? "#e5c07b" : (RT_COLOR[n.runtime] || "#8e9aab"));
+    if (esAislado && !est) strokeColor = "#e5c07b";
+    r.setAttribute("stroke", strokeColor);
+
     if (nota) r.setAttribute("stroke-dasharray", "5 3");
-    if (gate && !est) r.setAttribute("stroke-dasharray", "4 2");
+    else if (esAislado && !est) r.setAttribute("stroke-dasharray", "4 3");
+    else if (gate && !est) r.setAttribute("stroke-dasharray", "4 2");
+
     g.appendChild(r);
 
     for (const [i, linea] of envolver(n.titulo || "(sin título)",
@@ -1197,40 +1245,80 @@ function pintar() {
     rt.setAttribute("fill", est ? tinta(est) : (gate ? "#e5c07b" : (RT_COLOR[n.runtime] || "#8e9aab")));
     rt.setAttribute("font-size", "10.5");
     rt.setAttribute("opacity", est ? "0.85" : "1");
-    rt.textContent = gate ? "gate (humano)" + (est ? " · " + est : "")
-                          : (n.runtime + (n.modelo ? " · " + n.modelo : "") +
-                             (n.esfuerzo ? " · " + n.esfuerzo : "") + (est ? " · " + est : ""));
+    
+    let etiqueta = gate ? "gate (humano)" : n.runtime;
+    if (esAislado && !est) etiqueta += " · [aislado]";
+    else if (n.modelo) etiqueta += " · " + n.modelo;
+    if (n.esfuerzo) etiqueta += " · " + n.esfuerzo;
+    if (est) etiqueta += " · " + est;
+
+    rt.textContent = etiqueta;
     g.appendChild(rt);
 
     seguirNodo(g, n);
     gn.appendChild(g);
   }
   $("#resumen").textContent = resumir();
-  verBotonRefinar();          // un solo punto: `pintar` corre en cada cambio
+  verBotonRefinar();
+  actualizarMinimapa();
+}
+
+function actualizarMinimapa() {
+  const mini = $("#minimapaSvg");
+  if (!mini || !grafo.nodos.length) return;
+  const v = vistaActual();
+  const x0 = Math.min(...grafo.nodos.map(n => n.x)) - 100;
+  const y0 = Math.min(...grafo.nodos.map(n => n.y)) - 100;
+  const x1 = Math.max(...grafo.nodos.map(n => n.x + A)) + 100;
+  const y1 = Math.max(...grafo.nodos.map(n => n.y + ALTO)) + 100;
+  const gw = Math.max(x1 - x0, 800), gh = Math.max(y1 - y0, 600);
+  mini.setAttribute("viewBox", `${x0} ${y0} ${gw} ${gh}`);
+  
+  const rects = grafo.nodos.map(n => {
+    const esSel = sel === n.id || selGroup.has(n.id);
+    return `<rect x="${n.x}" y="${n.y}" width="${A}" height="${ALTO}" rx="6" fill="${esSel ? 'var(--acento)' : '#333a47'}" />`;
+  }).join("");
+
+  const viewRect = `<rect x="${v.x}" y="${v.y}" width="${v.w}" height="${v.h}" fill="rgba(91,157,217,0.12)" stroke="var(--acento)" stroke-width="${Math.max(gw/100, 3)}" rx="6" />`;
+  mini.innerHTML = rects + viewRect;
 }
 
 function seguirNodo(g, n) {
-    g.onmousedown = e => {
-      e.stopPropagation();
-      sel = n.id; refrescarEditor(); cargarTraza();
-      // Con pestañas, seleccionar un nodo dejaba el editor escondido en otra
-      // solapa: clic y no pasa nada visible. Se salta a `nodo` solo desde
-      // `diseno`; si se esta mirando la traza de una corrida, se respeta.
-      if (document.querySelector(".tab.activa")?.dataset.tab === "diseno") activarTab("nodo");
-      const m = pt(e);
-      if (e.shiftKey && n.tipo !== "nota") enlazando = n.id;
-      else arrastre = { id:n.id, dx:m.x - n.x, dy:m.y - n.y, anotado:false };
-      pintar();
-    };
-    g.onmouseup = e => {
-      if (enlazando && enlazando !== n.id && n.tipo !== "nota") {
-        const par = [enlazando, n.id];
-        if (!grafo.aristas.some(x => x[0]===par[0] && x[1]===par[1])) {
-          anotar(); grafo.aristas.push(par);
-        }
+  g.onmousedown = e => {
+    e.stopPropagation();
+    const m = pt(e);
+    if (e.shiftKey) {
+      if (n.tipo !== "nota") enlazando = n.id;
+    } else {
+      if (!selGroup.has(n.id)) {
+        selGroup.clear();
+        selGroup.add(n.id);
       }
-      enlazando = null; $("#fantasma").setAttribute("d", ""); pintar();
-    };
+      sel = n.id;
+      refrescarEditor();
+      cargarTraza();
+      if (document.querySelector(".tab.activa")?.dataset.tab === "diseno") activarTab("nodo");
+
+      const grupo = Array.from(selGroup).map(id => {
+        const nodo = buscar(id);
+        return { id, x0: nodo?.x || 0, y0: nodo?.y || 0 };
+      });
+      arrastre = { id: n.id, mx: m.x, my: m.y, grupo, dx: m.x - n.x, dy: m.y - n.y, anotado: false };
+    }
+    pintar();
+  };
+  g.onmouseup = e => {
+    if (enlazando && enlazando !== n.id && n.tipo !== "nota") {
+      const par = [enlazando, n.id];
+      if (!grafo.aristas.some(x => x[0] === par[0] && x[1] === par[1])) {
+        anotar();
+        grafo.aristas.push(par);
+      }
+    }
+    enlazando = null;
+    $("#fantasma").setAttribute("d", "");
+    pintar();
+  };
 }
 
 function resumir() {
@@ -1835,17 +1923,56 @@ svg.ondblclick = e => {
   if (e.target !== svg && e.target.id !== "grid") return;
   const m = pt(e);
   anotar();
-  const n = { id:nuevoId(), titulo:"", runtime:"hermes", x:m.x - A/2, y:m.y - ALTO/2 };
-  grafo.nodos.push(n); sel = n.id; refrescarEditor(); pintar();
+  const n = { id: nuevoId(), titulo: "", runtime: "hermes", x: m.x - A/2, y: m.y - ALTO/2 };
+  grafo.nodos.push(n);
+  sel = n.id;
+  selGroup.clear();
+  selGroup.add(n.id);
+  refrescarEditor();
+  pintar();
   activarTab("nodo");
   $("#titulo").focus();
 };
+
 svg.onmousemove = e => {
   const m = pt(e);
-  if (arrastre) {
-    const n = buscar(arrastre.id);
+  if (boxSelect) {
+    const bx = Math.min(boxSelect.x0, m.x), by = Math.min(boxSelect.y0, m.y);
+    const bw = Math.abs(m.x - boxSelect.x0), bh = Math.abs(m.y - boxSelect.y0);
+    const bs = $("#boxSelect");
+    if (bs) {
+      bs.setAttribute("x", bx);
+      bs.setAttribute("y", by);
+      bs.setAttribute("width", bw);
+      bs.setAttribute("height", bh);
+    }
+    selGroup.clear();
+    for (const n of grafo.nodos) {
+      const nw = (n.tipo === "nota" ? A * 1.35 : A), nh = (n.tipo === "nota" ? ALTO * 1.9 : ALTO);
+      if (n.x + nw >= bx && n.x <= bx + bw && n.y + nh >= by && n.y <= by + bh) {
+        selGroup.add(n.id);
+      }
+    }
+    pintar();
+  } else if (arrastre) {
     if (!arrastre.anotado) { arrastre.anotado = true; anotar(); }
-    n.x = m.x - arrastre.dx; n.y = m.y - arrastre.dy; pintar();
+    if (arrastre.grupo && arrastre.grupo.length > 0) {
+      const dx = m.x - arrastre.mx, dy = m.y - arrastre.my;
+      for (const item of arrastre.grupo) {
+        const n = buscar(item.id);
+        if (n) {
+          n.x = item.x0 + dx;
+          n.y = item.y0 + dy;
+        }
+      }
+    } else {
+      const n = buscar(arrastre.id);
+      if (n) {
+        n.x = m.x - arrastre.dx;
+        n.y = m.y - arrastre.dy;
+      }
+    }
+    pintar();
   } else if (enlazando) {
     const n = buscar(enlazando);
     $("#fantasma").setAttribute("d", `M${n.x + A/2},${n.y + ALTO} L${m.x},${m.y}`);
@@ -1854,17 +1981,49 @@ svg.onmousemove = e => {
               x: paneo.v0.x - (e.clientX - paneo.px) * paneo.k,
               y: paneo.v0.y - (e.clientY - paneo.py) * paneo.k };
     verVista();
+    actualizarMinimapa();
   }
 };
+
 svg.onmouseup = () => {
+  if (boxSelect) {
+    boxSelect = null;
+    const bs = $("#boxSelect");
+    if (bs) bs.style.display = "none";
+    if (selGroup.size === 1) {
+      sel = Array.from(selGroup)[0];
+      refrescarEditor();
+    }
+    pintar();
+  }
   arrastre = null; enlazando = null; paneo = null;
   $("#fantasma").setAttribute("d","");
 };
 
 svg.onmousedown = e => {
   if (e.target !== svg && e.target.id !== "grid") return;
-  const v = vistaActual();
-  paneo = { v0:v, px:e.clientX, py:e.clientY, k: v.w / (svg.clientWidth || 1) };
+  const m = pt(e);
+  if (e.shiftKey) {
+    boxSelect = { x0: m.x, y0: m.y };
+    selGroup.clear();
+    sel = null;
+    refrescarEditor();
+    const bs = $("#boxSelect");
+    if (bs) {
+      bs.style.display = "block";
+      bs.setAttribute("x", m.x);
+      bs.setAttribute("y", m.y);
+      bs.setAttribute("width", 0);
+      bs.setAttribute("height", 0);
+    }
+  } else {
+    sel = null;
+    selGroup.clear();
+    refrescarEditor();
+    pintar();
+    const v = vistaActual();
+    paneo = { v0: v, px: e.clientX, py: e.clientY, k: v.w / (svg.clientWidth || 1) };
+  }
 };
 
 svg.onwheel = e => {
@@ -1874,6 +2033,7 @@ svg.onwheel = e => {
   vista = { x: m.x - (m.x - v.x) * f, y: m.y - (m.y - v.y) * f,
             w: v.w * f, h: v.h * f };
   verVista();
+  actualizarMinimapa();
 };
 
 // --- Command Palette (Ctrl+K / Cmd+K) --------------------------------
@@ -2097,6 +2257,72 @@ $("#selCompararB").onchange = actualizarComparacion;
 $("#btnCerrarCompararModal").onclick = () => { $("#modalComparar").style.display = "none"; };
 $("#modalComparar").onclick = e => { if (e.target === $("#modalComparar")) $("#modalComparar").style.display = "none"; };
 
+// --- Búsqueda Rápida en Lienzo ---------------------------------------
+function abrirBusquedaCanvas() {
+  const b = $("#busquedaCanvas");
+  if (!b) return;
+  b.style.display = "flex";
+  const inp = $("#inputBusquedaCanvas");
+  inp.value = "";
+  filtrarBusquedaCanvas("");
+  setTimeout(() => inp.focus(), 30);
+}
+
+function cerrarBusquedaCanvas() {
+  const b = $("#busquedaCanvas");
+  if (b) b.style.display = "none";
+  for (const el of document.querySelectorAll(".nodo")) el.style.opacity = "1";
+  $("#cantBusquedaCanvas").textContent = "";
+}
+
+function filtrarBusquedaCanvas(q) {
+  const term = (q || "").trim().toLowerCase();
+  if (!term) {
+    for (const el of document.querySelectorAll(".nodo")) el.style.opacity = "1";
+    $("#cantBusquedaCanvas").textContent = "";
+    return null;
+  }
+  let encontrados = 0;
+  let primero = null;
+  for (const n of grafo.nodos) {
+    const el = document.querySelector(`.nodo[data-id="${n.id}"]`);
+    const match = (n.titulo || "").toLowerCase().includes(term) ||
+                  (n.id || "").toLowerCase().includes(term) ||
+                  (n.runtime || "").toLowerCase().includes(term);
+    if (match) {
+      encontrados++;
+      if (!primero) primero = n;
+      if (el) el.style.opacity = "1";
+    } else {
+      if (el) el.style.opacity = "0.25";
+    }
+  }
+  $("#cantBusquedaCanvas").textContent = `${encontrados}/${grafo.nodos.length}`;
+  return primero;
+}
+
+$("#inputBusquedaCanvas").oninput = e => filtrarBusquedaCanvas(e.target.value);
+$("#inputBusquedaCanvas").onkeydown = e => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    const n = filtrarBusquedaCanvas(e.target.value);
+    if (n) {
+      sel = n.id;
+      selGroup.clear();
+      selGroup.add(n.id);
+      refrescarEditor();
+      const w = svg.clientWidth || 800, h = svg.clientHeight || 600;
+      vista = { x: n.x - w/2 + A/2, y: n.y - h/2 + ALTO/2, w, h };
+      verVista();
+      pintar();
+    }
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    cerrarBusquedaCanvas();
+  }
+};
+$("#btnCerrarBusquedaCanvas").onclick = cerrarBusquedaCanvas;
+
 // Atajos de teclado seguros
 document.addEventListener("keydown", e => {
   // Global Command Palette (Ctrl+K o Cmd+K)
@@ -2106,8 +2332,25 @@ document.addEventListener("keydown", e => {
     return;
   }
 
+  // Búsqueda en lienzo (Ctrl+F o Cmd+F o /)
+  if ((e.ctrlKey || e.metaKey) && (e.key === "f" || e.key === "F")) {
+    e.preventDefault();
+    abrirBusquedaCanvas();
+    return;
+  }
+  if (e.key === "/" && !/^(INPUT|TEXTAREA|SELECT)$/i.test(e.target.tagName)) {
+    e.preventDefault();
+    abrirBusquedaCanvas();
+    return;
+  }
+
   // Deseleccionar o cerrar modal (Escape)
   if (e.key === "Escape") {
+    if ($("#busquedaCanvas") && $("#busquedaCanvas").style.display === "flex") {
+      e.preventDefault();
+      cerrarBusquedaCanvas();
+      return;
+    }
     if ($("#modalPalette") && $("#modalPalette").style.display === "flex") {
       e.preventDefault();
       cerrarPalette();
@@ -2133,9 +2376,10 @@ document.addEventListener("keydown", e => {
       cerrarModalEntregable();
       return;
     }
-    if (sel) {
+    if (sel || selGroup.size > 0) {
       e.preventDefault();
       sel = null;
+      selGroup.clear();
       refrescarEditor(); cargarTraza(); pintar();
       return;
     }
@@ -2159,6 +2403,8 @@ document.addEventListener("keydown", e => {
       grafo.nodos.push(nuevo);
       grafo.aristas.push([sel, id]);
       sel = id;
+      selGroup.clear();
+      selGroup.add(id);
       refrescarEditor();
       pintar();
       avisar(`Nodo '${id}' creado y conectado con Tab.`, "ok");
@@ -2168,38 +2414,47 @@ document.addEventListener("keydown", e => {
 
   if (/^(INPUT|TEXTAREA|SELECT)$/i.test(e.target.tagName)) return;
 
-  // Encuadrar lienzo (F)
-  if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    e.preventDefault();
-    encuadrar();
-    return;
-  }
-
-  // Duplicar nodo seleccionado (Ctrl+D o Cmd+D)
+  // Duplicar nodos seleccionados (Ctrl+D o Cmd+D)
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") {
-    if (sel) {
+    if (selGroup.size > 0 || sel) {
       e.preventDefault();
-      const n = buscar(sel);
-      if (n) {
-        anotar();
-        const nuevo = { ...n, id: nuevoId(), x: n.x + 30, y: n.y + 30 };
-        grafo.nodos.push(nuevo);
-        sel = nuevo.id;
-        refrescarEditor();
-        pintar();
+      anotar();
+      const targetIds = selGroup.size > 0 ? Array.from(selGroup) : [sel];
+      const nuevosIds = new Set();
+      const idMap = {};
+      for (const id of targetIds) {
+        const n = buscar(id);
+        if (n) {
+          const nuevo = { ...n, id: nuevoId(), x: n.x + 30, y: n.y + 30 };
+          grafo.nodos.push(nuevo);
+          nuevosIds.add(nuevo.id);
+          idMap[id] = nuevo.id;
+        }
       }
+      for (const [p, h] of [...grafo.aristas]) {
+        if (idMap[p] && idMap[h]) grafo.aristas.push([idMap[p], idMap[h]]);
+      }
+      selGroup.clear();
+      for (const nid of nuevosIds) selGroup.add(nid);
+      sel = Array.from(nuevosIds)[0] || null;
+      refrescarEditor(); pintar();
+      avisar(`${nuevosIds.size} nodo(s) duplicado(s).`, "ok");
       return;
     }
   }
 
   // Deshacer (Ctrl+Z o Cmd+Z)
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
-    const previo = pila.pop();
-    if (!previo) return;
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
     e.preventDefault();
-    Object.assign(grafo, JSON.parse(previo));
-    if (!buscar(sel)) sel = null;
-    refrescarEditor(); pintar(); refrescarParams();
+    deshacer();
+    return;
+  }
+
+  // Rehacer (Ctrl+Y o Cmd+Shift+Z o Ctrl+Shift+Z)
+  if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") ||
+      ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "z")) {
+    e.preventDefault();
+    rehacer();
     return;
   }
 
@@ -2210,10 +2465,17 @@ document.addEventListener("keydown", e => {
     return;
   }
 
-  // Borrar nodo seleccionado (Delete o Backspace)
-  if ((e.key === "Delete" || e.key === "Backspace") && sel) {
+  // Borrar nodos seleccionados (Delete o Backspace)
+  if ((e.key === "Delete" || e.key === "Backspace") && (selGroup.size > 0 || sel)) {
     e.preventDefault();
-    $("#borrar").click();
+    anotar();
+    const targetIds = new Set(selGroup.size > 0 ? selGroup : [sel]);
+    grafo.nodos = grafo.nodos.filter(n => !targetIds.has(n.id));
+    grafo.aristas = grafo.aristas.filter(x => !targetIds.has(x[0]) && !targetIds.has(x[1]));
+    selGroup.clear();
+    sel = null;
+    refrescarEditor(); pintar();
+    avisar("Nodo(s) eliminado(s).", "ok");
     return;
   }
 });

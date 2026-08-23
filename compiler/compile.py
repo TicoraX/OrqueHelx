@@ -380,32 +380,20 @@ def trazabilidad(grafo: dict, nodo_id: str) -> dict:
         padres[h].add(p)
         hijos[p].add(h)
 
-    def _recorrer_ancestros(nid):
+    def _recorrer(nid, adyacencias):
         visitados = set()
-        pila = list(padres.get(nid, set()))
+        pila = list(adyacencias.get(nid, set()))
         while pila:
             if len(visitados) > 10_000:
                 raise ValueError("grafo demasiado grande para analizar trazabilidad")
             actual = pila.pop()
             if actual not in visitados:
                 visitados.add(actual)
-                pila.extend(p for p in padres.get(actual, set()) if p not in visitados)
+                pila.extend(item for item in adyacencias.get(actual, set()) if item not in visitados)
         return visitados
 
-    def _recorrer_descendientes(nid):
-        visitados = set()
-        pila = list(hijos.get(nid, set()))
-        while pila:
-            if len(visitados) > 10_000:
-                raise ValueError("grafo demasiado grande para analizar trazabilidad")
-            actual = pila.pop()
-            if actual not in visitados:
-                visitados.add(actual)
-                pila.extend(h for h in hijos.get(actual, set()) if h not in visitados)
-        return visitados
-
-    ancestros = sorted(list(_recorrer_ancestros(nodo_id)))
-    descendientes = sorted(list(_recorrer_descendientes(nodo_id)))
+    ancestros = sorted(list(_recorrer(nodo_id, padres)))
+    descendientes = sorted(list(_recorrer(nodo_id, hijos)))
     total_ejecutables = len(nodos)
     impacto_pct = round((len(descendientes) / max(1, total_ejecutables - 1)) * 100, 1) if total_ejecutables > 1 else 0.0
 

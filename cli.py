@@ -160,24 +160,14 @@ def cmd_run(args) -> int:
 
     if not args.json:
         print(f"==> {len(ids)} tareas registradas en kanban.db")
-        print("==> Ejecutando dispatcher...")
+        print("==> Ejecutando corrida...")
 
     tope = float(args.presupuesto) if args.presupuesto else None
+    
+    # Delegar limpiamente en corrida.correr
+    corrida.correr(board, tope_usd=tope)
+
     conn = k.connect(board=board)
-
-    # Bucle de ejecucion headless
-    while True:
-        hechas = dispatcher.tick(conn, board=board, tope_usd=tope)
-        if not args.json:
-            for tid, out in hechas:
-                st = "✓" if out.get("status") == "success" else "✗"
-                res = (out.get("summary") or "").strip()[:80]
-                print(f"  [{st}] {tid} -> {res}")
-        if not hechas and not dispatcher._queda_trabajo(conn):
-            break
-        time.sleep(1.0)
-
-    # Recolectar resultados finales
     tasks = k.list_tasks(conn)
     completadas = [t for t in tasks if t.status == "done"]
     fallidas = [t for t in tasks if t.status in ("blocked", "triage")]
@@ -196,8 +186,8 @@ def cmd_run(args) -> int:
                 "titulo": t.title,
                 "assignee": t.assignee,
                 "status": t.status,
-                "summary": t.summary,
-                "result": t.result,
+                "summary": (k.list_runs(conn, t.id)[-1].summary if k.list_runs(conn, t.id) and k.list_runs(conn, t.id)[-1].summary else "") or "",
+                "result": t.result or "",
             }
             for t in tasks
         ],
@@ -206,17 +196,18 @@ def cmd_run(args) -> int:
     if args.json:
         print(json.dumps(reporte, indent=2, ensure_ascii=False))
     else:
-        print("\n================ RESULTADO ================")
+        print("\n=== Resumen de Ejecución ===")
         print(f"Estado general : {'✓ ÉXITO' if reporte['ok'] else '✗ CON FALLOS'}")
-        print(f"Progreso       : {len(completadas)}/{len(tasks)} completadas ({len(fallidas)} fallidas)")
-        print(f"Consumo medido : US$ {gasto:.4f}")
-        print("-------------------------------------------")
+        print(f"Tareas totales : {reporte['total_tareas']} ({reporte['completadas']} completadas, {reporte['fallidas']} fallidas)")
+        print(f"Consumo medido : US$ {reporte['costo_usd']:.4f}")
+        print("\nDetalle de tareas:")
         for t in tasks:
             simbolo = "✓" if t.status == "done" else ("●" if t.status == "running" else "✗")
-            print(f"[{simbolo}] {t.title} ({t.assignee}) -> {t.status}")
-            if t.summary:
-                print(f"    Resumen: {t.summary[:100]}")
-        print("===========================================")
+            runs = k.list_runs(conn, t.id)
+            resumen = (runs[-1].summary if runs and runs[-1].summary else "").strip()
+            print(f"  [{simbolo}] {t.id} ({t.assignee}): {t.title}")
+            if resumen:
+                print(f"      -> {resumen[:90]}")
 
     return 0 if reporte["ok"] else 1
 
