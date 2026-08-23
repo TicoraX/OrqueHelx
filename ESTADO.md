@@ -7,9 +7,9 @@
 
 ## Dónde está el código
 
-- Commit `b1abbb7` — fix(runtime): el board se normaliza como en el kanban, y el arranque toma lock
+- Commit `3815c19` — feat(cli): un gate pendiente pausa la corrida en vez de colgarla
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 1
+- Árbol limpio: sí · sin pushear: 8
 
 ## Runtime prestado
 
@@ -21,7 +21,7 @@
 ## Verificación
 
 - `ARQUITECTURA.md` §10: **70 afirmaciones**, 1 pendiente(s)
-- 23 tests: api_rbac, auth_studio, capacidades, chat, cli, compilador, concurrencia_reintentos, consumo, contract, contrato_ui, dag_heterogeneo, dag_rombo, disposicion, dos_dispatchers, esfuerzo_presupuesto, guardarrailes, mcp_export, modo_app, parada, pin_hermes, rebanada_vertical, ui_expansion, ui_navegador
+- 24 tests: api_rbac, auth_studio, capacidades, chat, cli, compilador, concurrencia_reintentos, consumo, contract, contrato_ui, dag_heterogeneo, dag_rombo, disposicion, dos_dispatchers, esfuerzo_presupuesto, guardarrailes, mcp_export, modo_app, parada, pin_hermes, rebanada_vertical, reporte, ui_expansion, ui_navegador
 
 ## Decisiones tomadas (no re-litigar sin motivo nuevo)
 
@@ -47,7 +47,7 @@
 
 ## Bloqueos
 
-- 1 commit(s) sin pushear
+- 8 commit(s) sin pushear
 
 ## Qué sigue
 
