@@ -1263,7 +1263,7 @@ def _generar_reporte_corrida(board: str, formato: str = "markdown") -> dict:
             cards.append(f"""
             <div style="background:#1e222b; border:1px solid #333a47; border-radius:8px; padding:16px; margin-bottom:16px;">
               <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333a47; padding-bottom:8px; margin-bottom:12px;">
-                <div><h3 style="margin:0; font-size:15px; color:#f0f3f6;">{html.escape(titulo)}</h3><span style="font-size:11px; color:#8b949e;">ID: {tid} · Asignado a: {t.assignee}</span></div>
+                <div><h3 style="margin:0; font-size:15px; color:#f0f3f6;">{html.escape(titulo)}</h3><span style="font-size:11px; color:#8b949e;">ID: {html.escape(str(tid))} · Asignado a: {html.escape(str(t.assignee or ""))}</span></div>
                 <span style="background:{bg_st}; color:#fff; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:bold;">{st.upper()}</span>
               </div>
               {f'<div style="margin-bottom:8px; font-size:12.5px; color:#c9d1d9;"><b>Resumen:</b> {html.escape(sum_t)}</div>' if sum_t else ''}
@@ -2019,9 +2019,17 @@ class Handler(BaseHTTPRequestHandler):
             ext = "html" if formato == "html" else "md"
             mime = "text/html; charset=utf-8" if formato == "html" else "text/markdown; charset=utf-8"
             contenido_bytes = res["reporte"].encode("utf-8")
+            # El nombre sale de la query. Hoy no es explotable --`_conn` rechaza
+            # un board que no existe, y el kanban no deja crear uno con comillas
+            # ni saltos de linea--, pero la cabecera no deberia depender de una
+            # regla que vive en otro archivo: una comilla cierra el parametro y
+            # un CR/LF parte la respuesta en dos.
+            nombre = re.sub(r"[^\w.-]", "_", board)[:80] or "reporte"
             self.send_response(200)
             self.send_header("Content-Type", mime)
-            self.send_header("Content-Disposition", f'attachment; filename="reporte-{board}.{ext}"')
+            self.send_header("Content-Disposition",
+                             f'attachment; filename="reporte-{nombre}.{ext}"')
+            self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Content-Length", str(len(contenido_bytes)))
             self.end_headers()
             self.wfile.write(contenido_bytes)

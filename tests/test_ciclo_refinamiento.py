@@ -146,6 +146,32 @@ try:
     assert fin3["nodos"] == 0, "arranco nodos con un validador invalido"
     print("5. un validador desconocido corta antes de arrancar, sin ejecutarlo: OK")
 
+    # --- 6. Dos nodos del mismo workspace no se validan a la vez ------------
+    # `tick` lanza hasta MAX_PARALELO nodos juntos. Si dos apuntan al mismo
+    # workspace y hay validador, la foto de "despues" de uno incluye lo que
+    # escribio el otro: el gate bloquearia al nodo equivocado. Con validador se
+    # toma uno por workspace y el resto espera al proximo tick.
+    WS3 = Path(tempfile.mkdtemp())
+    b3 = BOARD + "-juntos"
+    boards.append(b3)
+    k.create_board(b3)
+    compilador.compilar({"board": b3, "aristas": [], "nodos": [
+        {"id": "x", "titulo": "uno", "runtime": "claude-code", "workspace": str(WS3)},
+        {"id": "y", "titulo": "otro", "runtime": "claude-code", "workspace": str(WS3)},
+    ]}, board=b3)
+
+    dispatcher.run_backend = lambda rt, ctx, **kw: {
+        "status": "success", "summary": "ok", "uso": {"costo_usd": 0.0}}
+    conn = k.connect(board=b3)
+    juntos = dispatcher.tick(conn, validador="pyflakes")
+    sueltos = dispatcher.tick(conn)      # sin validador no hay que serializar
+    conn.close()
+    assert len(juntos) == 1, (
+        f"con validador tenian que ir de a uno por workspace, fueron {len(juntos)}")
+    assert len(sueltos) == 1, (
+        f"el que quedo tenia que salir en el tick siguiente, salieron {len(sueltos)}")
+    print("6. con validador, dos nodos del mismo workspace no corren juntos: OK")
+
     print("\nOK: el linter critica, el agente corrige, y el ciclo tiene techo.")
 finally:
     _cerrar_todo()

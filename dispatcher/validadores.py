@@ -70,6 +70,10 @@ def revisar(nombre: str, cwd: str) -> set[str]:
     Un conjunto y no una lista: lo que interesa es si aparecio algo que antes
     no estaba, y el orden en que pyflakes recorre archivos no es estable.
 
+    Se leen las DOS salidas. pyflakes manda los warnings por stdout pero los
+    **errores de sintaxis por stderr**, o sea que mirando solo stdout el gate se
+    perdia justo el caso que mas importa: un archivo que ni siquiera parsea.
+
     Si el validador no puede correr se devuelve un conjunto vacio, que hace que
     la comparacion no acuse a nadie. Es a proposito: `disponible()` ya se
     pregunto antes de arrancar, y un validador que se cae a mitad de camino no
@@ -82,7 +86,9 @@ def revisar(nombre: str, cwd: str) -> set[str]:
                            stdin=subprocess.DEVNULL)
     except Exception:
         return set()
-    return {ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()}
+    return {ln.strip()
+            for ln in ((r.stdout or "") + "\n" + (r.stderr or "")).splitlines()
+            if ln.strip()}
 
 
 def nuevos(antes: set, despues: set) -> list[str]:
@@ -111,4 +117,13 @@ if __name__ == "__main__":
     assert any("sin_definir" in h for h in hallazgos), hallazgos
     assert not any("viejo.py" in h for h in hallazgos), (
         f"le cobro al nodo un problema que ya estaba: {hallazgos}")
-    print(f"OK: el validador ve lo nuevo ({len(hallazgos)}) y no lo preexistente.")
+
+    # Y el caso que mas importa: un archivo que no parsea. pyflakes lo reporta
+    # por stderr, asi que leyendo solo stdout esto pasaba invisible --que es lo
+    # peor que puede hacer un gate: dejar pasar lo grave y frenar lo leve--.
+    (d / "sintaxis.py").write_text("def f(:\n    pass\n", encoding="utf-8")
+    rotos = nuevos(despues, revisar("pyflakes", str(d)))
+    assert any("sintaxis.py" in h for h in rotos), (
+        f"no vio un archivo que ni siquiera parsea: {rotos}")
+    print(f"OK: el validador ve lo nuevo ({len(hallazgos)}), lo que no parsea, "
+          "y no lo preexistente.")

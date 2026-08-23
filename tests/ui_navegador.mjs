@@ -519,6 +519,32 @@ ok(enApp.minimapa === 'none',
 ok(enApp.busqueda === 'none',
    `ni la barra de busqueda del lienzo (quedo ${enApp.busqueda})`);
 
+await p.click('#btnModoStudio').catch(() => {});
+await p.waitForFunction(() => document.body.classList.contains('modo-studio-activo'),
+                        null, { timeout: 5000 }).catch(() => {});
+
+// Duplicar tiene que dar un nodo INDEPENDIENTE: con un spread, el duplicado y
+// el original compartian el array de `herramientas` y editarle los permisos a
+// uno se los cambiaba al otro sin avisar.
+await p.evaluate(() => {
+  grafo.nodos = [{ id: 'uno', titulo: 'uno', runtime: 'claude-code', x: 100, y: 100,
+                   herramientas: ['Read', 'Bash'] }];
+  grafo.aristas = []; sel = 'uno'; selGroup.clear(); selGroup.add('uno'); pintar();
+});
+// Ctrl+D de verdad: el duplicado vive adentro del handler de teclado, y
+// llamarlo por dentro probaria una funcion que el usuario no tiene.
+await p.evaluate(() => { sel = 'uno'; selGroup.clear(); selGroup.add('uno'); });
+await p.keyboard.press('Control+d');
+const copia = await p.evaluate(() => {
+  const nuevo = grafo.nodos.find(n => n.id !== 'uno');
+  if (!nuevo) return { falta: true };
+  nuevo.herramientas.push('Write');
+  return { original: grafo.nodos.find(n => n.id === 'uno').herramientas.length,
+           duplicado: nuevo.herramientas.length };
+});
+ok(!copia.falta && copia.original === 2 && copia.duplicado === 3,
+   `duplicar da un nodo independiente del original (original ${copia.original}, copia ${copia.duplicado})`);
+
 ok(errores.length === 0, `sin errores de JS en toda la corrida${errores.length ? ': ' + errores[0] : ''}`);
 if (process.argv[3]) await p.screenshot({ path: process.argv[3], fullPage: false });
 console.log(fallos ? `\n${fallos} FALLA(S)` : '\nTODO OK');

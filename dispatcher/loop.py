@@ -432,6 +432,22 @@ def tick(conn, *, timeout: int = 600, board: str = None,
     listas = _mis_cards(conn, "ready")
     if not listas:
         return []
+
+    if validador:
+        # Con validador, dos nodos sobre el MISMO workspace no pueden correr a
+        # la vez: la foto de "despues" de uno incluiria lo que escribio el otro,
+        # y el gate bloquearia al nodo equivocado. Se toma uno por workspace y
+        # los demas esperan al proximo tick. Los que apuntan a workspaces
+        # distintos siguen yendo en paralelo, que es donde el paralelismo vale.
+        vistos, unicas = set(), []
+        for t in listas:
+            ws = t.workspace_path or ""
+            if ws and ws in vistos:
+                continue
+            if ws:
+                vistos.add(ws)
+            unicas.append(t)
+        listas = unicas
     resto = None
     if tope_usd is not None:
         resto = tope_usd - gasto_usd(conn)
@@ -449,11 +465,22 @@ def tick(conn, *, timeout: int = 600, board: str = None,
     # Una conexion por hilo: los objetos de sqlite3 no se comparten entre
     # hilos, y `claim_task` ya es atomico entre conexiones (verificado en
     # `tests/test_dos_dispatchers.py`), asi que no hace falta lock propio.
+    #
+    # La ruta se resuelve ACA, en el hilo que tiene `conn`: preguntarsela al
+    # handle desde el hilo del pool es justo lo que sqlite3 prohibe.
+    db_flujo = _archivo_de(conn)
+
     def _uno(t):
         # Cerrar siempre: se abre una conexion por card por tick, y el bucle de
         # `correr` tickea cada pocos segundos. Sin cerrar, un flujo largo se
         # come los descriptores.
-        c = k.connect(board=board) if board else k.connect()
+        # La MISMA base que el `conn` que nos pasaron, sacada del propio
+        # handle. Era `k.connect(board=board) if board else k.connect()`, y sin
+        # `board` eso resuelve al board `default`: el hilo reclamaba cards en
+        # una base que no era la del flujo y todo salia `skipped: ya reclamada
+        # por otro`. Es el mismo error que ya se habia arreglado en `_latir`,
+        # otra vez del lado de al lado.
+        c = k.connect(db_path=Path(db_flujo))
         # El hilo del pool queda fichado con su board, que es lo que despues
         # permite parar ESTA corrida sin llevarse puesta la de al lado.
         marcar_board(board)

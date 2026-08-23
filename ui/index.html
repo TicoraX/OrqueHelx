@@ -2370,7 +2370,10 @@ document.addEventListener("keydown", e => {
     abrirBusquedaCanvas();
     return;
   }
-  if (e.key === "/" && !/^(INPUT|TEXTAREA|SELECT)$/i.test(e.target.tagName)) {
+  // La misma guarda que Ctrl+F: sin el chequeo de modo App, `/` abria la
+  // busqueda de un lienzo que no esta a la vista.
+  if (e.key === "/" && !enCampo
+      && !document.body.classList.contains("modo-app-activo")) {
     e.preventDefault();
     abrirBusquedaCanvas();
     return;
@@ -2418,7 +2421,11 @@ document.addEventListener("keydown", e => {
   }
 
   // Quick-Add: Tab sobre nodo seleccionado crea y conecta un nodo hijo a la derecha
-  if (e.key === "Tab" && !e.shiftKey && sel && !/^(INPUT|TEXTAREA|SELECT)$/i.test(e.target.tagName)) {
+  // Solo sobre el lienzo: capturar Tab en cualquier boton o link deja al
+  // usuario de teclado encerrado, sin forma de recorrer el panel.
+  const enLienzo = e.target === document.body || e.target === svg
+                   || (svg && svg.contains(e.target));
+  if (e.key === "Tab" && !e.shiftKey && sel && enLienzo) {
     e.preventDefault();
     const padre = buscar(sel);
     if (padre) {
@@ -2457,7 +2464,12 @@ document.addEventListener("keydown", e => {
       for (const id of targetIds) {
         const n = buscar(id);
         if (n) {
-          const nuevo = { ...n, id: nuevoId(), x: n.x + 30, y: n.y + 30 };
+          // `structuredClone` y no `{...n}`: el spread copia la REFERENCIA
+          // de `herramientas`, asi que el duplicado y el original compartian
+          // el mismo array y tocarle los permisos a uno se los cambiaba al
+          // otro, sin avisar.
+          const nuevo = { ...structuredClone(n), id: nuevoId(),
+                          x: n.x + 30, y: n.y + 30 };
           grafo.nodos.push(nuevo);
           nuevosIds.add(nuevo.id);
           idMap[id] = nuevo.id;

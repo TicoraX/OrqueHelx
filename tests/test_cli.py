@@ -147,7 +147,9 @@ try:
     # mitad por presupuesto devolvia 0 y CI la daba por buena.
     llamadas.clear()
     dispatcher.run_backend = _agente_falso
-    codigo = _correr(BOARD + "-tope", presupuesto="0.005")
+    # Un float y no un string: `--presupuesto` declara `type=float`, asi que
+    # esto es lo que le llega a `cmd_run` desde la linea de comandos.
+    codigo = _correr(BOARD + "-tope", presupuesto=0.005)
     assert codigo == 1, f"cortar por tope no puede salir 0, salio {codigo}"
     assert len(llamadas) == 1, (
         f"el tope tenia que frenar despues del primer nodo, corrieron {llamadas}")

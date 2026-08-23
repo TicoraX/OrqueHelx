@@ -184,7 +184,7 @@ def cmd_run(args) -> int:
         print(f"==> {len(ids)} tareas registradas en kanban.db")
         print("==> Ejecutando corrida...")
 
-    tope = float(args.presupuesto) if args.presupuesto else None
+    tope = args.presupuesto or None
     
     # Que hacer con un gate de aprobacion humana. El default es no esperar: la
     # firma tarda horas, el runner de CI cobra por minuto y el estado ya es
@@ -193,7 +193,7 @@ def cmd_run(args) -> int:
     gates = ("aprobar" if getattr(args, "aprobar_gates", False)
              else "esperar" if getattr(args, "esperar_gates", None) else "parar")
     fin = corrida.correr(board, tope_usd=tope, gates=gates, validador=args.validar,
-                         timeout=float(args.esperar_gates) if gates == "esperar" else None,
+                         timeout=args.esperar_gates if gates == "esperar" else None,
                          log=None if args.json else corrida.imprimir)
 
     if fin.get("error"):
@@ -280,11 +280,14 @@ def main() -> int:
     p_run = sub.add_parser("run", help="Compilar y ejecutar un grafo")
     p_run.add_argument("grafo", help="Ruta al archivo .json del grafo o nombre de plantilla")
     p_run.add_argument("--board", "-b", help="Nombre del board kanban (default: del grafo)")
-    p_run.add_argument("--presupuesto", "-p", help="Tope de presupuesto en USD")
+    # `type=float`: sin esto, `--presupuesto abc` reventaba con un ValueError y
+    # un traceback en vez de decir que el numero esta mal.
+    p_run.add_argument("--presupuesto", "-p", type=float,
+                       help="Tope de presupuesto en USD")
     p_run.add_argument("--workspace", "-w", help="Directorio workspace para la ejecución")
     p_run.add_argument("--ignorar-capacidades", action="store_true", help="Omitir preflight de binarios")
     p_run.add_argument("--json", action="store_true", help="Salida en formato JSON estructurado")
-    p_run.add_argument("--esperar-gates", metavar="SEGUNDOS",
+    p_run.add_argument("--esperar-gates", metavar="SEGUNDOS", type=float,
                        help="Esperar hasta N segundos a que alguien apruebe los "
                             "nodos Gate desde el Studio (por defecto no espera)")
     p_run.add_argument("--validar", metavar="NOMBRE",
