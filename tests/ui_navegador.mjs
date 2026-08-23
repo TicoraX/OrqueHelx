@@ -423,6 +423,102 @@ await p.keyboard.press('Escape');
 const modalCuotasCerrado = await p.evaluate(() => document.querySelector('#modalCuotas').style.display === 'none');
 ok(modalCuotasCerrado, 'tecla Escape cierra el modal de cuotas');
 
+// --- Las features del lienzo, donde se ven y no solo si existen -------------
+//
+// Todas estas andaban "segun el DOM" y estaban rotas para el mouse: la barra de
+// busqueda se pintaba DEBAJO del header fijo, asi que su contador no se veia y
+// su boton de cerrar no se podia clickear. Una assertion sobre `display` decia
+// que todo bien. Por eso estos chequeos preguntan por geometria y por
+// `elementFromPoint`, que es lo que el usuario tiene.
+await p.keyboard.press('Escape');
+await p.click('#btnModoStudio').catch(() => {});
+await p.waitForFunction(() => document.body.classList.contains('modo-studio-activo'),
+                        null, { timeout: 5000 }).catch(() => {});
+
+await p.evaluate(() => {
+  grafo.nodos = [
+    { id: 'alfa', titulo: 'alfa uno', runtime: 'claude-code', x: 100, y: 100 },
+    { id: 'beta', titulo: 'beta dos', runtime: 'opencode', x: 400, y: 100 }];
+  grafo.aristas = [['alfa', 'beta']];
+  sel = null; pintar();
+});
+
+await p.keyboard.press('Control+f');
+const barra = await p.evaluate(() => {
+  const b = document.querySelector('#busquedaCanvas');
+  const r = b.getBoundingClientRect();
+  const enCentro = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  const cerrar = document.querySelector('#btnCerrarBusquedaCanvas').getBoundingClientRect();
+  return {
+    visible: b.style.display === 'flex',
+    // Quien esta ARRIBA en el punto donde el usuario apunta el mouse.
+    duenoDelPunto: enCentro ? (enCentro.closest('#busquedaCanvas') ? 'busqueda' : enCentro.id || enCentro.tagName) : 'nadie',
+    duenoDelCerrar: (el => el && el.closest('#busquedaCanvas') ? 'busqueda' : (el ? el.id || el.tagName : 'nadie'))(
+      document.elementFromPoint(cerrar.left + cerrar.width / 2, cerrar.top + cerrar.height / 2)),
+  };
+});
+ok(barra.visible, 'Ctrl+F abre la busqueda del lienzo');
+ok(barra.duenoDelPunto === 'busqueda',
+   `y la barra recibe el mouse en vez de quedar tapada (arriba esta: ${barra.duenoDelPunto})`);
+ok(barra.duenoDelCerrar === 'busqueda',
+   `y su boton de cerrar es clickeable (arriba esta: ${barra.duenoDelCerrar})`);
+
+// El atenuado tiene que sobrevivir a un repintado: `pintar()` recrea los nodos.
+await p.fill('#inputBusquedaCanvas', 'alfa');
+const filtro = await p.evaluate(() => {
+  const leer = () => [...document.querySelectorAll('.nodo')].map(g => g.style.opacity);
+  const antes = leer();
+  pintar();
+  return { antes, despues: leer(),
+           contador: document.querySelector('#cantBusquedaCanvas').textContent };
+});
+ok(filtro.antes.includes('0.25'), `la busqueda atenua lo que no coincide (${filtro.antes})`);
+ok(JSON.stringify(filtro.antes) === JSON.stringify(filtro.despues),
+   `y el atenuado sobrevive a un pintar() (antes ${filtro.antes}, despues ${filtro.despues})`);
+ok(filtro.contador === '1/2', `el contador dice cuantas coinciden (${filtro.contador})`);
+
+// Esc con la busqueda abierta cierra la busqueda y NADA MAS.
+await p.evaluate(() => { document.querySelector('#modalCuotas').style.display = 'flex'; });
+await p.focus('#inputBusquedaCanvas');
+await p.keyboard.press('Escape');
+const trasEsc = await p.evaluate(() => ({
+  busqueda: document.querySelector('#busquedaCanvas').style.display,
+  cuotas: document.querySelector('#modalCuotas').style.display,
+}));
+ok(trasEsc.busqueda === 'none', 'Escape cierra la busqueda del lienzo');
+ok(trasEsc.cuotas === 'flex',
+   `y no se lleva puesto el modal que estaba abierto detras (quedo en ${trasEsc.cuotas})`);
+await p.evaluate(() => { document.querySelector('#modalCuotas').style.display = 'none'; });
+
+// Escribiendo en un campo, los atajos no son atajos.
+await p.evaluate(() => { sel = 'alfa'; refrescarEditor(); });
+await p.click('.tab[data-tab="nodo"]').catch(() => {});
+await p.focus('#titulo');
+await p.keyboard.press('Control+f');
+await p.keyboard.press('Control+k');
+const enCampo = await p.evaluate(() => ({
+  busqueda: document.querySelector('#busquedaCanvas').style.display,
+  palette: document.querySelector('#modalPalette').style.display,
+  foco: document.activeElement.id,
+}));
+ok(enCampo.busqueda === 'none' && enCampo.palette === 'none',
+   'Ctrl+F y Ctrl+K no disparan con el foco adentro de un campo de texto');
+ok(enCampo.foco === 'titulo',
+   `y el foco se queda donde el usuario estaba escribiendo (quedo en ${enCampo.foco})`);
+
+// El radar y la busqueda son del lienzo: en modo App no van.
+await p.click('#btnModoApp').catch(() => {});
+await p.waitForFunction(() => document.body.classList.contains('modo-app-activo'),
+                        null, { timeout: 5000 }).catch(() => {});
+const enApp = await p.evaluate(() => {
+  const vis = sel => getComputedStyle(document.querySelector(sel)).display;
+  return { minimapa: vis('#minimapaBox'), busqueda: vis('#busquedaCanvas') };
+});
+ok(enApp.minimapa === 'none',
+   `el radar del minimapa no se pinta sobre la vista de App (quedo ${enApp.minimapa})`);
+ok(enApp.busqueda === 'none',
+   `ni la barra de busqueda del lienzo (quedo ${enApp.busqueda})`);
+
 ok(errores.length === 0, `sin errores de JS en toda la corrida${errores.length ? ': ' + errores[0] : ''}`);
 if (process.argv[3]) await p.screenshot({ path: process.argv[3], fullPage: false });
 console.log(fallos ? `\n${fallos} FALLA(S)` : '\nTODO OK');

@@ -396,6 +396,10 @@
   body.modo-app-activo #vistaApp { display: block; }
   body.modo-app-activo #lienzo,
   body.modo-app-activo #barraCanvasFlotante,
+  /* El radar y la busqueda son del lienzo: sin esto quedaban pintados encima
+     de la vista de App, que no tiene lienzo que mirar ni que buscar. */
+  body.modo-app-activo #minimapaBox,
+  body.modo-app-activo #busquedaCanvas,
   body.modo-app-activo #panel { display: none !important; }
 
   body.modo-studio-activo #vistaApp { display: none !important; }
@@ -552,7 +556,7 @@
   <rect id="boxSelect" style="display:none; fill:rgba(91,157,217,0.15); stroke:var(--acento); stroke-dasharray:4 4; stroke-width:1.5; pointer-events:none;"></rect>
 </svg>
 
-<div id="busquedaCanvas" style="display:none; position:fixed; top:16px; left:20px; background:var(--panel); border:1px solid var(--acento); border-radius:6px; padding:6px 10px; z-index:95; box-shadow:0 8px 24px rgba(0,0,0,0.6); align-items:center; gap:8px;">
+<div id="busquedaCanvas" style="display:none; position:fixed; top:56px; left:20px; background:var(--panel); border:1px solid var(--acento); border-radius:6px; padding:6px 10px; z-index:95; box-shadow:0 8px 24px rgba(0,0,0,0.6); align-items:center; gap:8px;">
   <input id="inputBusquedaCanvas" type="text" placeholder="Buscar en lienzo... (Enter centra, Esc cierra)" style="border:none; background:transparent; color:var(--texto); font-size:12px; outline:none; width:220px; padding:2px;" autocomplete="off" />
   <span id="cantBusquedaCanvas" style="font-size:10.5px; color:var(--tenue); font-family:var(--mono);"></span>
   <button id="btnCerrarBusquedaCanvas" style="width:auto; border:none; background:transparent; color:var(--tenue); font-size:11px; padding:0 4px; cursor:pointer;">✕</button>
@@ -1247,8 +1251,10 @@ function pintar() {
     rt.setAttribute("opacity", est ? "0.85" : "1");
     
     let etiqueta = gate ? "gate (humano)" : n.runtime;
+    // Dos datos distintos, dos lineas: estaban en un `else if`, asi que un
+    // nodo huerfano con modelo asignado dejaba de mostrar el modelo.
     if (esAislado && !est) etiqueta += " · [aislado]";
-    else if (n.modelo) etiqueta += " · " + n.modelo;
+    if (n.modelo) etiqueta += " · " + n.modelo;
     if (n.esfuerzo) etiqueta += " · " + n.esfuerzo;
     if (est) etiqueta += " · " + est;
 
@@ -1261,11 +1267,24 @@ function pintar() {
   $("#resumen").textContent = resumir();
   verBotonRefinar();
   actualizarMinimapa();
+  // `pintar()` recrea los nodos, asi que el atenuado de la busqueda se va con
+  // ellos. Se reaplica aca --y no en cada llamador-- porque el que los borra
+  // es este.
+  const _busq = $("#busquedaCanvas");
+  if (_busq && _busq.style.display === "flex") {
+    filtrarBusquedaCanvas($("#inputBusquedaCanvas").value);
+  }
 }
 
 function actualizarMinimapa() {
   const mini = $("#minimapaSvg");
-  if (!mini || !grafo.nodos.length) return;
+  if (!mini) return;
+  if (!grafo.nodos.length) {
+    // Salia con `return` a secas: el radar se quedaba mostrando los rects del
+    // grafo anterior sobre un lienzo vacio.
+    mini.innerHTML = "";
+    return;
+  }
   const v = vistaActual();
   const x0 = Math.min(...grafo.nodos.map(n => n.x)) - 100;
   const y0 = Math.min(...grafo.nodos.map(n => n.y)) - 100;
@@ -2311,13 +2330,18 @@ $("#inputBusquedaCanvas").onkeydown = e => {
       selGroup.clear();
       selGroup.add(n.id);
       refrescarEditor();
-      const w = svg.clientWidth || 800, h = svg.clientHeight || 600;
+      // El ancho y el alto salen de la vista ACTUAL, no del tamaño del svg:
+      // tomarlos del svg centraba el nodo y de paso devolvia el zoom a 1:1,
+      // que nadie pidio.
+      const v = vistaActual();
+      const w = v.w, h = v.h;
       vista = { x: n.x - w/2 + A/2, y: n.y - h/2 + ALTO/2, w, h };
       verVista();
       pintar();
     }
   } else if (e.key === "Escape") {
     e.preventDefault();
+    e.stopPropagation();
     cerrarBusquedaCanvas();
   }
 };
@@ -2325,15 +2349,23 @@ $("#btnCerrarBusquedaCanvas").onclick = cerrarBusquedaCanvas;
 
 // Atajos de teclado seguros
 document.addEventListener("keydown", e => {
+  // Escribiendo en un campo, los atajos no son atajos. El guard general vive
+  // mas abajo --despues de Escape y Tab, que SI tienen que andar adentro de un
+  // campo-- asi que estos dos lo consultan por su cuenta.
+  const enCampo = /^(INPUT|TEXTAREA|SELECT)$/i.test(e.target.tagName);
+
   // Global Command Palette (Ctrl+K o Cmd+K)
-  if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) {
+  if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K") && !enCampo) {
     e.preventDefault();
     abrirPalette();
     return;
   }
 
-  // Búsqueda en lienzo (Ctrl+F o Cmd+F o /)
-  if ((e.ctrlKey || e.metaKey) && (e.key === "f" || e.key === "F")) {
+  // Búsqueda en lienzo (Ctrl+F o Cmd+F o /). En modo App no hay lienzo que
+  // buscar: ahi no se abre NI se pisa el buscador del navegador, que es el que
+  // el usuario esperaba.
+  if ((e.ctrlKey || e.metaKey) && (e.key === "f" || e.key === "F")
+      && !enCampo && !document.body.classList.contains("modo-app-activo")) {
     e.preventDefault();
     abrirBusquedaCanvas();
     return;
