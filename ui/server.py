@@ -176,9 +176,9 @@ def _aprobar_gate(board: str, task_id: str, resultado: str = None) -> dict:
         t = k.get_task(conn, task_id)
         if not t:
             return {"ok": False, "error": f"no existe la tarea '{task_id}'"}
-        res = (resultado or "").strip() or "Aprobado por el usuario"
-        k.complete_task(conn, task_id, summary=res, result=res,
-                        metadata={"orquester_status": "success", "claimer": "human"})
+        # Aprobar vive en `corrida`: el CLI tambien aprueba, y dos copias de
+        # "como se cierra un gate" es como se desincronizan los registros.
+        res = corrida.aprobar_gate(conn, task_id, resultado=resultado)
         return {"ok": True, "board": board, "task_id": task_id, "resultado": res}
     except Exception as e:
         return {"ok": False, "error": f"no se pudo aprobar el gate: {e}"}
@@ -1411,7 +1411,11 @@ def _arrancar(board: str, tope_usd: float = None) -> dict:
     # registro de lo que corre y el tope que se esta aplicando-- y nada mas.
     def _correr():
         try:
-            corrida.correr(board, tope_usd=tope_usd)
+            # `gates="esperar"`: aca SI hay alguien del otro lado --el boton de
+            # aprobar esta en la pantalla--, asi que un gate no corta la
+            # corrida. El default del motor es no esperar, que es lo correcto
+            # sin nadie mirando.
+            corrida.correr(board, tope_usd=tope_usd, gates="esperar")
         finally:
             _corriendo.pop(board, None)
 

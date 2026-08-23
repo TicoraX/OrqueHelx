@@ -65,10 +65,24 @@ def _agente_roto(runtime, ctx, **kw):
     raise ErrorPermanente("el CLI no esta instalado")
 
 
-def _correr(board, presupuesto=None, salida_json=False):
+# Un grafo con un nodo de aprobacion humana en el medio.
+CON_GATE = {
+    "board": BOARD + "-gate",
+    "nodos": [{"id": "a", "titulo": "Trabaja", "runtime": "claude-code"},
+              {"id": "g", "titulo": "Aprobacion humana", "tipo": "gate"},
+              {"id": "b", "titulo": "Despues del gate", "runtime": "claude-code"}],
+    "aristas": [["a", "g"], ["g", "b"]],
+}
+ARCHIVO_GATE = Path(tempfile.mkdtemp()) / "con-gate.json"
+ARCHIVO_GATE.write_text(json.dumps(CON_GATE), encoding="utf-8")
+
+
+def _correr(board, presupuesto=None, salida_json=False, grafo=None,
+            esperar_gates=None, aprobar_gates=False):
     return orq.cmd_run(argparse.Namespace(
-        grafo=str(ARCHIVO), board=board, workspace=None,
-        ignorar_capacidades=True, presupuesto=presupuesto, json=salida_json))
+        grafo=str(grafo or ARCHIVO), board=board, workspace=None,
+        ignorar_capacidades=True, presupuesto=presupuesto, json=salida_json,
+        esperar_gates=esperar_gates, aprobar_gates=aprobar_gates))
 
 
 def _cerrar_todo():
@@ -82,7 +96,8 @@ def _cerrar_todo():
                 pass
 
 
-boards = [BOARD, BOARD + "-roto", BOARD + "-tope"]
+boards = [BOARD, BOARD + "-roto", BOARD + "-tope",
+          BOARD + "-gate", BOARD + "-gate-auto"]
 try:
     # --- 1. Los comandos de inspeccion contestan ----------------------------
     for nombre, fn in (("doctor", orq.cmd_doctor), ("plantillas", orq.cmd_plantillas),
@@ -159,6 +174,49 @@ try:
         assert nuestro == kanban, (
             f"{malo!r}: nosotros {nuestro!r}, el kanban {kanban!r}")
     print("6. `corrida.slug` y el kanban aceptan y rechazan lo mismo: OK")
+
+    # --- 7. Un gate pendiente pausa la corrida, no la cuelga ---------------
+    # Un nodo de aprobacion queda en `ready` esperando a una persona, y nada
+    # dentro del proceso lo va a mover. Antes de esto el bucle giraba para
+    # siempre: 28 vueltas en 6 segundos sobre un flujo que no podia avanzar.
+    # Ahora corta con codigo 2, que es "pausado", distinto de 1 = "fallo": el
+    # board queda intacto y se reanuda desde el Studio.
+    llamadas.clear()
+    dispatcher.run_backend = _agente_falso
+    b_gate = BOARD + "-gate"
+    codigo = _correr(b_gate, grafo=ARCHIVO_GATE)
+    assert codigo == 2, f"un gate pendiente tiene que salir 2, salio {codigo}"
+    assert llamadas == ["claude-code"], (
+        f"el nodo de despues del gate no tenia que correr: {llamadas}")
+
+    conn = k.connect(board=b_gate)
+    estados = {t.title: t.status for t in k.list_tasks(conn)}
+    assert estados["Aprobacion humana"] == "ready", estados
+    assert estados["Despues del gate"] == "todo", estados
+    conn.close()
+    print("7. un gate pendiente pausa la corrida con codigo 2: OK")
+
+    # --- 8. `--aprobar-gates` sigue, y lo deja asentado como automatico -----
+    # El flag existe para un pipeline que de verdad no tiene humano. Lo que no
+    # puede pasar es que el registro diga que aprobo una persona: una auditoria
+    # a seis meses no tiene como distinguirlo, y el pasado no se reescribe.
+    llamadas.clear()
+    b_auto = BOARD + "-gate-auto"
+    codigo = _correr(b_auto, grafo=ARCHIVO_GATE, aprobar_gates=True)
+    assert codigo == 0, f"con --aprobar-gates tenia que salir 0, salio {codigo}"
+    assert llamadas == ["claude-code", "claude-code"], (
+        f"tenian que correr los dos nodos: {llamadas}")
+
+    conn = k.connect(board=b_auto)
+    gate = next(t for t in k.list_tasks(conn) if t.title == "Aprobacion humana")
+    assert gate.status == "done", gate.status
+    runs = k.list_runs(conn, gate.id)
+    meta = (runs[-1].metadata or {}) if runs else {}
+    assert meta.get("claimer") == "auto" and meta.get("aprobacion") == "automatica", (
+        f"el registro no dice que la aprobacion fue automatica: {meta}")
+    assert "automaticamente" in (gate.result or ""), gate.result
+    conn.close()
+    print("8. `--aprobar-gates` cierra el gate y lo asienta como automatico: OK")
 
     print("\nOK: el CLI corre un DAG sin Studio y su codigo de salida informa.")
 finally:

@@ -6,10 +6,16 @@ o pipelines de CI/CD sin necesidad de levantar el servidor web del Studio.
 
 Uso:
     python orquester.py run <grafo.json> [--board <nombre>] [--presupuesto <usd>] [--json]
+                                        [--esperar-gates <seg> | --aprobar-gates]
     python orquester.py validar <grafo.json>
     python orquester.py plantillas
     python orquester.py skills
     python orquester.py doctor
+
+Codigo de salida: 0 si todos los nodos quedaron `done`, 2 si la corrida quedo
+pausada esperando una aprobacion humana --el board queda intacto y se reanuda--,
+1 si algo fallo o se corto por tope o timeout. Los tres se distinguen porque un
+workflow decide distinto con cada uno.
 
 El archivo se llama `orquester.py` y NO `cli.py` a proposito: `hermes-agent/`
 tiene su propio `cli.py`, y este arbol mete `hermes-agent` en `sys.path` en
@@ -180,7 +186,15 @@ def cmd_run(args) -> int:
 
     tope = float(args.presupuesto) if args.presupuesto else None
     
-    fin = corrida.correr(board, tope_usd=tope, log=None if args.json else corrida.imprimir)
+    # Que hacer con un gate de aprobacion humana. El default es no esperar: la
+    # firma tarda horas, el runner de CI cobra por minuto y el estado ya es
+    # durable en la SQLite del board, asi que tener el proceso vivo mirando no
+    # compra nada. Se corta, se dice cual falta, y se reanuda despues.
+    gates = ("aprobar" if getattr(args, "aprobar_gates", False)
+             else "esperar" if getattr(args, "esperar_gates", None) else "parar")
+    fin = corrida.correr(board, tope_usd=tope, gates=gates,
+                         timeout=float(args.esperar_gates) if gates == "esperar" else None,
+                         log=None if args.json else corrida.imprimir)
 
     conn = k.connect(board=board)
     tasks = k.list_tasks(conn)
@@ -215,6 +229,12 @@ def cmd_run(args) -> int:
             "result": t.result or "",
         })
 
+    # Un gate pendiente no es un fallo: es una pausa con nombre. Va aparte en el
+    # reporte para que un workflow pueda rutearlo distinto de un error.
+    pendientes = [t["titulo"] for t in reporte["tareas"]
+                  if t["assignee"] == corrida.GATE and t["status"] == "ready"]
+    reporte["gates_pendientes"] = pendientes
+
     if args.json:
         print(json.dumps(reporte, indent=2, ensure_ascii=False))
     else:
@@ -228,8 +248,21 @@ def cmd_run(args) -> int:
             if t["summary"]:
                 print(f"      -> {t['summary'].strip()[:90]}")
 
+        if pendientes:
+            print("\nEsperando aprobacion humana:")
+            for titulo in pendientes:
+                print(f"  - {titulo}")
+            print("Aprobalos en el Studio, o volve a correr con --aprobar-gates.")
+
     conn.close()
-    return 0 if reporte["ok"] else 1
+    # Tres codigos, tres decisiones distintas para un workflow:
+    #   0 = todos los nodos cerrados
+    #   1 = algo fallo, o la corrida se corto (tope, timeout, trabado)
+    #   2 = pausado esperando una firma humana. El board queda intacto y se
+    #       reanuda; un CI lo puede marcar neutral en vez de rojo.
+    if reporte["ok"]:
+        return 0
+    return 2 if fin["motivo"] == "gate" else 1
 
 
 def main() -> int:
@@ -247,6 +280,12 @@ def main() -> int:
     p_run.add_argument("--workspace", "-w", help="Directorio workspace para la ejecución")
     p_run.add_argument("--ignorar-capacidades", action="store_true", help="Omitir preflight de binarios")
     p_run.add_argument("--json", action="store_true", help="Salida en formato JSON estructurado")
+    p_run.add_argument("--esperar-gates", metavar="SEGUNDOS",
+                       help="Esperar hasta N segundos a que alguien apruebe los "
+                            "nodos Gate desde el Studio (por defecto no espera)")
+    p_run.add_argument("--aprobar-gates", action="store_true",
+                       help="Aprobar solos los nodos Gate. Queda asentado en la "
+                            "card que la aprobacion fue automatica")
 
     # validar
     p_val = sub.add_parser("validar", help="Validar la estructura y capacidades de un grafo")

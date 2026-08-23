@@ -800,6 +800,37 @@ que lo hace util como gate de CI, y es lo que fija `tests/test_cli.py` (que
 corre un DAG de punta a punta reemplazando `run_backend`, o sea sin agentes de
 verdad ni servidor HTTP).
 
+### Gates: la espera no la paga el proceso
+
+Un nodo `tipo: gate` compila con `assignee: human`, o sea que ni nuestro
+dispatcher ni el de Hermes lo levantan: espera una firma. Contarlo como trabajo
+pendiente colgaba la corrida --medido: 28 vueltas en 6 segundos sobre un flujo
+que no podia avanzar, y sin `timeout` no volvia nunca--.
+
+La regla es la de cualquier motor de flujos serio (Argo `suspend`, los
+environments de GitHub, y lo que Jenkins hace mal con su `input`): **el proceso
+que corre el flujo no es el dueño de la espera**. La firma tarda horas, el
+runner cobra por minuto, y el estado ya es durable en la SQLite del board.
+
+`corrida.correr(..., gates=...)` toma tres valores:
+
+| valor | quien lo usa | que hace |
+|---|---|---|
+| `parar` (default) | `orquester run` | corta con `motivo: "gate"`, board intacto y reanudable |
+| `esperar` | el Studio, `--esperar-gates N` | sigue dando vueltas; **acotado por `timeout`** |
+| `aprobar` | `--aprobar-gates` | los cierra solos y sigue |
+
+De ahi salen los tres codigos de salida del CLI: **0** todo cerrado, **2**
+pausado esperando una firma, **1** fallo o corte. Un workflow decide distinto
+con cada uno: el 2 es para notificar y terminar en neutral, no en rojo.
+
+`--aprobar-gates` deja escrito en la card que la aprobacion fue automatica
+(`claimer: "auto"`, `aprobacion: "automatica"`, y el texto lo dice). No es
+cosmetico: una auditoria a seis meses no tiene otra forma de distinguirlo, y un
+registro que miente es peor que uno que falta. Aprobar vive en
+`corrida.aprobar_gate`, que es de donde tambien cuelga `/api/gate/aprobar`: dos
+formas de cerrar un gate son dos formas de asentarlo.
+
 ### `_hay_futuro`: por que un flujo trabado ahora termina
 
 La condicion de corte miraba cada card por separado: `todo`, `ready` o
