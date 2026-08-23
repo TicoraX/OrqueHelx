@@ -800,6 +800,35 @@ que lo hace util como gate de CI, y es lo que fija `tests/test_cli.py` (que
 corre un DAG de punta a punta reemplazando `run_backend`, o sea sin agentes de
 verdad ni servidor HTTP).
 
+### El ciclo de refinamiento: el linter es el critico
+
+Un nodo que dice "listo" no prueba nada: lo dice igual si dejo el workspace
+roto. Con `orquester run --validar pyflakes`, despues de cada nodo se mide el
+workspace; si aparecio un problema que antes no estaba, la card se bloquea como
+**transitoria** con ese problema adentro, y el reintento lo recibe como
+contexto. Ahi se cierra el lazo: critica el linter, corrige el agente, y el
+techo lo pone `MAX_INTENTOS`, que ya existia.
+
+Tres decisiones que valen mas que el codigo (`dispatcher/validadores.py`):
+
+1. **El comando sale de una tabla nuestra, no del grafo.** Un campo
+   `validador: "<comando>"` seria ejecucion de shell escrita en un `.json`, y
+   los grafos de este producto los puede haber escrito un modelo
+   (`/api/generar-grafo`). Con un nombre de tabla, lo peor que puede pedir un
+   grafo hostil es "corre pyflakes".
+2. **Solo cuentan los hallazgos NUEVOS.** Un repo de verdad ya tiene warnings:
+   comparar contra cero bloquearia el primer nodo de cualquier flujo sobre
+   codigo ajeno por deuda que no escribio.
+3. **La linea base se toma UNA vez por card, no por intento.** Medirla en cada
+   intento tenia un agujero: el destrozo del intento 1 ya esta en disco cuando
+   arranca el 2, asi que pasaba a contar como preexistente y el nodo aprobaba
+   sin haber arreglado nada. Verificado: el nodo terco cerraba en `done` a la
+   segunda, con el archivo igual de roto.
+
+`tests/test_ciclo_refinamiento.py` corre el lazo entero con un backend falso que
+rompe, lee y corrige. Lo que fija no es que el nodo termine --eso pasaria igual
+sin validador-- sino que el segundo intento **recibio el hallazgo del primero**.
+
 ### Gates: la espera no la paga el proceso
 
 Un nodo `tipo: gate` compila con `assignee: human`, o sea que ni nuestro

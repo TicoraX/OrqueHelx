@@ -20,6 +20,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ / "hermes-agent"))
 import hermes_cli.kanban_db as k
 import loop as dispatcher
+import validadores
 
 # board -> peticion de parada. Lo lee el bucle en cada vuelta; lo escribe quien
 # aprieta el boton, desde otro hilo.
@@ -216,7 +217,7 @@ def imprimir(hechas) -> None:
 
 def correr(board: str, *, tope_usd: float = None, listo=None, espera: float = 3.0,
            timeout: float = None, timeout_nodo: int = 600, log=None,
-           gates: str = "parar") -> dict:
+           gates: str = "parar", validador: str = None) -> dict:
     """Despachar el board hasta que no quede trabajo. Bloquea.
 
     - `tope_usd`: al alcanzarlo se deja de arrancar nodos nuevos. El corte es
@@ -238,6 +239,11 @@ def correr(board: str, *, tope_usd: float = None, listo=None, espera: float = 3.
         - `aprobar`: aprobarlos solos y seguir. Para un pipeline que de verdad
           no tiene humano. Queda asentado como automatico en la card.
 
+    - `validador`: nombre de `validadores.VALIDADORES`. Se corre despues de
+      cada nodo, y si el nodo dejo problemas NUEVOS la card vuelve a la cola con
+      esos problemas como contexto del reintento: el linter es el critico del
+      ciclo de refinamiento y el agente el que corrige.
+
     Devuelve `{"motivo", "vueltas", "nodos"}`. `motivo` es uno de: `sin
     trabajo` (fin normal, todo cerrado), `gate` (falta una aprobacion humana),
     `trabado` (no queda nada que pueda avanzar y hay cards abiertas), `listo`,
@@ -245,6 +251,13 @@ def correr(board: str, *, tope_usd: float = None, listo=None, espera: float = 3.
     """
     board = slug(board)            # el registro en memoria y la SQLite, la
                                    # misma clave: ver `slug`
+    if validador:
+        # Antes de arrancar, no al validar el primer nodo: enterarse de que
+        # falta el linter a los diez minutos, con la card ya bloqueada, es la
+        # peor forma de enterarse.
+        hay, motivo = validadores.disponible(validador)
+        if not hay:
+            return {"motivo": "error", "vueltas": 0, "nodos": 0, "error": motivo}
     binario = hermes_bin()
     en_vuelo = [None]
     _HERMES[board] = en_vuelo
@@ -274,7 +287,7 @@ def correr(board: str, *, tope_usd: float = None, listo=None, espera: float = 3.
 
             _pinchar_hermes(binario, board, en_vuelo)
             hechas = dispatcher.tick(conn, board=board, tope_usd=tope_usd,
-                                     timeout=timeout_nodo)
+                                     timeout=timeout_nodo, validador=validador)
             vueltas += 1
             nodos += len(hechas)
             if hechas and log:

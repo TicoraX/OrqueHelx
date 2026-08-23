@@ -192,9 +192,13 @@ def cmd_run(args) -> int:
     # compra nada. Se corta, se dice cual falta, y se reanuda despues.
     gates = ("aprobar" if getattr(args, "aprobar_gates", False)
              else "esperar" if getattr(args, "esperar_gates", None) else "parar")
-    fin = corrida.correr(board, tope_usd=tope, gates=gates,
+    fin = corrida.correr(board, tope_usd=tope, gates=gates, validador=args.validar,
                          timeout=float(args.esperar_gates) if gates == "esperar" else None,
                          log=None if args.json else corrida.imprimir)
+
+    if fin.get("error"):
+        print(f"Error: {fin['error']}", file=sys.stderr)
+        return 1
 
     conn = k.connect(board=board)
     tasks = k.list_tasks(conn)
@@ -283,6 +287,9 @@ def main() -> int:
     p_run.add_argument("--esperar-gates", metavar="SEGUNDOS",
                        help="Esperar hasta N segundos a que alguien apruebe los "
                             "nodos Gate desde el Studio (por defecto no espera)")
+    p_run.add_argument("--validar", metavar="NOMBRE",
+                       help="Correr un validador despues de cada nodo y reintentar "
+                            "el que deje problemas nuevos (ej: pyflakes)")
     p_run.add_argument("--aprobar-gates", action="store_true",
                        help="Aprobar solos los nodos Gate. Queda asentado en la "
                             "card que la aprobacion fue automatica")

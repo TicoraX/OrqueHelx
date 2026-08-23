@@ -78,11 +78,14 @@ ARCHIVO_GATE.write_text(json.dumps(CON_GATE), encoding="utf-8")
 
 
 def _correr(board, presupuesto=None, salida_json=False, grafo=None,
-            esperar_gates=None, aprobar_gates=False):
+            esperar_gates=None, aprobar_gates=False, validar=None):
+    # El Namespace lleva los mismos campos que arma argparse: si el test
+    # construye uno mas chico, un flag nuevo rompe aca y no en el CLI.
     return orq.cmd_run(argparse.Namespace(
         grafo=str(grafo or ARCHIVO), board=board, workspace=None,
         ignorar_capacidades=True, presupuesto=presupuesto, json=salida_json,
-        esperar_gates=esperar_gates, aprobar_gates=aprobar_gates))
+        esperar_gates=esperar_gates, aprobar_gates=aprobar_gates,
+        validar=validar))
 
 
 def _cerrar_todo():
