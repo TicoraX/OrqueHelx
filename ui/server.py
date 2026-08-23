@@ -355,7 +355,7 @@ def _generar_mermaid(grafo: dict) -> str:
         if len(titulo) > 50:
             titulo = titulo[:47] + "..."
         if n.get("tipo") == "nota":
-            lineas.append(f'        {nid}["📝 {titulo}"]:::nota')
+            lineas.append(f'        {nid}["[Nota] {titulo}"]:::nota')
         else:
             rt = _slug_yaml(n.get("runtime", "hermes"))
             lineas.append(f'        {nid}["{titulo}<br/><i>({rt})</i>"]:::{rt.replace("-", "_")}')

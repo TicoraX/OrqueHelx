@@ -645,8 +645,8 @@
           <button id="btnLintGrafo" style="font-size:10px; padding:4px 2px; background:#2a2418; border-color:#6d5324; color:#f0c068;">Lint</button>
         </div>
         <div class="fila" style="display:grid; grid-template-columns:1fr 1fr; gap:4px; margin-top:4px;">
-          <button id="btnReporte" style="font-size:10.5px; padding:5px; background:#1e3328; border-color:#2ea043; color:#7ee787; font-weight:600;">📄 Reporte Ejecutivo</button>
-          <button id="btnComparar" style="font-size:10.5px; padding:5px; background:#292238; border-color:#8957e5; color:#d2a8ff; font-weight:600;">⚖️ Comparar Nodos</button>
+          <button id="btnReporte" style="font-size:10.5px; padding:5px; background:#1e3328; border-color:#2ea043; color:#7ee787; font-weight:600;">Reporte Ejecutivo</button>
+          <button id="btnComparar" style="font-size:10.5px; padding:5px; background:#292238; border-color:#8957e5; color:#d2a8ff; font-weight:600;">Comparar Nodos</button>
         </div>
       </div>
 
@@ -699,8 +699,8 @@
           </select>
         </div>
         <div id="boxGate" style="display:none; background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:8px; font-size:11.5px;">
-          <div style="color:var(--tenue); margin-bottom:6px;">🛡️ Este nodo detiene el flujo hasta que confirmes la aprobación humana.</div>
-          <button id="btnAprobarGate" style="display:none; background:#2ea043; color:#fff; width:100%; padding:6px; font-weight:bold; font-size:12px;">✓ Aprobar Gate y Continuar</button>
+          <div style="color:var(--tenue); margin-bottom:6px;">Este nodo detiene el flujo hasta que confirmes la aprobación humana.</div>
+          <button id="btnAprobarGate" style="display:none; background:#2ea043; color:#fff; width:100%; padding:6px; font-weight:bold; font-size:12px;">Aprobar Gate y Continuar</button>
         </div>
         <div id="camposAgente" style="display:flex; flex-direction:column; gap:8px;">
         <div><label for="runtime">Ejecutor</label>
@@ -1197,7 +1197,7 @@ function pintar() {
     rt.setAttribute("fill", est ? tinta(est) : (gate ? "#e5c07b" : (RT_COLOR[n.runtime] || "#8e9aab")));
     rt.setAttribute("font-size", "10.5");
     rt.setAttribute("opacity", est ? "0.85" : "1");
-    rt.textContent = gate ? "🛡️ gate (humano)" + (est ? " · " + est : "")
+    rt.textContent = gate ? "gate (humano)" + (est ? " · " + est : "")
                           : (n.runtime + (n.modelo ? " · " + n.modelo : "") +
                              (n.esfuerzo ? " · " + n.esfuerzo : "") + (est ? " · " + est : ""));
     g.appendChild(rt);
@@ -1901,19 +1901,19 @@ function renderPaletteResultados(filtro) {
   const q = (filtro || "").toLowerCase().trim();
 
   const acciones = [
-    { label: "Compilar Flujo", cat: "Acción", icon: "⚡", run: () => $("#compilar").click() },
-    { label: "Ejecutar / Continuar Corrida", cat: "Acción", icon: "▶", run: () => $("#correr").click() },
-    { label: "Detener Corrida", cat: "Acción", icon: "⏹", run: () => $("#parar").click() },
-    { label: "Reorganizar Lienzo (Orden Kahn)", cat: "Lienzo", icon: "📐", run: () => $("#disposicion").click() },
-    { label: "Exportar a Servidor MCP", cat: "Exportar", icon: "🔌", run: () => $("#exportar").click() },
-    { label: "Abrir Cuotas, Modelos y Secretos", cat: "Sistema", icon: "📊", run: () => $("#btnCuotas").click() },
-    { label: "Nuevo Nodo Agente", cat: "Lienzo", icon: "＋", run: () => { anotar(); const id = nuevoId(); grafo.nodos.push({ id, titulo: "Nueva tarea", runtime: "claude-code", x: 200, y: 200 }); sel = id; refrescarEditor(); pintar(); } },
-    { label: "Nuevo Nodo Gate (Aprobación)", cat: "Lienzo", icon: "🛡️", run: () => { anotar(); const id = nuevoId(); grafo.nodos.push({ id, titulo: "Aprobación Humana", tipo: "gate", x: 200, y: 200 }); sel = id; refrescarEditor(); pintar(); } },
-    { label: "Nueva Nota Explicativa", cat: "Lienzo", icon: "📝", run: () => { anotar(); const id = nuevoId(); grafo.nodos.push({ id, titulo: "Nota explicativa", tipo: "nota", x: 200, y: 200 }); sel = id; refrescarEditor(); pintar(); } },
+    { label: "Compilar Flujo", cat: "Acción", icon: "[Run]", run: () => $("#compilar").click() },
+    { label: "Ejecutar / Continuar Corrida", cat: "Acción", icon: "[Start]", run: () => $("#correr").click() },
+    { label: "Detener Corrida", cat: "Acción", icon: "[Stop]", run: () => $("#parar").click() },
+    { label: "Reorganizar Lienzo (Orden Kahn)", cat: "Lienzo", icon: "[DAG]", run: () => $("#disposicion").click() },
+    { label: "Exportar a Servidor MCP", cat: "Exportar", icon: "[MCP]", run: () => $("#exportar").click() },
+    { label: "Abrir Cuotas, Modelos y Secretos", cat: "Sistema", icon: "[Info]", run: () => $("#btnCuotas").click() },
+    { label: "Nuevo Nodo Agente", cat: "Lienzo", icon: "[+]", run: () => { anotar(); const id = nuevoId(); grafo.nodos.push({ id, titulo: "Nueva tarea", runtime: "claude-code", x: 200, y: 200 }); sel = id; refrescarEditor(); pintar(); } },
+    { label: "Nuevo Nodo Gate (Aprobación)", cat: "Lienzo", icon: "[Gate]", run: () => { anotar(); const id = nuevoId(); grafo.nodos.push({ id, titulo: "Aprobación Humana", tipo: "gate", x: 200, y: 200 }); sel = id; refrescarEditor(); pintar(); } },
+    { label: "Nueva Nota Explicativa", cat: "Lienzo", icon: "[Nota]", run: () => { anotar(); const id = nuevoId(); grafo.nodos.push({ id, titulo: "Nota explicativa", tipo: "nota", x: 200, y: 200 }); sel = id; refrescarEditor(); pintar(); } },
     ...(TODAS_PLANTILLAS || []).map(p => ({
       label: `Cargar Plantilla: ${p.nombre}`,
       cat: "Plantilla",
-      icon: "📁",
+      icon: "[Tpl]",
       desc: p.descripcion || "",
       run: () => {
         const btn = document.querySelector(`button[data-pl="${p.nombre}"]`);
