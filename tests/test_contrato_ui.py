@@ -244,6 +244,7 @@ AFUERA = {
     "/api/estado": "punto 1: su forma se contrasta contra el mock del navegador",
     "/api/eventos": "stream SSE para observabilidad en vivo de task_events",
     "/api/nodo/parar": "detiene el subproceso de un nodo especifico",
+    "/api/gate/aprobar": "completa una tarea de aprobacion humana para desbloquear a los hijos",
 }
 
 env = {**os.environ, "ORQUESTER_TOKEN": TOKEN, "PYTHONIOENCODING": "utf-8"}

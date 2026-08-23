@@ -690,8 +690,13 @@
         <div><label for="tipo">Tipo</label>
           <select id="tipo">
             <option value="agente">Agente (se ejecuta)</option>
+            <option value="gate">Gate (aprobación humana)</option>
             <option value="nota">Nota (solo explica, no se ejecuta)</option>
           </select>
+        </div>
+        <div id="boxGate" style="display:none; background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:8px; font-size:11.5px;">
+          <div style="color:var(--tenue); margin-bottom:6px;">🛡️ Este nodo detiene el flujo hasta que confirmes la aprobación humana.</div>
+          <button id="btnAprobarGate" style="display:none; background:#2ea043; color:#fff; width:100%; padding:6px; font-weight:bold; font-size:12px;">✓ Aprobar Gate y Continuar</button>
         </div>
         <div id="camposAgente" style="display:flex; flex-direction:column; gap:8px;">
         <div><label for="runtime">Ejecutor</label>
@@ -902,6 +907,17 @@
   </div>
 </div>
 
+<div id="modalPalette" role="dialog" aria-modal="true" aria-labelledby="modalPaletteTitulo" tabindex="-1" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); z-index:110; align-items:flex-start; justify-content:center; padding-top:15vh;">
+  <div style="background:var(--panel); border:1px solid var(--linea); border-radius:8px; width:90vw; max-width:560px; max-height:70vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.7); overflow:hidden;">
+    <div style="padding:10px 14px; border-bottom:1px solid var(--linea); display:flex; align-items:center; gap:10px; background:var(--hundido);">
+      <span id="modalPaletteTitulo" style="color:var(--tenue); font-size:14px; font-weight:bold;">⌘</span>
+      <input id="inputPalette" type="text" placeholder="Buscar comando o plantilla... (Esc para cerrar)" style="border:none; background:transparent; color:var(--texto); font-size:13px; outline:none; flex:1; padding:4px 0;" autofocus autocomplete="off" />
+      <span style="font-size:10px; color:var(--tenue); border:1px solid var(--linea); padding:1px 5px; border-radius:3px;">ESC</span>
+    </div>
+    <div id="paletteResultados" style="padding:6px; overflow-y:auto; flex:1; max-height:50vh; display:flex; flex-direction:column; gap:2px;"></div>
+  </div>
+</div>
+
 <script>
 // El color de un estado sale de la MISMA variable CSS que pinta la leyenda.
 // Antes era un objeto con hex propios, duplicando la paleta, y se
@@ -1096,6 +1112,7 @@ function pintar() {
     // Una nota no se ejecuta: no tiene estado, no tiene color de ejecutor y no
     // se pinta como algo que este por correr.
     const nota = n.tipo === "nota";
+    const gate = n.tipo === "gate" || n.tipo === "aprobacion";
     const est = nota ? null : estado[ids[n.id]]?.estado;
     const g = document.createElementNS(svg.namespaceURI, "g");
     g.setAttribute("class", "nodo" + (sel === n.id ? " sel" : "") +
@@ -1107,9 +1124,10 @@ function pintar() {
     // La nota es mas alta y mas ancha: es texto para leer, no una etiqueta.
     const ancho = nota ? A * 1.35 : A, alto = nota ? ALTO * 1.9 : ALTO;
     r.setAttribute("width", ancho); r.setAttribute("height", alto); r.setAttribute("rx", "8");
-    r.setAttribute("fill", est ? COLOR[est] || "#4a5160" : (nota ? "#1b1f2a" : "#252a34"));
-    r.setAttribute("stroke", nota ? "#5c6478" : (RT_COLOR[n.runtime] || "#8e9aab"));
+    r.setAttribute("fill", est ? COLOR[est] || "#4a5160" : (nota ? "#1b1f2a" : (gate ? "#251e2b" : "#252a34")));
+    r.setAttribute("stroke", nota ? "#5c6478" : (gate ? "#e5c07b" : (RT_COLOR[n.runtime] || "#8e9aab")));
     if (nota) r.setAttribute("stroke-dasharray", "5 3");
+    if (gate && !est) r.setAttribute("stroke-dasharray", "4 2");
     g.appendChild(r);
 
     for (const [i, linea] of envolver(n.titulo || "(sin título)",
@@ -1126,11 +1144,12 @@ function pintar() {
 
     const rt = document.createElementNS(svg.namespaceURI, "text");
     rt.setAttribute("x", 11); rt.setAttribute("y", 50);
-    rt.setAttribute("fill", est ? tinta(est) : (RT_COLOR[n.runtime] || "#8e9aab"));
+    rt.setAttribute("fill", est ? tinta(est) : (gate ? "#e5c07b" : (RT_COLOR[n.runtime] || "#8e9aab")));
     rt.setAttribute("font-size", "10.5");
     rt.setAttribute("opacity", est ? "0.85" : "1");
-    rt.textContent = n.runtime + (n.modelo ? " · " + n.modelo : "") +
-                     (n.esfuerzo ? " · " + n.esfuerzo : "") + (est ? " · " + est : "");
+    rt.textContent = gate ? "🛡️ gate (humano)" + (est ? " · " + est : "")
+                          : (n.runtime + (n.modelo ? " · " + n.modelo : "") +
+                             (n.esfuerzo ? " · " + n.esfuerzo : "") + (est ? " · " + est : ""));
     g.appendChild(rt);
 
     seguirNodo(g, n);
@@ -1538,10 +1557,29 @@ function refrescarEditor() {
   $("#sinNodo").style.display = n ? "none" : "block";
   if (n) {
     const nota = n.tipo === "nota";
-    $("#tipo").value = nota ? "nota" : "agente";
-    $("#camposAgente").style.display = nota ? "none" : "flex";
+    const gate = n.tipo === "gate" || n.tipo === "aprobacion";
+    $("#tipo").value = nota ? "nota" : (gate ? "gate" : "agente");
+    $("#camposAgente").style.display = (nota || gate) ? "none" : "flex";
+    const boxGate = $("#boxGate");
+    if (boxGate) {
+      boxGate.style.display = gate ? "block" : "none";
+      if (gate) {
+        const est = estado[ids[n.id]]?.estado;
+        const btnAprobar = $("#btnAprobarGate");
+        btnAprobar.style.display = (est === "blocked" || est === "ready" || est === "running") ? "block" : "none";
+        btnAprobar.onclick = async () => {
+          const { ok, datos } = await api("/api/gate/aprobar", { board: grafo.board, task_id: ids[n.id] });
+          if (ok) {
+            avisar("Gate aprobado. Tareas dependientes promovidas.", "ok");
+            refrescarEstado();
+          } else {
+            avisar(datos?.error || "No se pudo aprobar el gate", "error");
+          }
+        };
+      }
+    }
     $("#titulo").value = n.titulo || "";
-    if (!nota) {
+    if (!nota && !gate) {
       $("#runtime").value = n.runtime;
       $("#modelo").value = n.modelo || "";
       $("#workspace").value = n.workspace || "";
@@ -1672,8 +1710,11 @@ $("#borrarGrafo").onclick = async () => {
 // --- Plantillas -------------------------------------------------------
 // Son de solo lectura: usar una la COPIA a los grafos propios. Asi un `git
 // pull` que mejore una plantilla no te pisa lo que hayas armado encima.
+let TODAS_PLANTILLAS = [];
+
 async function cargarPlantillas() {
   const { datos } = await api("/api/plantillas");
+  TODAS_PLANTILLAS = datos.plantillas || [];
   $("#plantillas").innerHTML = (datos.plantillas || []).map(p => `
     <div class="pl">
       <b>${esc(p.nombre)}</b>
@@ -1785,8 +1826,143 @@ svg.onwheel = e => {
   verVista();
 };
 
+// --- Command Palette (Ctrl+K / Cmd+K) --------------------------------
+let PALETTE_INDEX = 0;
+
+function abrirPalette() {
+  const m = $("#modalPalette");
+  if (!m) return;
+  m.style.display = "flex";
+  $("#inputPalette").value = "";
+  PALETTE_INDEX = 0;
+  renderPaletteResultados("");
+  setTimeout(() => $("#inputPalette").focus(), 30);
+}
+
+function cerrarPalette() {
+  const m = $("#modalPalette");
+  if (!m) return;
+  m.style.display = "none";
+}
+
+function renderPaletteResultados(filtro) {
+  const caja = $("#paletteResultados");
+  if (!caja) return;
+  const q = (filtro || "").toLowerCase().trim();
+
+  const acciones = [
+    { label: "Compilar Flujo", cat: "Acción", icon: "⚡", run: () => $("#compilar").click() },
+    { label: "Ejecutar / Continuar Corrida", cat: "Acción", icon: "▶", run: () => $("#correr").click() },
+    { label: "Detener Corrida", cat: "Acción", icon: "⏹", run: () => $("#parar").click() },
+    { label: "Reorganizar Lienzo (Orden Kahn)", cat: "Lienzo", icon: "📐", run: () => $("#disposicion").click() },
+    { label: "Exportar a Servidor MCP", cat: "Exportar", icon: "🔌", run: () => $("#exportar").click() },
+    { label: "Abrir Cuotas, Modelos y Secretos", cat: "Sistema", icon: "📊", run: () => $("#btnCuotas").click() },
+    { label: "Nuevo Nodo Agente", cat: "Lienzo", icon: "＋", run: () => { anotar(); const id = nuevoId(); grafo.nodos.push({ id, titulo: "Nueva tarea", runtime: "claude-code", x: 200, y: 200 }); sel = id; refrescarEditor(); pintar(); } },
+    { label: "Nuevo Nodo Gate (Aprobación)", cat: "Lienzo", icon: "🛡️", run: () => { anotar(); const id = nuevoId(); grafo.nodos.push({ id, titulo: "Aprobación Humana", tipo: "gate", x: 200, y: 200 }); sel = id; refrescarEditor(); pintar(); } },
+    { label: "Nueva Nota Explicativa", cat: "Lienzo", icon: "📝", run: () => { anotar(); const id = nuevoId(); grafo.nodos.push({ id, titulo: "Nota explicativa", tipo: "nota", x: 200, y: 200 }); sel = id; refrescarEditor(); pintar(); } },
+    ...(TODAS_PLANTILLAS || []).map(p => ({
+      label: `Cargar Plantilla: ${p.nombre}`,
+      cat: "Plantilla",
+      icon: "📁",
+      desc: p.descripcion || "",
+      run: () => {
+        const btn = document.querySelector(`button[data-pl="${p.nombre}"]`);
+        if (btn) btn.click();
+        else avisar(`Plantilla '${p.nombre}' seleccionada`, "ok");
+      }
+    }))
+  ];
+
+  const filtradas = acciones.filter(a => !q || a.label.toLowerCase().includes(q) || (a.desc && a.desc.toLowerCase().includes(q)) || a.cat.toLowerCase().includes(q));
+
+  if (!filtradas.length) {
+    caja.innerHTML = `<div style="padding:12px; font-size:12px; color:var(--tenue); text-align:center;">No se encontraron acciones para "${esc(q)}".</div>`;
+    return;
+  }
+
+  if (PALETTE_INDEX >= filtradas.length) PALETTE_INDEX = 0;
+  if (PALETTE_INDEX < 0) PALETTE_INDEX = filtradas.length - 1;
+
+  caja.innerHTML = filtradas.map((a, idx) => `
+    <div class="item-palette ${idx === PALETTE_INDEX ? 'activo' : ''}" data-idx="${idx}" style="display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-radius:6px; cursor:pointer; background:${idx === PALETTE_INDEX ? 'var(--acento)' : 'transparent'}; color:${idx === PALETTE_INDEX ? '#fff' : 'var(--texto)'};">
+      <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
+        <span style="font-size:14px;">${a.icon}</span>
+        <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+          <div style="font-size:12.5px; font-weight:500;">${esc(a.label)}</div>
+          ${a.desc ? `<div style="font-size:10.5px; opacity:0.8; overflow:hidden; text-overflow:ellipsis;">${esc(a.desc)}</div>` : ''}
+        </div>
+      </div>
+      <span style="font-size:10px; opacity:0.75; text-transform:uppercase; letter-spacing:.05em; margin-left:8px;">${esc(a.cat)}</span>
+    </div>
+  `).join("");
+
+  for (const el of caja.querySelectorAll(".item-palette")) {
+    const idx = parseInt(el.dataset.idx, 10);
+    el.onmouseenter = () => { PALETTE_INDEX = idx; renderPaletteResultados($("#inputPalette").value); };
+    el.onclick = () => {
+      cerrarPalette();
+      filtradas[idx].run();
+    };
+  }
+}
+
+$("#inputPalette").oninput = e => {
+  PALETTE_INDEX = 0;
+  renderPaletteResultados(e.target.value);
+};
+$("#inputPalette").onkeydown = e => {
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    PALETTE_INDEX++;
+    renderPaletteResultados(e.target.value);
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    PALETTE_INDEX--;
+    renderPaletteResultados(e.target.value);
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    const activo = $("#paletteResultados .item-palette.activo") || $("#paletteResultados .item-palette");
+    if (activo) activo.click();
+  }
+};
+$("#modalPalette").onclick = e => {
+  if (e.target === $("#modalPalette")) cerrarPalette();
+};
+
 // Atajos de teclado seguros
 document.addEventListener("keydown", e => {
+  // Global Command Palette (Ctrl+K o Cmd+K)
+  if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) {
+    e.preventDefault();
+    abrirPalette();
+    return;
+  }
+
+  // Deseleccionar o cerrar modal (Escape)
+  if (e.key === "Escape") {
+    if ($("#modalPalette") && $("#modalPalette").style.display === "flex") {
+      e.preventDefault();
+      cerrarPalette();
+      return;
+    }
+    if ($("#modalCuotas") && $("#modalCuotas").style.display === "flex") {
+      e.preventDefault();
+      $("#modalCuotas").style.display = "none";
+      return;
+    }
+    if ($("#modalEntregable") && $("#modalEntregable").style.display === "flex") {
+      e.preventDefault();
+      cerrarModalEntregable();
+      return;
+    }
+    if (sel) {
+      e.preventDefault();
+      sel = null;
+      refrescarEditor(); cargarTraza(); pintar();
+      return;
+    }
+  }
+
   if (/^(INPUT|TEXTAREA|SELECT)$/i.test(e.target.tagName)) return;
 
   // Encuadrar lienzo (F)
@@ -1836,43 +2012,6 @@ document.addEventListener("keydown", e => {
     e.preventDefault();
     $("#borrar").click();
     return;
-  }
-
-  // Duplicar nodo seleccionado (Ctrl+D o Cmd+D)
-  if ((e.ctrlKey || e.metaKey) && (e.key === "d" || e.key === "D") && sel) {
-    e.preventDefault();
-    const original = buscar(sel);
-    if (!original) return;
-    anotar();
-    const nuevo = JSON.parse(JSON.stringify(original));
-    nuevo.id = nuevoId();
-    nuevo.x = (original.x || 0) + 30;
-    nuevo.y = (original.y || 0) + 30;
-    grafo.nodos.push(nuevo);
-    sel = nuevo.id;
-    refrescarEditor(); cargarTraza(); pintar();
-    avisar(`Nodo '${nuevo.id}' duplicado.`, "ok");
-    return;
-  }
-
-  // Deseleccionar o cerrar modal (Escape)
-  if (e.key === "Escape") {
-    if ($("#modalCuotas") && $("#modalCuotas").style.display === "flex") {
-      e.preventDefault();
-      $("#modalCuotas").style.display = "none";
-      return;
-    }
-    if ($("#modalEntregable") && $("#modalEntregable").style.display === "flex") {
-      e.preventDefault();
-      cerrarModalEntregable();
-      return;
-    }
-    if (sel) {
-      e.preventDefault();
-      sel = null;
-      refrescarEditor(); cargarTraza(); pintar();
-      return;
-    }
   }
 });
 

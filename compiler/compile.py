@@ -46,11 +46,18 @@ def es_nota(nodo: dict) -> bool:
     return nodo.get("tipo") == "nota"
 
 
+def es_gate(nodo: dict) -> bool:
+    """Un punto de aprobacion humana (Human-in-the-loop)."""
+    return nodo.get("tipo") in ("gate", "aprobacion")
+
+
 class ErrorDeGrafo(ValueError):
     """El grafo no es compilable. El mensaje va tal cual al canvas."""
 
 
 def _assignee(nodo: dict) -> str:
+    if es_gate(nodo):
+        return "human"
     rt = nodo.get("runtime", "hermes")
     if rt not in RUNTIMES:
         raise ErrorDeGrafo(
@@ -159,7 +166,7 @@ def validar(grafo: dict, *, capacidades: bool = True) -> None:
                 f"Validos: {list(ESFUERZO[rt][1])}")
 
     ausentes = faltantes({n.get("runtime", "hermes") for n in nodos
-                          if not es_nota(n)}) if capacidades else []
+                          if not es_nota(n) and not es_gate(n)}) if capacidades else []
     if ausentes:
         raise ErrorDeGrafo(
             f"estos ejecutores no estan disponibles en esta maquina: {ausentes}. "

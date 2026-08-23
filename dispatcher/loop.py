@@ -260,6 +260,10 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600,
         # El contexto trae los summaries de los padres, o sea salida de otro
         # agente convertida en prompt de este.
         ctx = blindar_contexto(k.build_worker_context(conn, task_id))
+        # Guardrail de auto-corrección: si hubo un fallo previo transitorio (ej. schema/formato),
+        # se inyecta el aviso explícito para que el worker corrija en el reintento.
+        if getattr(task, "block_reason", None) and getattr(task, "block_kind", None) == "transient":
+            ctx += f"\n\n[ATENCIÓN - REINTENTO]: El intento anterior falló con: {task.block_reason[:300]}. Asegúrate de cumplir el formato y esquema requerido."
         herr = [s for s in (task.skills or []) if s in {"Read", "Grep", "Glob", "Bash", "Write"}]
         nodo_tope = None
         if task.tenant and str(task.tenant).startswith("budget:"):

@@ -167,6 +167,25 @@ def _parar_nodo(board: str, task_id: str) -> dict:
                   (f"no existe la card {task_id}" if task_id else "falta el task_id"),
     }
 
+
+def _aprobar_gate(board: str, task_id: str, resultado: str = None) -> dict:
+    """Aprobar un nodo Gate, completando su tarea para desbloquear a los hijos."""
+    conn = None
+    try:
+        conn = _conn(board)
+        t = k.get_task(conn, task_id)
+        if not t:
+            return {"ok": False, "error": f"no existe la tarea '{task_id}'"}
+        res = (resultado or "").strip() or "Aprobado por el usuario"
+        k.complete_task(conn, task_id, summary=res, result=res,
+                        metadata={"orquester_status": "success", "claimer": "human"})
+        return {"ok": True, "board": board, "task_id": task_id, "resultado": res}
+    except Exception as e:
+        return {"ok": False, "error": f"no se pudo aprobar el gate: {e}"}
+    finally:
+        if conn is not None:
+            conn.close()
+
 # board -> tope de gasto con el que se arranco. El Studio tiene que mostrar el
 # que se esta APLICANDO, no el que hay tipeado en el campo: editar el campo con
 # una corrida en marcha no cambia el tope de esa corrida, y la barra mostraba
@@ -2190,6 +2209,11 @@ class Handler(BaseHTTPRequestHandler):
                 board = cuerpo.get("board", "orquester")
                 tid = cuerpo.get("task_id") or ""
                 return self._responder(200, _parar_nodo(board, tid))
+            if self.path == "/api/gate/aprobar":
+                board = cuerpo.get("board", "orquester")
+                tid = cuerpo.get("task_id") or ""
+                resultado = cuerpo.get("resultado") or None
+                return self._responder(200, _aprobar_gate(board, tid, resultado))
             if self.path == "/api/correr":
                 tope = cuerpo.get("presupuesto_usd")
                 try:
