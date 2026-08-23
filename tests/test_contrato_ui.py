@@ -245,6 +245,8 @@ AFUERA = {
     "/api/eventos": "stream SSE para observabilidad en vivo de task_events",
     "/api/nodo/parar": "detiene el subproceso de un nodo especifico",
     "/api/gate/aprobar": "completa una tarea de aprobacion humana para desbloquear a los hijos",
+    "/api/reporte/generar": "compila el reporte ejecutivo en varios formatos (markdown/html)",
+    "/api/reporte/descargar": "descarga binaria/texto con cabecera Content-Disposition",
 }
 
 env = {**os.environ, "ORQUESTER_TOKEN": TOKEN, "PYTHONIOENCODING": "utf-8"}

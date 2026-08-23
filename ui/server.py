@@ -9,7 +9,7 @@ pidio.
     uv run --python 3.11 --with jsonschema python ui/server.py
     -> http://127.0.0.1:8765
 """
-import hmac, json, os, re, secrets, shutil, subprocess, sys, threading, time, traceback
+import html, hmac, json, os, re, secrets, shutil, subprocess, sys, threading, time, traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qsl
@@ -1204,8 +1204,8 @@ def _simular_flujo(grafo: dict) -> dict:
     }
 
 
-def _generar_reporte_corrida(board: str) -> dict:
-    """Generar informe completo de auditoría y ejecución de un board en Markdown."""
+def _generar_reporte_corrida(board: str, formato: str = "markdown") -> dict:
+    """Generar informe completo de auditoría y ejecución de un board en Markdown o HTML."""
     slug = (board or "orquester").strip()
     conn = _conn(slug)
     tasks = k.list_tasks(conn)
@@ -1236,17 +1236,58 @@ def _generar_reporte_corrida(board: str) -> dict:
 
         filas_tabla.append(f"| `{tid}` | {titulo[:35]} | `{rt}` | `{st}` | {dur_txt} | {tokens_nodo} ({costo_txt}) |")
 
-        if t.result:
-            salida_nodo = t.result[:800]
-            # Cerca mas larga que la secuencia de backticks mas larga que traiga
-            # el resultado: un entregable que contenga ``` cerraba la cerca y el
-            # resto del reporte se renderizaba como markdown en vez de como
-            # salida del agente.
+        runs = k.list_runs(conn, t.id)
+        ultimo_run = runs[-1] if runs else None
+        resumen = (ultimo_run.summary if ultimo_run and ultimo_run.summary else "").strip()
+
+        if t.result or resumen:
+            salida_nodo = (t.result or "").strip()
             cerca = "`" * max(3, max((len(m) for m in re.findall(r"`+", salida_nodo)),
                                      default=0) + 1)
+            sum_line = f"\n> **Resumen**: {resumen}\n" if resumen else ""
+            res_block = f"\n{cerca}\n{salida_nodo}\n{cerca}\n" if salida_nodo else ""
             secciones_entregables.append(
                 f"### Nodo `{tid}`: {titulo}\n- **Estado**: `{st}` | **Runtime**: `{rt}`"
-                f"\n\n{cerca}\n{salida_nodo}\n{cerca}\n")
+                f"{sum_line}{res_block}")
+
+    if formato == "html":
+        cards = []
+        for t in tasks:
+            tid = t.id
+            titulo = t.title or "(sin titulo)"
+            st = t.status or "todo"
+            bg_st = "#2ea043" if st == "done" else ("#d73a49" if st in ("blocked", "triage") else "#6a737d")
+            res_txt = html.escape(t.result or "(sin entregable)")
+            runs_t = k.list_runs(conn, t.id)
+            sum_t = (runs_t[-1].summary if runs_t and runs_t[-1].summary else "").strip()
+            cards.append(f"""
+            <div style="background:#1e222b; border:1px solid #333a47; border-radius:8px; padding:16px; margin-bottom:16px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333a47; padding-bottom:8px; margin-bottom:12px;">
+                <div><h3 style="margin:0; font-size:15px; color:#f0f3f6;">{html.escape(titulo)}</h3><span style="font-size:11px; color:#8b949e;">ID: {tid} · Asignado a: {t.assignee}</span></div>
+                <span style="background:{bg_st}; color:#fff; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:bold;">{st.upper()}</span>
+              </div>
+              {f'<div style="margin-bottom:8px; font-size:12.5px; color:#c9d1d9;"><b>Resumen:</b> {html.escape(sum_t)}</div>' if sum_t else ''}
+              {f'<pre style="background:#161920; border:1px solid #2a313d; border-radius:6px; padding:10px; font-size:12px; white-space:pre-wrap; color:#f0f3f6; overflow-x:auto;">{res_txt}</pre>' if t.result else ''}
+            </div>
+            """)
+        html_out = f"""<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><title>Reporte Ejecutivo — {html.escape(slug)}</title>
+<style>body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: #0f1217; color: #c9d1d9; line-height: 1.6; padding: 32px; }} .container {{ max-width: 900px; margin: 0 auto; }}</style>
+</head>
+<body><div class="container">
+  <h1 style="color:#f0f3f6; margin-bottom:4px;">Reporte Ejecutivo: {html.escape(slug)}</h1>
+  <div style="color:#8b949e; font-size:12px; margin-bottom:20px;">Generado el {fecha_str} por ORQUESTER Studio</div>
+  <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:10px; margin-bottom:24px;">
+    <div style="background:#161920; border:1px solid #2a313d; border-radius:8px; padding:12px; text-align:center;"><div style="font-size:11px; color:#8b949e;">PROGRESO</div><div style="font-size:18px; font-weight:bold; color:#58a6ff;">{res.get('progreso_pct', 0)}%</div></div>
+    <div style="background:#161920; border:1px solid #2a313d; border-radius:8px; padding:12px; text-align:center;"><div style="font-size:11px; color:#8b949e;">COMPLETADAS</div><div style="font-size:18px; font-weight:bold; color:#2ea043;">{res.get('terminados', 0)}/{res.get('total', 0)}</div></div>
+    <div style="background:#161920; border:1px solid #2a313d; border-radius:8px; padding:12px; text-align:center;"><div style="font-size:11px; color:#8b949e;">FALLIDAS</div><div style="font-size:18px; font-weight:bold; color:#d73a49;">{res.get('fallidos', 0)}</div></div>
+    <div style="background:#161920; border:1px solid #2a313d; border-radius:8px; padding:12px; text-align:center;"><div style="font-size:11px; color:#8b949e;">CONSUMO TOTAL</div><div style="font-size:18px; font-weight:bold; color:#58a6ff;">US$ {tot.get('costo_usd', 0.0):.4f}</div></div>
+  </div>
+  <h2 style="color:#f0f3f6; font-size:16px;">Entregables</h2>
+  {''.join(cards) if cards else '<p style="color:#8b949e;">No hay tareas registradas.</p>'}
+</div></body></html>"""
+        return {"ok": True, "board": slug, "formato": "html", "reporte": html_out}
 
     md = [
         f"# Reporte de Auditoría: {slug}",
@@ -1270,6 +1311,7 @@ def _generar_reporte_corrida(board: str) -> dict:
     return {
         "ok": True,
         "board": slug,
+        "formato": "markdown",
         "reporte": "\n".join(md),
     }
 
@@ -1963,7 +2005,23 @@ class Handler(BaseHTTPRequestHandler):
         if ruta == "/api/secretos-status":
             return self._responder(200, capacidades.secretos_status())
         if ruta == "/api/reporte-corrida":
-            return self._responder(200, _generar_reporte_corrida(params.get("board", "orquester")))
+            return self._responder(200, _generar_reporte_corrida(params.get("board", "orquester"), params.get("formato", "markdown")))
+        if ruta == "/api/reporte/descargar":
+            board = params.get("board", "orquester")
+            formato = params.get("formato", "markdown").lower()
+            res = _generar_reporte_corrida(board, formato)
+            if not res.get("ok"):
+                return self._responder(400, res)
+            ext = "html" if formato == "html" else "md"
+            mime = "text/html; charset=utf-8" if formato == "html" else "text/markdown; charset=utf-8"
+            contenido_bytes = res["reporte"].encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Disposition", f'attachment; filename="reporte-{board}.{ext}"')
+            self.send_header("Content-Length", str(len(contenido_bytes)))
+            self.end_headers()
+            self.wfile.write(contenido_bytes)
+            return
         if ruta == "/api/snapshots":
             return self._responder(200, _listar_snapshots(params.get("board", "")))
         if ruta == "/api/workspaces":
@@ -2214,6 +2272,10 @@ class Handler(BaseHTTPRequestHandler):
                 tid = cuerpo.get("task_id") or ""
                 resultado = cuerpo.get("resultado") or None
                 return self._responder(200, _aprobar_gate(board, tid, resultado))
+            if self.path == "/api/reporte/generar":
+                board = cuerpo.get("board", "orquester")
+                formato = cuerpo.get("formato", "markdown")
+                return self._responder(200, _generar_reporte_corrida(board, formato))
             if self.path == "/api/correr":
                 tope = cuerpo.get("presupuesto_usd")
                 try:
