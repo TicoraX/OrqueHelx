@@ -781,6 +781,14 @@ la peticion de parada pasa por `corrida.pedir_parada` / `corrida.matar_hermes`.
 
 ### `orquester run`: el DAG sin Studio
 
+El archivo se llama `orquester.py` y **no** `cli.py`: `hermes-agent/` tiene su
+propio `cli.py`, y este arbol mete `hermes-agent` en `sys.path` en cuanto se
+importa el dispatcher. Con los dos con el mismo nombre, `import cli` devuelve
+uno u otro segun el orden de imports --con la raiz sola da el nuestro; despues
+de `import corrida` da el de Hermes y explota con `ModuleNotFoundError: rich`--.
+Ya se renombro una vez a `cli.py` y volvio: el nombre distinto es la proteccion.
+
+
 ```bash
 uv run --python 3.11 --with jsonschema python orquester.py run grafo.json \
     [--board X] [--tope 2] [--timeout 900]

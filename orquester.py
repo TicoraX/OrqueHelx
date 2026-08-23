@@ -1,17 +1,25 @@
 #!/usr/bin/env python3
-"""CLI autónomo de ORQUESTER (v2).
+"""CLI autónomo de ORQUESTER.
 
 Permite validar, inspeccionar y ejecutar flujos de agentes desde la terminal
 o pipelines de CI/CD sin necesidad de levantar el servidor web del Studio.
 
 Uso:
-    python cli.py run <grafo.json> [--board <nombre>] [--presupuesto <usd>] [--json]
-    python cli.py validar <grafo.json>
-    python cli.py plantillas
-    python cli.py skills
-    python cli.py doctor
+    python orquester.py run <grafo.json> [--board <nombre>] [--presupuesto <usd>] [--json]
+    python orquester.py validar <grafo.json>
+    python orquester.py plantillas
+    python orquester.py skills
+    python orquester.py doctor
+
+El archivo se llama `orquester.py` y NO `cli.py` a proposito: `hermes-agent/`
+tiene su propio `cli.py`, y este arbol mete `hermes-agent` en `sys.path` en
+cuanto se importa el dispatcher. Con los dos con el mismo nombre, `import cli`
+devolvia uno u otro segun el orden de imports --verificado: con la raiz sola
+daba el nuestro, despues de `import corrida` daba el de Hermes y explotaba con
+`ModuleNotFoundError: rich`--. El nombre distinto es la unica proteccion que
+no depende de que nadie se acuerde.
 """
-import argparse, json, os, sys, time
+import argparse, json, sys, time
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent
@@ -21,6 +29,7 @@ sys.path.insert(0, str(RAIZ / "hermes-agent"))
 
 import compile as compilador
 import loop as dispatcher
+import corrida
 import capacidades
 import hermes_cli.kanban_db as k
 
@@ -139,7 +148,14 @@ def cmd_run(args) -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
-    board = args.board or g.get("board") or f"cli-{int(time.time())}"
+    # `corrida.slug` aplica la regla del kanban --minusculas, sin espacios ni
+    # `/`--, que no es la del `.json` ni la que teclea la gente. Sin esto, un
+    # board con mayusculas moria en un traceback de `k.connect`.
+    try:
+        board = corrida.slug(args.board or g.get("board") or f"cli-{int(time.time())}")
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
     g["board"] = board
 
     if args.workspace:
@@ -164,8 +180,7 @@ def cmd_run(args) -> int:
 
     tope = float(args.presupuesto) if args.presupuesto else None
     
-    # Delegar limpiamente en corrida.correr
-    corrida.correr(board, tope_usd=tope)
+    fin = corrida.correr(board, tope_usd=tope, log=None if args.json else corrida.imprimir)
 
     conn = k.connect(board=board)
     tasks = k.list_tasks(conn)
@@ -173,42 +188,47 @@ def cmd_run(args) -> int:
     fallidas = [t for t in tasks if t.status in ("blocked", "triage")]
     gasto = dispatcher.gasto_usd(conn)
 
+    # `ok` es "todos los nodos terminaron", no "ninguno fallo". Con la segunda
+    # regla, una corrida cortada por tope --que deja los nodos que faltan en
+    # `ready`, ni completados ni fallidos-- devolvia 0, y un flujo truncado a
+    # la mitad por presupuesto pasaba en verde como gate de CI. Verificado.
     reporte = {
-        "ok": len(fallidas) == 0,
+        "ok": len(completadas) == len(tasks) and bool(tasks),
+        "motivo": fin["motivo"],
         "board": board,
         "total_tareas": len(tasks),
         "completadas": len(completadas),
         "fallidas": len(fallidas),
         "costo_usd": gasto,
-        "tareas": [
-            {
-                "id": t.id,
-                "titulo": t.title,
-                "assignee": t.assignee,
-                "status": t.status,
-                "summary": (k.list_runs(conn, t.id)[-1].summary if k.list_runs(conn, t.id) and k.list_runs(conn, t.id)[-1].summary else "") or "",
-                "result": t.result or "",
-            }
-            for t in tasks
-        ],
+        "tareas": [],
     }
+    for t in tasks:
+        # `list_runs` UNA vez por tarea: estaba tres veces en la misma
+        # expresion, o sea tres consultas por nodo para leer un campo.
+        runs = k.list_runs(conn, t.id)
+        reporte["tareas"].append({
+            "id": t.id,
+            "titulo": t.title,
+            "assignee": t.assignee,
+            "status": t.status,
+            "summary": (runs[-1].summary if runs and runs[-1].summary else "") or "",
+            "result": t.result or "",
+        })
 
     if args.json:
         print(json.dumps(reporte, indent=2, ensure_ascii=False))
     else:
         print("\n=== Resumen de Ejecución ===")
-        print(f"Estado general : {'✓ ÉXITO' if reporte['ok'] else '✗ CON FALLOS'}")
+        print(f"Estado general : {'completo' if reporte['ok'] else 'incompleto'} ({reporte['motivo']})")
         print(f"Tareas totales : {reporte['total_tareas']} ({reporte['completadas']} completadas, {reporte['fallidas']} fallidas)")
         print(f"Consumo medido : US$ {reporte['costo_usd']:.4f}")
         print("\nDetalle de tareas:")
-        for t in tasks:
-            simbolo = "✓" if t.status == "done" else ("●" if t.status == "running" else "✗")
-            runs = k.list_runs(conn, t.id)
-            resumen = (runs[-1].summary if runs and runs[-1].summary else "").strip()
-            print(f"  [{simbolo}] {t.id} ({t.assignee}): {t.title}")
-            if resumen:
-                print(f"      -> {resumen[:90]}")
+        for t in reporte["tareas"]:
+            print(f"  [{t['status']}] {t['id']} ({t['assignee']}): {t['titulo']}")
+            if t["summary"]:
+                print(f"      -> {t['summary'].strip()[:90]}")
 
+    conn.close()
     return 0 if reporte["ok"] else 1
 
 

@@ -31,7 +31,7 @@ jobs:
 
       - name: Validar integridad de plantillas y sintaxis
         run: |
-          uv run --python ${{ matrix.python-version }} --with jsonschema --with pyyaml python cli.py plantillas
+          uv run --python ${{ matrix.python-version }} --with jsonschema --with pyyaml python orquester.py plantillas
           uv run --python ${{ matrix.python-version }} --with pyflakes pyflakes compiler dispatcher ui tests
 
       - name: Ejecutar suite de pruebas completa
