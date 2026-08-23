@@ -259,11 +259,36 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600,
     try:
         # El contexto trae los summaries de los padres, o sea salida de otro
         # agente convertida en prompt de este.
-        ctx = blindar_contexto(k.build_worker_context(conn, task_id))
-        # Guardrail de auto-corrección: si hubo un fallo previo transitorio (ej. schema/formato),
-        # se inyecta el aviso explícito para que el worker corrija en el reintento.
-        if getattr(task, "block_reason", None) and getattr(task, "block_kind", None) == "transient":
-            ctx += f"\n\n[ATENCIÓN - REINTENTO]: El intento anterior falló con: {task.block_reason[:300]}. Asegúrate de cumplir el formato y esquema requerido."
+        crudo = k.build_worker_context(conn, task_id)
+
+        # Guardrail de auto-correccion: un reintento tiene que saber por que
+        # fallo el intento anterior, o repite el mismo error.
+        #
+        # Leia `task.block_reason`, que NO EXISTE: `Task` tiene `block_kind` y
+        # `block_recurrences`, no `block_reason`. Con el `getattr(..., None)`
+        # de default, la condicion daba None y la rama no se ejecutaba nunca:
+        # el guardrail estaba apagado desde que se escribio. `last_failure_error`
+        # tampoco sirve --existe, pero llega VACIO al reclamar la card--. Lo que
+        # si sobrevive es el `run` que quedo bloqueado, con su summary. Las tres
+        # cosas verificadas antes de cambiar nada.
+        fallidos = [r for r in k.list_runs(conn, task_id, include_active=False)
+                    if r.status == "blocked" and r.summary]
+        if fallidos:
+            # El mensaje del intento anterior va ADENTRO del bloque de datos, no
+            # despues. Es texto que escribio un CLI ajeno --y un fallo de schema
+            # suele traer la salida del modelo adentro--, asi que pegarlo detras
+            # de la marca de fin lo dejaba en la zona que el marco declara como
+            # "tus instrucciones". Medido: el error caia en el caracter 464 y la
+            # marca estaba en el 349.
+            crudo += ("\n\n[Mensaje del intento anterior]\n"
+                      + limpiar_salida(fallidos[-1].summary)[:300])
+
+        ctx = blindar_contexto(crudo)
+        if fallidos:
+            # Y la instruccion, que es NUESTRA, va afuera y es texto fijo.
+            ctx += ("\nEste nodo es un REINTENTO: el intento anterior fallo y su "
+                    "mensaje esta arriba, entre los datos. Cumpli el formato y el "
+                    "esquema que pide tu objetivo.\n")
         herr = [s for s in (task.skills or []) if s in {"Read", "Grep", "Glob", "Bash", "Write"}]
         nodo_tope = None
         if task.tenant and str(task.tenant).startswith("budget:"):
