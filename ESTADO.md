@@ -3,17 +3,17 @@
 > Generado por `contexto/estado.py`. **No editar a mano**: se sobrescribe.
 > Un traspaso escrito a mano queda viejo y nadie se entera.
 
-**Fase:** con pendientes
+**Fase:** producto en uso
 
 ## Dónde está el código
 
-- Commit `0d33240` — docs: el plan al dia, y las dos features que el Studio no sabe dibujar
+- Commit `5464195` — docs(D0): spike de apps/api corrido de punta a punta
 - Remoto: https://github.com/TicoraX/orquester.git
 - Árbol limpio: sí · sin pushear: 0
 
 ## Runtime prestado
 
-- Pin de Hermes: `b7f628025905` · el clon está en el pin: **no**
+- Pin de Hermes: `b7f628025905` · el clon está en el pin: sí
 - CLI instalado: v0.20.1
 - Binarios: claude ✓, opencode ✓, agy ✓, hermes ✓, node ✓, docker ✓
 - Postgres del plano de control: **no**
@@ -21,7 +21,7 @@
 ## Verificación
 
 - `ARQUITECTURA.md` §10: **70 afirmaciones**, 1 pendiente(s)
-- 26 tests: api_rbac, auth_studio, capacidades, chat, ciclo_refinamiento, cli, compilador, concurrencia_reintentos, consumo, contract, contrato_ui, dag_heterogeneo, dag_rombo, disposicion, dos_dispatchers, esfuerzo_presupuesto, espera, guardarrailes, mcp_export, modo_app, parada, pin_hermes, rebanada_vertical, reporte, ui_expansion, ui_navegador
+- 27 tests: api_rbac, auth_studio, capacidades, chat, ciclo_refinamiento, cli, compilador, concurrencia_reintentos, consumo, contract, contrato_ui, dag_heterogeneo, dag_rombo, disposicion, dos_dispatchers, esfuerzo_presupuesto, espera, guardarrailes, mcp_export, modo_app, parada, pin_hermes, rebanada_vertical, reporte, ui_expansion, ui_navegador, webhook
 
 ## Decisiones tomadas (no re-litigar sin motivo nuevo)
 
@@ -47,10 +47,11 @@
 
 ## Bloqueos
 
-- el clon de Hermes no está en el commit del pin: revalidar la suite o volver al pin
+- ninguno
 
 ## Qué sigue
 
+- 6 commit(s) pusheados y sin mergear a master (rama de trabajo)
 - `docker compose up -d db` si vas a usar multiusuario
 - §10 tiene 1 afirmación(es) pendiente(s)
 - conectar el Studio a la API multiusuario (hoy le habla directo al motor)
