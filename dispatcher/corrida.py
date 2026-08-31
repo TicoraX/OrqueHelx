@@ -20,6 +20,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ / "hermes-agent"))
 import hermes_cli.kanban_db as k
 import loop as dispatcher
+import validadores
 
 # board -> peticion de parada. Lo lee el bucle en cada vuelta; lo escribe quien
 # aprieta el boton, desde otro hilo.
@@ -93,7 +94,101 @@ def matar_hermes(board: str) -> bool:
         return False
 
 
-def _hay_futuro(conn) -> bool:
+# `assignee` que el compilador le pone a un nodo de aprobacion humana
+# (`compile._assignee`). No es un carril nuestro ni un perfil de Hermes: nadie
+# lo va a levantar, y esa es exactamente la idea.
+GATE = "human"
+
+
+def gates_esperando(conn) -> list:
+    """Los nodos de aprobacion que ya tienen a sus padres cerrados.
+
+    En `ready` y no en `todo`: un gate en `todo` todavia espera a sus padres, y
+    de ese lo que hay que mirar es si los padres pueden terminar.
+    """
+    return [t for t in k.list_tasks(conn)
+            if t.assignee == GATE and t.status == "ready"]
+
+
+def aprobar_gate(conn, task_id: str, *, resultado: str = None,
+                 automatico: bool = False) -> str:
+    """Cerrar un gate para que sus hijos se promuevan. Devuelve lo que quedo escrito.
+
+    `automatico` no es cosmetico: el registro tiene que distinguir una
+    aprobacion humana de una que hizo un flag, o una auditoria a seis meses lee
+    "aprobado por el usuario" sobre algo que ningun usuario miro. El pasado no
+    se reescribe, asi que mejor que no mienta cuando se escribe.
+    """
+    texto = (resultado or "").strip() or (
+        "Aprobado automaticamente por --aprobar-gates (sin revision humana)"
+        if automatico else "Aprobado por el usuario")
+    k.complete_task(conn, task_id, summary=texto, result=texto,
+                    metadata={"orquester_status": "success",
+                              "claimer": "auto" if automatico else "human",
+                              "aprobacion": "automatica" if automatico else "humana"})
+    return texto
+
+
+# El `assignee` de un nodo de espera: `reloj:<segundos>`. Lo pone el
+# compilador (`compile.PREFIJO_ESPERA`); se repite aca y no se importa para no
+# atar el dispatcher al compilador, que son dos piezas separadas a proposito.
+# `test_espera` verifica que los dos digan lo mismo.
+PREFIJO_ESPERA = "reloj:"
+_HASTA = re.compile(r"despierta a las (\d+)")
+
+
+def _segundos_de(assignee: str) -> float | None:
+    """El plazo declarado en el assignee, o None si esta card no es una espera."""
+    if not (assignee or "").startswith(PREFIJO_ESPERA):
+        return None
+    try:
+        return float(assignee[len(PREFIJO_ESPERA):])
+    except ValueError:
+        return None
+
+
+def atender_esperas(conn) -> tuple[int, int]:
+    """Dormir las esperas que llegaron, despertar las que ya cumplieron.
+
+    El kanban trae las dos mitades --`schedule_task` aparca en `scheduled`, que
+    no es despachable, y `unblock_task` la devuelve respetando a los padres--
+    pero no guarda el CUANDO: su docstring dice que lo destraba "un cron
+    externo". El cron somos nosotros, y el instante va en el `reason`, que es
+    donde el propio kanban registra por que se aparco la card.
+
+    Devuelve `(dormidas, despertadas)`.
+    """
+    ahora = time.time()
+    dormidas = despertadas = 0
+    for t in k.list_tasks(conn):
+        seg = _segundos_de(t.assignee)
+        if seg is None:
+            continue
+        if t.status == "ready":
+            # Recien ahora sus padres cerraron: el plazo cuenta desde aca y no
+            # desde que se compilo el grafo, que puede haber sido la semana
+            # pasada.
+            if k.schedule_task(conn, t.id,
+                               reason=f"espera de {int(seg)}s: "
+                                      f"despierta a las {int(ahora + seg)}"):
+                dormidas += 1
+        elif t.status == "scheduled":
+            runs = k.list_runs(conn, t.id)
+            marca = _HASTA.search((runs[-1].summary or "") if runs else "")
+            # Sin marca legible no se puede saber cuando toca. Se despierta:
+            # dejarla dormida para siempre por un dato que no pudimos leer es
+            # peor que correr un nodo que no ejecuta nada.
+            if not marca or ahora >= float(marca.group(1)):
+                if k.unblock_task(conn, t.id):
+                    k.complete_task(conn, t.id, summary="Espera cumplida",
+                                    result="Espera cumplida",
+                                    metadata={"orquester_status": "success",
+                                              "claimer": "reloj"})
+                    despertadas += 1
+    return dormidas, despertadas
+
+
+def _hay_futuro(conn, *, esperar_gates: bool = False) -> bool:
     """¿Queda alguna card que TODAVIA pueda avanzar?
 
     La condicion de corte miraba cada card por separado: `loop._queda_trabajo`
@@ -120,7 +215,19 @@ def _hay_futuro(conn) -> bool:
         if tid in visto:
             return False                   # ciclo: nadie lo va a desatar
         t = tareas[tid]
-        if t.status in ("ready", "running"):
+        if _segundos_de(t.assignee) is not None and t.status == "scheduled":
+            # Una espera dormida SI va a avanzar sola: la despierta el reloj en
+            # una vuelta siguiente. Sin esto la corrida se cerraba a los tres
+            # segundos dando el flujo por terminado.
+            valor = True
+        elif t.assignee == GATE and t.status == "ready" and not esperar_gates:
+            # Un gate en `ready` esta esperando a una persona. Nada de lo que
+            # este proceso hace lo va a mover, asi que para una corrida
+            # headless NO es futuro: es un final, y con nombre propio. Con
+            # `esperar_gates` (el Studio, o `--esperar-gates`) si cuenta,
+            # porque ahi hay alguien del otro lado.
+            valor = False
+        elif t.status in ("ready", "running"):
             valor = True
         elif t.status == "todo":
             # Un padre que ya esta `done` no frena a nadie; uno que todavia
@@ -173,7 +280,8 @@ def imprimir(hechas) -> None:
 
 
 def correr(board: str, *, tope_usd: float = None, listo=None, espera: float = 3.0,
-           timeout: float = None, timeout_nodo: int = 600, log=None) -> dict:
+           timeout: float = None, timeout_nodo: int = 600, log=None,
+           gates: str = "parar", validador: str = None) -> dict:
     """Despachar el board hasta que no quede trabajo. Bloquea.
 
     - `tope_usd`: al alcanzarlo se deja de arrancar nodos nuevos. El corte es
@@ -184,14 +292,36 @@ def correr(board: str, *, tope_usd: float = None, listo=None, espera: float = 3.
       el bucle igual termina solo cuando no queda trabajo.
     - `log(hechas)`: se llama con la lista de `(task_id, resultado)` de cada
       vuelta que hizo algo. Lo usa el CLI para ir informando.
+    - `gates`: que hacer con un nodo de aprobacion humana que quedo esperando.
+        - `parar` (default): terminar con `motivo: "gate"`. El board queda
+          intacto y se reanuda despues, desde el Studio o con otra corrida. Es
+          lo correcto sin nadie mirando: la espera de una firma dura horas y el
+          estado ya es durable, asi que tener el proceso vivo no compra nada.
+        - `esperar`: seguir dando vueltas hasta que alguien apruebe. Lo usa el
+          Studio, donde el boton esta a la vista. **Acotalo con `timeout`**: una
+          espera sin fondo es como se clavan los ejecutores de un CI.
+        - `aprobar`: aprobarlos solos y seguir. Para un pipeline que de verdad
+          no tiene humano. Queda asentado como automatico en la card.
+
+    - `validador`: nombre de `validadores.VALIDADORES`. Se corre despues de
+      cada nodo, y si el nodo dejo problemas NUEVOS la card vuelve a la cola con
+      esos problemas como contexto del reintento: el linter es el critico del
+      ciclo de refinamiento y el agente el que corrige.
 
     Devuelve `{"motivo", "vueltas", "nodos"}`. `motivo` es uno de: `sin
-    trabajo` (fin normal, todo cerrado), `trabado` (no queda nada que pueda
-    avanzar y hay cards abiertas), `listo`, `parado`, `tope`, `timeout`,
-    `error`.
+    trabajo` (fin normal, todo cerrado), `gate` (falta una aprobacion humana),
+    `trabado` (no queda nada que pueda avanzar y hay cards abiertas), `listo`,
+    `parado`, `tope`, `timeout`, `error`.
     """
     board = slug(board)            # el registro en memoria y la SQLite, la
                                    # misma clave: ver `slug`
+    if validador:
+        # Antes de arrancar, no al validar el primer nodo: enterarse de que
+        # falta el linter a los diez minutos, con la card ya bloqueada, es la
+        # peor forma de enterarse.
+        hay, motivo = validadores.disponible(validador)
+        if not hay:
+            return {"motivo": "error", "vueltas": 0, "nodos": 0, "error": motivo}
     binario = hermes_bin()
     en_vuelo = [None]
     _HERMES[board] = en_vuelo
@@ -214,9 +344,16 @@ def correr(board: str, *, tope_usd: float = None, listo=None, espera: float = 3.
                       f"arrancan nodos nuevos")
                 return {"motivo": "tope", "vueltas": vueltas, "nodos": nodos}
 
+            atender_esperas(conn)
+
+            if gates == "aprobar":
+                for g in gates_esperando(conn):
+                    aprobar_gate(conn, g.id, automatico=True)
+                    print(f"[{board}] gate '{g.title}' aprobado automaticamente")
+
             _pinchar_hermes(binario, board, en_vuelo)
             hechas = dispatcher.tick(conn, board=board, tope_usd=tope_usd,
-                                     timeout=timeout_nodo)
+                                     timeout=timeout_nodo, validador=validador)
             vueltas += 1
             nodos += len(hechas)
             if hechas and log:
@@ -224,12 +361,15 @@ def correr(board: str, *, tope_usd: float = None, listo=None, espera: float = 3.
 
             if listo is not None and listo(conn):
                 return {"motivo": "listo", "vueltas": vueltas, "nodos": nodos}
-            if not hechas and not _hay_futuro(conn):
-                # `trabado` y `sin trabajo` son cosas distintas y el llamador
-                # decide distinto con cada una: sin trabajo es un flujo que
-                # termino, trabado es uno que se corto con cards abiertas.
+            if not hechas and not _hay_futuro(conn, esperar_gates=gates != "parar"):
+                # Tres finales distintos, porque el llamador decide distinto con
+                # cada uno: `sin trabajo` es un flujo que termino, `gate` es uno
+                # que espera una firma y se puede reanudar, `trabado` es uno que
+                # se corto con cards que ya no pueden avanzar.
+                if gates_esperando(conn):
+                    return {"motivo": "gate", "vueltas": vueltas, "nodos": nodos}
                 abiertas = any(t.status not in ("done", "archived")
-               for t in k.list_tasks(conn))
+                               for t in k.list_tasks(conn))
                 return {"motivo": "trabado" if abiertas else "sin trabajo",
                         "vueltas": vueltas, "nodos": nodos}
             time.sleep(espera)

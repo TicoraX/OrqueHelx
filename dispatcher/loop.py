@@ -20,6 +20,21 @@ import hermes_cli.kanban_db as k
 from backends import (run_backend, chat_backend, BackendError, BACKENDS,
                       matar_procesos_activos, matar_proceso_task,
                       marcar_board, marcar_tarea)
+import validadores
+
+# (base de datos, task_id) -> hallazgos del validador ANTES del primer intento
+# de esa card.
+#
+# No se puede volver a medir en cada intento: el destrozo del intento 1 ya esta
+# en el disco cuando arranca el intento 2, asi que pasaria a contar como
+# preexistente y el nodo aprobaria sin haber arreglado nada. Verificado: el
+# nodo terco cerraba en `done` a la segunda, con el archivo roto igual de roto.
+# La linea base es lo que el nodo HEREDO, y eso no cambia entre reintentos.
+#
+# ponytail: vive en memoria, o sea que un reinicio del dispatcher a mitad de
+# ciclo vuelve a tomar la foto y se pierde el arrastre. Persistirla es meterla
+# en la metadata del run; se hace si aparece un reinicio real en el medio.
+_BASE_VALIDADOR: dict[tuple, set] = {}
 
 # El carril va en `assignee`, y el runtime como sufijo: `orquester-external:opencode`.
 # Informacion de ruteo en el campo de ruteo. Dos razones para no usar `skills`:
@@ -212,8 +227,15 @@ def _archivo_de(conn) -> str:
 
 
 def ejecutar_una(conn, task_id: str, *, timeout: int = 600,
-                 presupuesto: float = None) -> dict:
-    """Reclamar, ejecutar y cerrar una card. Devuelve el contrato."""
+                 presupuesto: float = None, validador: str = None) -> dict:
+    """Reclamar, ejecutar y cerrar una card. Devuelve el contrato.
+
+    Con `validador`, la card no se cierra por decir que termino: se mide el
+    workspace antes y despues, y si el nodo dejo problemas NUEVOS se bloquea
+    como transitoria con esos problemas adentro. El reintento los recibe como
+    contexto (ver el guardrail de auto-correccion, mas abajo), asi que el ciclo
+    se cierra solo: el linter es el critico y el agente el que corrige.
+    """
     task = k.claim_task(conn, task_id, claimer=CLAIMER)
     if task is None:
         return {"status": "skipped", "summary": "ya reclamada por otro"}
@@ -259,7 +281,36 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600,
     try:
         # El contexto trae los summaries de los padres, o sea salida de otro
         # agente convertida en prompt de este.
-        ctx = blindar_contexto(k.build_worker_context(conn, task_id))
+        crudo = k.build_worker_context(conn, task_id)
+
+        # Guardrail de auto-correccion: un reintento tiene que saber por que
+        # fallo el intento anterior, o repite el mismo error.
+        #
+        # Leia `task.block_reason`, que NO EXISTE: `Task` tiene `block_kind` y
+        # `block_recurrences`, no `block_reason`. Con el `getattr(..., None)`
+        # de default, la condicion daba None y la rama no se ejecutaba nunca:
+        # el guardrail estaba apagado desde que se escribio. `last_failure_error`
+        # tampoco sirve --existe, pero llega VACIO al reclamar la card--. Lo que
+        # si sobrevive es el `run` que quedo bloqueado, con su summary. Las tres
+        # cosas verificadas antes de cambiar nada.
+        fallidos = [r for r in k.list_runs(conn, task_id, include_active=False)
+                    if r.status == "blocked" and r.summary]
+        if fallidos:
+            # El mensaje del intento anterior va ADENTRO del bloque de datos, no
+            # despues. Es texto que escribio un CLI ajeno --y un fallo de schema
+            # suele traer la salida del modelo adentro--, asi que pegarlo detras
+            # de la marca de fin lo dejaba en la zona que el marco declara como
+            # "tus instrucciones". Medido: el error caia en el caracter 464 y la
+            # marca estaba en el 349.
+            crudo += ("\n\n[Mensaje del intento anterior]\n"
+                      + limpiar_salida(fallidos[-1].summary)[:300])
+
+        ctx = blindar_contexto(crudo)
+        if fallidos:
+            # Y la instruccion, que es NUESTRA, va afuera y es texto fijo.
+            ctx += ("\nEste nodo es un REINTENTO: el intento anterior fallo y su "
+                    "mensaje esta arriba, entre los datos. Cumpli el formato y el "
+                    "esquema que pide tu objetivo.\n")
         herr = [s for s in (task.skills or []) if s in {"Read", "Grep", "Glob", "Bash", "Write"}]
         nodo_tope = None
         if task.tenant and str(task.tenant).startswith("budget:"):
@@ -270,6 +321,16 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600,
         pres_efectivo = (min(presupuesto, nodo_tope)
                          if (presupuesto is not None and nodo_tope is not None)
                          else (nodo_tope if nodo_tope is not None else presupuesto))
+        # La foto de ANTES. Un repo de verdad ya tiene warnings: si se
+        # comparara contra cero, el primer nodo de cualquier flujo sobre codigo
+        # ajeno quedaria bloqueado por deuda que no escribio.
+        antes = set()
+        if validador:
+            clave = (db, task_id)
+            if clave not in _BASE_VALIDADOR:
+                _BASE_VALIDADOR[clave] = validadores.revisar(
+                    validador, task.workspace_path or "")
+            antes = _BASE_VALIDADOR[clave]
         salida = run_backend(_runtime_de(task), ctx, timeout=timeout,
                              cwd=task.workspace_path or None,
                              herramientas=herr or _HERRAMIENTAS,
@@ -302,6 +363,22 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600,
     # persona y que exporta el dataset-- seguiria con la credencial adentro.
     resumen = limpiar_salida(salida["summary"])
     salida["summary"] = resumen
+
+    # El nodo dice que termino; el validador dice si lo dejo peor.
+    if validador and salida.get("status") == "success":
+        rotos = validadores.nuevos(
+            antes, validadores.revisar(validador, task.workspace_path or ""))
+        if rotos:
+            # Transitorio y no permanente: esto es exactamente lo que un
+            # reintento puede arreglar, y es para lo que existe el ciclo.
+            msg = limpiar_salida(
+                f"El validador '{validador}' encontro {len(rotos)} problema(s) "
+                f"que antes no estaban:\n" + "\n".join(rotos[:20]))[:2000]
+            latido.set()
+            k.block_task(conn, task_id, reason=msg, kind="transient")
+            return {"status": "failure", "summary": msg}
+
+    _BASE_VALIDADOR.pop((db, task_id), None)
     k.complete_task(
         conn, task_id,
         summary=resumen,
@@ -340,7 +417,7 @@ def reintentar(conn) -> list[str]:
 
 
 def tick(conn, *, timeout: int = 600, board: str = None,
-         tope_usd: float = None) -> list[tuple[str, dict]]:
+         tope_usd: float = None, validador: str = None) -> list[tuple[str, dict]]:
     """Una pasada: reabrir lo reintentable y ejecutar lo listo, en paralelo.
 
     Con `tope_usd`, no arranca nodos si el board ya gasto de mas.
@@ -355,6 +432,22 @@ def tick(conn, *, timeout: int = 600, board: str = None,
     listas = _mis_cards(conn, "ready")
     if not listas:
         return []
+
+    if validador:
+        # Con validador, dos nodos sobre el MISMO workspace no pueden correr a
+        # la vez: la foto de "despues" de uno incluiria lo que escribio el otro,
+        # y el gate bloquearia al nodo equivocado. Se toma uno por workspace y
+        # los demas esperan al proximo tick. Los que apuntan a workspaces
+        # distintos siguen yendo en paralelo, que es donde el paralelismo vale.
+        vistos, unicas = set(), []
+        for t in listas:
+            ws = t.workspace_path or ""
+            if ws and ws in vistos:
+                continue
+            if ws:
+                vistos.add(ws)
+            unicas.append(t)
+        listas = unicas
     resto = None
     if tope_usd is not None:
         resto = tope_usd - gasto_usd(conn)
@@ -372,18 +465,29 @@ def tick(conn, *, timeout: int = 600, board: str = None,
     # Una conexion por hilo: los objetos de sqlite3 no se comparten entre
     # hilos, y `claim_task` ya es atomico entre conexiones (verificado en
     # `tests/test_dos_dispatchers.py`), asi que no hace falta lock propio.
+    #
+    # La ruta se resuelve ACA, en el hilo que tiene `conn`: preguntarsela al
+    # handle desde el hilo del pool es justo lo que sqlite3 prohibe.
+    db_flujo = _archivo_de(conn)
+
     def _uno(t):
         # Cerrar siempre: se abre una conexion por card por tick, y el bucle de
         # `correr` tickea cada pocos segundos. Sin cerrar, un flujo largo se
         # come los descriptores.
-        c = k.connect(board=board) if board else k.connect()
+        # La MISMA base que el `conn` que nos pasaron, sacada del propio
+        # handle. Era `k.connect(board=board) if board else k.connect()`, y sin
+        # `board` eso resuelve al board `default`: el hilo reclamaba cards en
+        # una base que no era la del flujo y todo salia `skipped: ya reclamada
+        # por otro`. Es el mismo error que ya se habia arreglado en `_latir`,
+        # otra vez del lado de al lado.
+        c = k.connect(db_path=Path(db_flujo))
         # El hilo del pool queda fichado con su board, que es lo que despues
         # permite parar ESTA corrida sin llevarse puesta la de al lado.
         marcar_board(board)
         marcar_tarea(t.id)
         try:
             return (t.id, ejecutar_una(c, t.id, timeout=timeout,
-                                       presupuesto=resto))
+                                       presupuesto=resto, validador=validador))
         finally:
             # Los hilos del pool se reciclan entre ticks: dejar la marca vieja
             # puesta ficharia el proximo proceso en el board equivocado.

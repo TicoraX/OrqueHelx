@@ -46,11 +46,63 @@ def es_nota(nodo: dict) -> bool:
     return nodo.get("tipo") == "nota"
 
 
+def es_gate(nodo: dict) -> bool:
+    """Un punto de aprobacion humana (Human-in-the-loop)."""
+    return nodo.get("tipo") in ("gate", "aprobacion")
+
+
+# Un nodo de espera no lo ejecuta nadie: lo destraba el reloj. El plazo viaja
+# en el `assignee` --que es el campo de ruteo, igual que `orquester-external:
+# <runtime>` y `human`-- y no en un campo nuevo: el esquema del kanban esta
+# pineado, y meter un dato nuestro en un campo que significa otra cosa es como
+# llegamos al bug de `skills`.
+PREFIJO_ESPERA = "reloj:"
+
+# Techo del plazo. Un `esperar_segundos: 999999999` por dedo pesado deja una
+# card dormida para siempre y un flujo que nadie entiende por que no termina.
+MAX_ESPERA_S = 7 * 24 * 3600
+
+
+def es_espera(nodo: dict) -> bool:
+    """Un nodo que solo deja pasar el tiempo antes de habilitar a sus hijos."""
+    return nodo.get("tipo") == "espera"
+
+
 class ErrorDeGrafo(ValueError):
     """El grafo no es compilable. El mensaje va tal cual al canvas."""
 
 
+def _plazo(nodo: dict) -> int:
+    """Los segundos que espera un nodo de espera, validados.
+
+    Vive en una sola funcion porque tiene dos llamadores --`_assignee`, que lo
+    escribe en la card, y `validar`, que rechaza el grafo-- y `validar` llama a
+    `_assignee`: con la comprobacion duplicada, la de `_assignee` corria
+    primero y un plazo invalido salia como TypeError en vez del mensaje legible
+    que espera el canvas.
+    """
+    crudo = nodo.get("esperar_segundos")
+    try:
+        # `bool` aparte por lo mismo que en el presupuesto: `int(True)` es 1 y
+        # pasaria como una espera de un segundo que nadie pidio.
+        if isinstance(crudo, bool):
+            raise ValueError()
+        seg = float(crudo)
+        if not math.isfinite(seg) or not 0 < seg <= MAX_ESPERA_S:
+            raise ValueError()
+    except (ValueError, TypeError):
+        raise ErrorDeGrafo(
+            f"nodo '{nodo.get('id')}': un nodo de espera necesita "
+            f"'esperar_segundos' entre 1 y {MAX_ESPERA_S} "
+            f"({MAX_ESPERA_S // 86400} dias); llego {crudo!r}")
+    return int(seg)
+
+
 def _assignee(nodo: dict) -> str:
+    if es_gate(nodo):
+        return "human"
+    if es_espera(nodo):
+        return f"{PREFIJO_ESPERA}{_plazo(nodo)}"
     rt = nodo.get("runtime", "hermes")
     if rt not in RUNTIMES:
         raise ErrorDeGrafo(
@@ -159,7 +211,8 @@ def validar(grafo: dict, *, capacidades: bool = True) -> None:
                 f"Validos: {list(ESFUERZO[rt][1])}")
 
     ausentes = faltantes({n.get("runtime", "hermes") for n in nodos
-                          if not es_nota(n)}) if capacidades else []
+                          if not es_nota(n) and not es_gate(n)
+                          and not es_espera(n)}) if capacidades else []
     if ausentes:
         raise ErrorDeGrafo(
             f"estos ejecutores no estan disponibles en esta maquina: {ausentes}. "
@@ -373,32 +426,20 @@ def trazabilidad(grafo: dict, nodo_id: str) -> dict:
         padres[h].add(p)
         hijos[p].add(h)
 
-    def _recorrer_ancestros(nid):
+    def _recorrer(nid, adyacencias):
         visitados = set()
-        pila = list(padres.get(nid, set()))
+        pila = list(adyacencias.get(nid, set()))
         while pila:
             if len(visitados) > 10_000:
                 raise ValueError("grafo demasiado grande para analizar trazabilidad")
             actual = pila.pop()
             if actual not in visitados:
                 visitados.add(actual)
-                pila.extend(p for p in padres.get(actual, set()) if p not in visitados)
+                pila.extend(item for item in adyacencias.get(actual, set()) if item not in visitados)
         return visitados
 
-    def _recorrer_descendientes(nid):
-        visitados = set()
-        pila = list(hijos.get(nid, set()))
-        while pila:
-            if len(visitados) > 10_000:
-                raise ValueError("grafo demasiado grande para analizar trazabilidad")
-            actual = pila.pop()
-            if actual not in visitados:
-                visitados.add(actual)
-                pila.extend(h for h in hijos.get(actual, set()) if h not in visitados)
-        return visitados
-
-    ancestros = sorted(list(_recorrer_ancestros(nodo_id)))
-    descendientes = sorted(list(_recorrer_descendientes(nodo_id)))
+    ancestros = sorted(list(_recorrer(nodo_id, padres)))
+    descendientes = sorted(list(_recorrer(nodo_id, hijos)))
     total_ejecutables = len(nodos)
     impacto_pct = round((len(descendientes) / max(1, total_ejecutables - 1)) * 100, 1) if total_ejecutables > 1 else 0.0
 

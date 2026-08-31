@@ -781,6 +781,14 @@ la peticion de parada pasa por `corrida.pedir_parada` / `corrida.matar_hermes`.
 
 ### `orquester run`: el DAG sin Studio
 
+El archivo se llama `orquester.py` y **no** `cli.py`: `hermes-agent/` tiene su
+propio `cli.py`, y este arbol mete `hermes-agent` en `sys.path` en cuanto se
+importa el dispatcher. Con los dos con el mismo nombre, `import cli` devuelve
+uno u otro segun el orden de imports --con la raiz sola da el nuestro; despues
+de `import corrida` da el de Hermes y explota con `ModuleNotFoundError: rich`--.
+Ya se renombro una vez a `cli.py` y volvio: el nombre distinto es la proteccion.
+
+
 ```bash
 uv run --python 3.11 --with jsonschema python orquester.py run grafo.json \
     [--board X] [--tope 2] [--timeout 900]
@@ -791,6 +799,91 @@ Compila y corre. Codigo de salida **0 solo si todos los nodos quedaron `done`**;
 que lo hace util como gate de CI, y es lo que fija `tests/test_cli.py` (que
 corre un DAG de punta a punta reemplazando `run_backend`, o sea sin agentes de
 verdad ni servidor HTTP).
+
+### Nodos de espera: el que destraba es el reloj
+
+Un nodo `tipo: espera` con `esperar_segundos` no lo ejecuta nadie: se duerme y
+despierta solo. `scheduled` ya estaba en `VALID_STATUSES` y no lo usaba nadie
+nuestro, y el kanban trae las dos mitades --`schedule_task` aparca la card
+fuera del alcance de cualquier dispatcher, `unblock_task` la devuelve
+respetando a los padres--. Lo unico que falta es el **cuando**, que su propio
+docstring delega en "un cron externo": ese cron es `corrida.atender_esperas`,
+que corre una vez por vuelta del bucle.
+
+Dos decisiones:
+
+- **El plazo viaja en el `assignee`** (`reloj:<segundos>`), que es el campo de
+  ruteo, igual que `orquester-external:<runtime>` y `human`. No se inventa un
+  campo ni se mete el dato en uno que significa otra cosa: asi llegamos al bug
+  de `skills`. Hermes lo ve como un assignee que no es un perfil, o sea
+  nonspawnable, que es exactamente lo que queremos.
+- **El plazo cuenta desde que la card queda `ready`**, no desde que se compilo
+  el grafo: el grafo puede haberse guardado la semana pasada. El instante de
+  despertar se escribe en el `reason` de `schedule_task`, que es donde el
+  propio kanban registra por que se aparco la card.
+
+`_hay_futuro` cuenta una espera dormida como viva --va a avanzar sola-- a
+diferencia de un gate, que necesita a una persona.
+
+### El ciclo de refinamiento: el linter es el critico
+
+Un nodo que dice "listo" no prueba nada: lo dice igual si dejo el workspace
+roto. Con `orquester run --validar pyflakes`, despues de cada nodo se mide el
+workspace; si aparecio un problema que antes no estaba, la card se bloquea como
+**transitoria** con ese problema adentro, y el reintento lo recibe como
+contexto. Ahi se cierra el lazo: critica el linter, corrige el agente, y el
+techo lo pone `MAX_INTENTOS`, que ya existia.
+
+Tres decisiones que valen mas que el codigo (`dispatcher/validadores.py`):
+
+1. **El comando sale de una tabla nuestra, no del grafo.** Un campo
+   `validador: "<comando>"` seria ejecucion de shell escrita en un `.json`, y
+   los grafos de este producto los puede haber escrito un modelo
+   (`/api/generar-grafo`). Con un nombre de tabla, lo peor que puede pedir un
+   grafo hostil es "corre pyflakes".
+2. **Solo cuentan los hallazgos NUEVOS.** Un repo de verdad ya tiene warnings:
+   comparar contra cero bloquearia el primer nodo de cualquier flujo sobre
+   codigo ajeno por deuda que no escribio.
+3. **La linea base se toma UNA vez por card, no por intento.** Medirla en cada
+   intento tenia un agujero: el destrozo del intento 1 ya esta en disco cuando
+   arranca el 2, asi que pasaba a contar como preexistente y el nodo aprobaba
+   sin haber arreglado nada. Verificado: el nodo terco cerraba en `done` a la
+   segunda, con el archivo igual de roto.
+
+`tests/test_ciclo_refinamiento.py` corre el lazo entero con un backend falso que
+rompe, lee y corrige. Lo que fija no es que el nodo termine --eso pasaria igual
+sin validador-- sino que el segundo intento **recibio el hallazgo del primero**.
+
+### Gates: la espera no la paga el proceso
+
+Un nodo `tipo: gate` compila con `assignee: human`, o sea que ni nuestro
+dispatcher ni el de Hermes lo levantan: espera una firma. Contarlo como trabajo
+pendiente colgaba la corrida --medido: 28 vueltas en 6 segundos sobre un flujo
+que no podia avanzar, y sin `timeout` no volvia nunca--.
+
+La regla es la de cualquier motor de flujos serio (Argo `suspend`, los
+environments de GitHub, y lo que Jenkins hace mal con su `input`): **el proceso
+que corre el flujo no es el dueño de la espera**. La firma tarda horas, el
+runner cobra por minuto, y el estado ya es durable en la SQLite del board.
+
+`corrida.correr(..., gates=...)` toma tres valores:
+
+| valor | quien lo usa | que hace |
+|---|---|---|
+| `parar` (default) | `orquester run` | corta con `motivo: "gate"`, board intacto y reanudable |
+| `esperar` | el Studio, `--esperar-gates N` | sigue dando vueltas; **acotado por `timeout`** |
+| `aprobar` | `--aprobar-gates` | los cierra solos y sigue |
+
+De ahi salen los tres codigos de salida del CLI: **0** todo cerrado, **2**
+pausado esperando una firma, **1** fallo o corte. Un workflow decide distinto
+con cada uno: el 2 es para notificar y terminar en neutral, no en rojo.
+
+`--aprobar-gates` deja escrito en la card que la aprobacion fue automatica
+(`claimer: "auto"`, `aprobacion: "automatica"`, y el texto lo dice). No es
+cosmetico: una auditoria a seis meses no tiene otra forma de distinguirlo, y un
+registro que miente es peor que uno que falta. Aprobar vive en
+`corrida.aprobar_gate`, que es de donde tambien cuelga `/api/gate/aprobar`: dos
+formas de cerrar un gate son dos formas de asentarlo.
 
 ### `_hay_futuro`: por que un flujo trabado ahora termina
 

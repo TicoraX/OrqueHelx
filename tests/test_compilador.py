@@ -146,4 +146,17 @@ ids2 = c.compilar(g2, board="notas")
 assert k.get_task(conn, ids2["z"]).body in (None, ""), "invento un body sin reglas"
 print("9. sin reglas, el body queda vacio: OK")
 
+# --- Nodos Gate / Aprobacion Humana ---
+GATE = lambda i: {"id": i, "titulo": "Aprobacion de seguridad", "tipo": "gate"}
+g_gate = {
+    "board": "flujo-con-gate",
+    "nodos": [N("a"), GATE("g1"), N("b")],
+    "aristas": [["a", "g1"], ["g1", "b"]]
+}
+c.validar(g_gate, capacidades=False)
+ids_gate = c.compilar(g_gate, board="notas")
+assert set(ids_gate) == {"a", "g1", "b"}
+assert k.get_task(conn, ids_gate["g1"]).assignee == "human"
+print("10. los nodos gate compilan con assignee='human' y respetan dependencias: OK")
+
 print("\nOK: el compilador traduce el grafo al kanban.")
