@@ -161,13 +161,60 @@ backoff** — hoy reabre inmediatamente en el siguiente tick, sin espera.
 
 ## 5. Tier 2 — documentado, no implementado en esta pasada
 
-### D0 · Spike: correr `apps/api` una vez (media tarde, antes de costear D4)
+### D0 · Spike: correr `apps/api` una vez — HECHO
 La revisión CEO encontró que la Premisa 2 ("el motor multiusuario ya es la
-dirección elegida") da por sentada una infraestructura que `ESTADO.md`
-confirma que **nunca corrió** ("Postgres del plano de control: no"). Costear
-D4 sin haberlo levantado una vez es una estimación a ciegas. `docker compose
-up -d db` + correr un flujo mínimo contra `apps/api` — no implementa nada,
-solo informa el costo real de D4 antes de decidir cuándo hacerlo.
+dirección elegida") daba por sentada una infraestructura que `ESTADO.md`
+confirmaba que **nunca corrió** ("Postgres del plano de control: no"). Se
+levantó una vez, de punta a punta, sin implementar nada — solo para informar
+el costo real de D4.
+
+**Resultado: `apps/api` funciona de verdad.** `tests/test_api_rbac.py`, que
+siempre se omitía por falta de Postgres, corrió **12/12 en verde real**:
+registro, login, roles (OWNER/EDITOR/VIEWER), aislamiento entre
+organizaciones (un extraño ve 404, no 403 — no filtra que la org existe),
+auditoría con las entradas correctas, y rate limiting real (7 intentos
+fallidos de login dan 429). Esto no era obvio de antemano: pudo haber sido
+código sin ejercitar que se rompiera al primer uso real, y no fue el caso.
+
+**Fricciones reales encontradas** (esto es lo que informa el costo de D4,
+no una opinión):
+
+1. **Docker Desktop no estaba corriendo** — hubo que arrancarlo a mano y
+   esperar el daemon (~1 min). No es específico de este proyecto, pero es
+   tiempo real de "levantar el entorno" que cualquier costo de D4 tiene que
+   contar.
+2. **`docker-compose.yml` no fija `name:`** — el nombre del proyecto sale
+   del directorio donde se corre (`regen-estado_db-1` en vez de
+   `orquester_db-1`, porque se corrió desde el worktree). Con varios
+   worktrees o clones, cada uno crea su propio volumen de Postgres sin
+   avisar — dato nuevo, no estaba en `ARQUITECTURA.md` ni `TUTORIAL.md`.
+3. **`npm install` bloqueó los scripts de post-instalación** de
+   `@prisma/client`, `@prisma/engines` y `argon2` (guard de `allow-scripts`)
+   — sin aprobarlos a mano (`npm approve-scripts <pkg>`), Prisma no tiene
+   motor descargado y `argon2` no tiene el binario nativo compilado. Rompe
+   en silencio si no se sabe leer el warning. **Ya aprobado y commiteado**
+   en `apps/api/package.json` (`allowScripts`), asi que el proximo
+   `npm install` no lo vuelve a pedir.
+4. **`DATABASE_URL` no está documentado en ningún lado.** `TUTORIAL.md`
+   §8.1 muestra `PORT`, `ORQUESTER_ENGINE_URL` y `ORQUESTER_TOKEN` para
+   `npm start`, pero `prisma db push` y el arranque real también necesitan
+   `DATABASE_URL` — hay que inferirlo armando la cadena a mano desde
+   `docker-compose.yml` (usuario/password/puerto) y el nombre de la base.
+   No hay `.env.example` en `apps/api/`.
+5. **Nada de esto tocó Python.** El motor y `apps/api` corrieron como
+   procesos separados sin fricción entre sí — la premisa de "dos bases, dos
+   dueños" (kanban SQLite / Postgres) se sostiene en la práctica, no solo en
+   el diseño.
+
+**Costo real de D4, ahora informado**: el backend (`apps/api`) ya funciona
+y no hace falta tocarlo. El costo de D4 es enteramente en el **frontend**
+— el Studio (`ui/server.py` + `ui/index.html`) dejando de hablarle directo
+al motor Python para pasar por esta API — que sigue siendo el cambio de
+topología completo que ya se documentaba abajo, sin reducir. Lo que este
+spike SÍ tacha de la lista de riesgos es "¿el backend multiusuario
+funciona de verdad?" — sí, y las fricciones 1-4 de arriba son un parche de
+documentación de una tarde (`TUTORIAL.md` §8.1 + un `.env.example`), no un
+riesgo de arquitectura.
 
 ### D4 · Conectar el Studio a la API multiusuario real
 - **Costo real**: no es un cable, es un cambio de arquitectura — el Studio
