@@ -217,7 +217,7 @@ suficientes fallos reales como para decidir con evidencia, no con intuición.
 | 3 | Agregar E0 (bug real: `loop.py:215/222` mal clasificados como transient) | Eng (alto) | Auto-decidido — mismo archivo, mismo cambio, no vale separarlo |
 | 4 | Cortar E2 (backoff diferenciado) de esta pasada, dejar `causa` solo observacional | CEO (crítico) + Eng (medio, `BLOCK_RECURRENCE_LIMIT`) | Auto-decidido — dos revisiones independientes coinciden en que actuar sin datos es más riesgo que beneficio |
 | 5 | Cablear `causa` explícitamente en `loop.py:377` (`f"causa:{causa}|{msg}"`) | Eng (medio) | Auto-decidido — es el punto exacto donde se pierde si no se toca |
-| **6** | **`causa` como atributo string simple vs. subclases de `BackendError` (`BackendErrorTimeout`, etc., siguiendo el patrón de `ErrorPermanente`)** | **CEO (medio)** | **Sin decidir — ver pregunta al usuario abajo** |
+| 6 | `causa` como atributo string simple, no subclases | CEO (medio) | **Decidido por el usuario** (me delegó el criterio): `permanente` y `causa` son dos ejes independientes — subclasear los dos multiplica clases sin agregar nada; un valor nuevo en `causa` cuesta una línea, no una clase |
 
-**Estado: E0 y E1 (observacional) listos para implementar tras la decisión 6.
-E2 no se implementa en esta pasada.**
+**Estado: E0 y E1 implementados y verificados** (`tests/test_concurrencia_reintentos.py`,
+17/17). E2 (backoff diferenciado) sigue cortado — ver Premisas 3-4.
