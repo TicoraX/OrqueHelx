@@ -13,6 +13,7 @@ import html, hmac, json, os, re, secrets, shutil, subprocess, sys, threading, ti
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qsl
+import urllib.request
 
 RAIZ = Path(__file__).resolve().parent.parent
 for sub in ("hermes-agent", "dispatcher", "compiler", "mcp_exporter"):
@@ -197,6 +198,13 @@ _topes: dict[str, float] = {}
 # puerto es entregar una terminal. Se genera uno por arranque salvo que se fije
 # `ORQUESTER_TOKEN` (util para dejarlo estable entre reinicios).
 TOKEN = os.environ.get("ORQUESTER_TOKEN") or secrets.token_urlsafe(24)
+
+# Webhook de fin de corrida. `notificarNativo()` en la UI (Notification API)
+# solo avisa con la pestaña abierta; esto es lo que de verdad cumple "uso
+# diario sin tener el Studio abierto" — un POST generico sirve para
+# Slack/Discord/ntfy.sh/receptor propio sin agregar una dependencia por
+# servicio. Sin URL configurada, no hace nada.
+WEBHOOK_URL = os.environ.get("ORQUESTER_WEBHOOK_URL") or None
 
 # Nombres aceptados en la cabecera `Host`. Un `http.server` escuchando en
 # 127.0.0.1 sin esta comprobacion es vulnerable a DNS rebinding: una pagina
@@ -481,6 +489,31 @@ def _estado(board: str) -> dict:
             "resumen": (getattr(t, "result", None) or "")[:400],
         }
     return {"tareas": tareas, "corriendo": board in _corriendo}
+
+
+def _notificar_webhook(board: str) -> None:
+    """POST generico al terminar una corrida. Silencioso si falla o no esta
+    configurado: un webhook caido no puede tumbar el hilo del dispatcher, y
+    reintentarlo agrega una cola y un estado que este ciclo no necesita.
+
+    Solo manda CONTEOS por estado, no `resumen` (que en `_estado()` lleva
+    contenido de cada card, recortado a 400 caracteres) — el webhook es para
+    avisar que algo termino, no para llevarse el entregable por otra puerta.
+    """
+    if not WEBHOOK_URL:
+        return
+    try:
+        tareas = _estado(board).get("tareas", {})
+        conteo: dict[str, int] = {}
+        for t in tareas.values():
+            conteo[t["estado"]] = conteo.get(t["estado"], 0) + 1
+        cuerpo = json.dumps({"board": board, "conteo_por_estado": conteo,
+                             "total": len(tareas), "ts": int(time.time())}).encode()
+        req = urllib.request.Request(WEBHOOK_URL, data=cuerpo,
+                                     headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=5).close()
+    except Exception:
+        pass  # ver docstring: nunca debe afectar la corrida
 
 
 def _traza(board: str, task_id: str) -> dict:
@@ -1425,6 +1458,7 @@ def _arrancar(board: str, tope_usd: float = None, validador: str = None) -> dict
             corrida.correr(board, tope_usd=tope_usd, gates="esperar", validador=validador)
         finally:
             _corriendo.pop(board, None)
+            _notificar_webhook(board)
 
     # Chequeo y alta bajo el mismo lock: ver `_LOCK_ARRANQUE`.
     h = threading.Thread(target=_correr, daemon=True)

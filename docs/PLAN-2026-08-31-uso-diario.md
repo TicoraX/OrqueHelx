@@ -21,7 +21,8 @@ decisiones ya tomadas ni backlog ya escrito.
 
 | Necesidad | Ya existe en | Falta |
 |---|---|---|
-| Canal de eventos en vivo | `/api/eventos` (SSE, `ui/server.py`) | consumidor en la UI (T2.2 de IDEAS.md, hallazgo lateral) |
+| Canal de eventos en vivo | `/api/eventos` (SSE, `ui/server.py`) | consumidor en la UI (T2.2 de IDEAS.md, hallazgo lateral) — nadie lo usa, pero ver fila siguiente |
+| **Notificación en pestaña abierta** | **`notificarNativo()` + `refrescarEstado()` (`ui/index.html:2209`, `:3516`), YA dispara sonido + `Notification` nativa al terminar la corrida y en gates pendientes** | **webhook para cuando la pestaña está cerrada (D2b) — lo único que faltaba** |
 | Reintento manual de nodo | `_reintentar_nodo` (`server.py:862-881`) | nada — es el botón, ya funciona |
 | **Reintento automático de nodo** | **`loop.reintentar()` (`dispatcher/loop.py:404-431`), corre en cada `tick()`, tope `MAX_INTENTOS=2` (`loop.py:58`), probado en `tests/test_concurrencia_reintentos.py:71-121`** | **backoff — hoy reabre inmediatamente en el próximo tick, sin espera** |
 | Filtro de credenciales en salida | `limpiar_salida()` (`dispatcher/loop.py`) | aplicarlo *en* el stream, no solo al resumen final (advertencia ya escrita en IDEAS.md T2.2) |
@@ -86,41 +87,45 @@ Ningún ítem de D1–D3 toca `compiler/`, `apps/api/` ni el esquema de
   `validador` viajan en el payload de `/api/correr` cuando se marcan en la UI
   (Playwright, ya es el mecanismo usado para UI).
 
-### D2 · Notificación de fin de corrida — REDISEÑADA tras revisión
-**Corrección de hecho (revisión de ingeniería):** la afirmación original de
-que `/api/eventos` "no lleva contenido de nodo" es falsa. `_estado()`
-(`server.py:468-482`) arma `resumen = (t.result or "")[:400]` y ese resumen
-viaja en cada evento SSE. La razón real por la que hoy no hay fuga de
-credenciales es otra: `limpiar_salida()` corre en **escritura**
-(`loop.py:364`, antes de `complete_task`), no en el stream. `/api/eventos`
-no es el vector de riesgo; un futuro call site que escriba `result` sin
-pasar por `limpiar_salida()` sí lo es. Documentar esa garantía correcta en
-el código, no la incorrecta.
+### D2 · Notificación de fin de corrida — CORRECCIÓN DE HECHO: D2a ya existía
+**Ninguna de las dos revisiones (CEO ni Eng) la encontró, y el plan original
+tampoco: `notificarNativo()` (`ui/index.html:2209-2218`) ya suena y dispara
+`Notification` API nativa. `refrescarEstado()` (`index.html:3516-3549`,
+`setInterval` cada 2.5s) ya la llama al terminar la corrida
+(`ESTADO_PREVIO_TERMINADO`) y en gates esperando aprobación
+(`GATES_AVISADOS`).** No es SSE (es polling), pero el resultado para el
+usuario es el mismo: sonido + notificación del navegador. **D2a: nada que
+hacer, ya está construido y funcionando.**
 
-**Corrección de alcance (revisión CEO):** la Premisa 1 exige enterarse
-"sin tener el Studio abierto". Un listener SSE en la pestaña no cumple eso
-— muere si se cierra el navegador. D2 se parte en dos:
+Lo que la revisión CEO señaló sigue siendo válido: eso **no cumple la
+Premisa 1** ("sin tener el Studio abierto") — el `setInterval` muere si se
+cierra la pestaña, igual que hubiera muerto un listener SSE. Por eso D2 se
+reduce a una sola pieza nueva:
 
-- **D2a (barato, Tier 1)**: listener SSE en `ui/index.html` sobre
-  `/api/eventos` → `Notification` API si la pestaña sigue abierta en
-  background. Vale igual, pero ya no es "la" solución, es el caso cómodo.
-- **D2b (Tier 1, nuevo, decidido)**: webhook HTTP genérico configurable (URL
-  en config, `POST` con estado — sirve para Slack/Discord/ntfy.sh/receptor
-  propio sin dependencia nueva por servicio) disparado desde
-  `dispatcher/loop.py` en las mismas transiciones de estado que ya dispara
-  eventos SSE (`done`/`blocked`/`review`) — sin backend nuevo de verdad,
-  reusa el punto donde el loop ya sabe que el estado cambió. Es la pieza que
-  cumple la Premisa 1 de verdad.
-- **Test D2a**: mockear `window.Notification` en el test de Playwright
-  existente y verificar la llamada — no queda "manual", corre en CI.
-- **Test D2b**: unit test sobre el disparo del webhook con un servidor HTTP
-  de prueba (`http.server` local o mock), verificar que se llama en las
-  transiciones correctas y no en otras.
-- **Riesgo nuevo que D2b introduce**: `/api/eventos` bajo D2a multiplica su
-  uso (antes nadie lo consumía desde la UI) — revisar el costo de varias
-  pestañas abiertas a la vez sobre `_stream_eventos` (`server.py:1941-1973`,
-  sin tope de conexiones concurrentes por board) antes de dar D2a por
-  terminado.
+- **D2b (única pieza de D2, Tier 1, decidido)**: webhook HTTP genérico
+  configurable — `ORQUESTER_WEBHOOK_URL` en el entorno (mismo patrón que
+  `ORQUESTER_TOKEN`/`ORQUESTER_RETRY_BACKOFF`), `POST` con estado — sirve
+  para Slack/Discord/ntfy.sh/receptor propio sin dependencia nueva por
+  servicio. Se dispara desde `ui/server.py:_arrancar`, en el `finally:` del
+  hilo `_correr()` (línea ~1419: `_corriendo.pop(board, None)`) — ese es el
+  único punto que ya sabe, de forma confiable, que la corrida terminó
+  (éxito, bloqueo o corte), sin agregar un hook nuevo al dispatcher. Es la
+  pieza que cumple la Premisa 1 de verdad.
+- **Corrección de hecho menor (revisión de ingeniería), ya no aplica a
+  código nuevo**: la afirmación original de que `/api/eventos` "no lleva
+  contenido de nodo" era falsa — `_estado()` (`server.py:468-482`) arma
+  `resumen = (t.result or "")[:400]` y viaja en cada evento SSE. La garantía
+  real es que `limpiar_salida()` corre en **escritura** (`loop.py:364`,
+  antes de `complete_task`), no en el stream. Como D2b lee `_estado()` para
+  armar su payload, hereda la MISMA garantía: manda conteos por estado, no
+  el `resumen` completo de cada card — no hace falta filtrar nada nuevo,
+  pero el payload del webhook no debe incluir `resumen` crudo por las dudas
+  de que alguien lo agregue después sin pensar en esto.
+- **Test D2b**: unit test con un servidor HTTP de prueba local
+  (`http.server.HTTPServer` en un hilo, patrón ya usado en
+  `tests/test_contrato_ui.py`), verificar que `_arrancar` dispara un POST al
+  terminar y que un webhook caído/timeout no rompe la corrida (el `finally`
+  no puede volverse un punto de falla).
 
 ### D3 · Backoff en el retry automático — REDUCIDA tras revisión
 **Corrección de hecho (revisión de ingeniería):** el retry automático **ya
@@ -222,8 +227,18 @@ superficie de todo el Tier 1.
 | 9 | D1-D3 primero, D4 después. D0 (spike de `apps/api`) no bloquea — se puede correr aparte cuando haya tiempo. | CEO (alto) | **Decidido por el usuario**: el operador único sigue siendo el uso real hoy; D4 sin nadie más esperando sería trabajo especulativo |
 | 10 | D2b usa webhook HTTP genérico configurable (no Slack específico, no email) | Plan original, sin especificar | **Decidido por el usuario**: cubre Slack/Discord/ntfy.sh/receptor propio sin dependencia nueva ni credencial SMTP |
 
-**Estado: plan aprobado para Tier 1 (D1, D3, D2 en ese orden).** D0/D4 quedan
-documentados en Tier 2, sin fecha, corren cuando haya tiempo aparte.
+**Estado: Tier 1 completo — D1, D3, D2b implementados y verificados.**
+D2a resultó ya estar construido (`notificarNativo()`, hallazgo posterior a
+ambas revisiones — ni la voz CEO ni la voz Eng lo encontraron, y tampoco el
+plan original). D0/D4 quedan documentados en Tier 2, sin fecha, corren
+cuando haya tiempo aparte.
+
+| Tarea | Estado | Commit |
+|---|---|---|
+| D1 (espera + validador en el Studio) | hecho | `1bfa280` |
+| D3 (backoff + lock en el retry automático) | hecho | `d4a943a` |
+| D2a (notificación en pestaña abierta) | **ya existía**, sin tocar | — |
+| D2b (webhook de fin de corrida) | hecho | *(siguiente commit)* |
 
 ## 8. Qué NO resuelve este plan
 
