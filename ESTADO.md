@@ -7,7 +7,7 @@
 
 ## Dónde está el código
 
-- Commit `81f6b7d` — fix: los ocho hallazgos de la revision de CodeRabbit, y uno que salio de probarlos
+- Commit `d0810bc` — Merge pull request #2 from TicoraX/feat/features-y-mejoras
 - Remoto: https://github.com/TicoraX/orquester.git
 - Árbol limpio: **no** · sin pushear: 0
 
@@ -51,7 +51,6 @@
 
 ## Qué sigue
 
-- 12 commit(s) pusheados y sin mergear a master (rama de trabajo)
 - `docker compose up -d db` si vas a usar multiusuario
 - §10 tiene 1 afirmación(es) pendiente(s)
 - conectar el Studio a la API multiusuario (hoy le habla directo al motor)
