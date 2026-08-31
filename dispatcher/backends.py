@@ -152,8 +152,21 @@ class BackendError(RuntimeError):
     workspace inexistente se reintentaba dos veces como transitorio), y volvia
     a pasar con cualquier excepcion nueva del parser. Quien LEVANTA el error
     sabe si se arregla solo; quien lee el texto, no.
+
+    `causa` es el mismo criterio aplicado mas fino, DENTRO de lo transitorio:
+    por que fue transitorio ("timeout", "parseo", "configuracion",
+    "desconocido"). String y no subclases: son dos ejes independientes
+    (permanente x causa), y subclasear los dos multiplica clases sin agregar
+    nada — un valor mas en `causa` cuesta una linea, no una clase nueva.
+    Todavia NO se usa para nada mas que exponerse en la traza del nodo: no
+    hay evidencia real de que direccion de backoff conviene por causa (ver
+    docs/PLAN-2026-08-31-backenderror-tipado.md).
     """
     permanente = False
+
+    def __init__(self, mensaje, *, causa="desconocido"):
+        super().__init__(mensaje)
+        self.causa = causa
 
 
 class ErrorPermanente(BackendError):
@@ -585,7 +598,7 @@ def _correr(runtime: str, argv: list[str], *, timeout: int, cwd: str = None):
             proc.communicate()
         except Exception:
             pass
-        raise BackendError(f"{runtime} excedio {timeout}s") from e
+        raise BackendError(f"{runtime} excedio {timeout}s", causa="timeout") from e
 
 
 def run_backend(runtime: str, goal: str, *, timeout: int = 600,
@@ -650,5 +663,6 @@ def run_backend(runtime: str, goal: str, *, timeout: int = 600,
         # cruda se le escaparia y mataria el dispatcher entero por una card.
         cola = (proc.stderr or proc.stdout or "")[-400:]
         raise BackendError(
-            f"{runtime}: {type(e).__name__}: {e}. Ultimos 400 chars: {cola!r}"
+            f"{runtime}: {type(e).__name__}: {e}. Ultimos 400 chars: {cola!r}",
+            causa="parseo",
         ) from e

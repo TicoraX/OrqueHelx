@@ -233,4 +233,47 @@ try:
 finally:
     loop.BACKOFF_ACTIVO = False
 
-print("\nOK: paralelismo acotado, backoff y reintentos que terminan.")
+# --- 14. E0: un assignee mal formado es permanente, no transient ---
+# Bug real encontrado revisando el plan de causa tipada: carril()/_runtime_de()
+# levantaban BackendError generico (permanente=False por default) para un
+# runtime que no existe -- se reintentaba sin sentido, algo que nunca se
+# arregla solo.
+malo = k.create_task(conn, title="assignee roto",
+                     assignee=f"{loop.CARRIL}:runtime-que-no-existe")
+loop.ejecutar_una(conn, malo, timeout=60)
+tm = k.get_task(conn, malo)
+print(f"14. runtime desconocido: estado={tm.status} kind={tm.block_kind}")
+assert tm.status == "blocked" and tm.block_kind == "capability", \
+    f"un runtime inexistente tiene que ser permanente, no transient: {tm}"
+assert malo not in loop.reintentar(conn), "un runtime que no existe no se reintenta"
+
+# --- 15. E1: `causa` queda legible en el run, sobrevive al truncado ---
+b.BACKENDS["opencode"] = (lambda g, e: ["python", "-c", "import time; time.sleep(5)"],
+                          b._primer_objeto)
+lt = k.create_task(conn, title="timeout de verdad", assignee=loop.carril("opencode"))
+loop.ejecutar_una(conn, lt, timeout=1)
+runs_t = k.list_runs(conn, lt, include_active=False)
+assert runs_t[-1].summary.startswith("causa:timeout|"), runs_t[-1].summary
+print(f"15. timeout deja causa:timeout| en el run: OK ({runs_t[-1].summary[:24]!r})")
+
+b.BACKENDS["opencode"] = (lambda g, e: ["python", "-c", 'print("no es json")'],
+                          b._primer_objeto)
+lp = k.create_task(conn, title="parseo roto", assignee=loop.carril("opencode"))
+loop.ejecutar_una(conn, lp, timeout=60)
+runs_p = k.list_runs(conn, lp, include_active=False)
+assert runs_p[-1].summary.startswith("causa:parseo|"), runs_p[-1].summary
+print("16. un fallo de parseo deja causa:parseo|: OK")
+
+# El prefijo va DESPUES del truncado a 2000 (loop.py), asi que un mensaje
+# larguisimo no se lo come.
+b.BACKENDS["opencode"] = (lambda g, e: ["python", "-c", 'print("x" * 5000)'],
+                          b._primer_objeto)
+ll = k.create_task(conn, title="mensaje larguisimo", assignee=loop.carril("opencode"))
+loop.ejecutar_una(conn, ll, timeout=60)
+runs_l = k.list_runs(conn, ll, include_active=False)
+assert runs_l[-1].summary.startswith("causa:parseo|"), \
+    f"el prefijo se corrompio con el truncado: {runs_l[-1].summary[:30]!r}"
+assert len(runs_l[-1].summary) <= 2000 + len("causa:parseo|")
+print("17. el truncado a 2000 no corrompe el prefijo: OK")
+
+print("\nOK: paralelismo acotado, backoff, reintentos que terminan, y causa tipada.")
