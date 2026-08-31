@@ -129,6 +129,65 @@ def aprobar_gate(conn, task_id: str, *, resultado: str = None,
     return texto
 
 
+# El `assignee` de un nodo de espera: `reloj:<segundos>`. Lo pone el
+# compilador (`compile.PREFIJO_ESPERA`); se repite aca y no se importa para no
+# atar el dispatcher al compilador, que son dos piezas separadas a proposito.
+# `test_espera` verifica que los dos digan lo mismo.
+PREFIJO_ESPERA = "reloj:"
+_HASTA = re.compile(r"despierta a las (\d+)")
+
+
+def _segundos_de(assignee: str) -> float | None:
+    """El plazo declarado en el assignee, o None si esta card no es una espera."""
+    if not (assignee or "").startswith(PREFIJO_ESPERA):
+        return None
+    try:
+        return float(assignee[len(PREFIJO_ESPERA):])
+    except ValueError:
+        return None
+
+
+def atender_esperas(conn) -> tuple[int, int]:
+    """Dormir las esperas que llegaron, despertar las que ya cumplieron.
+
+    El kanban trae las dos mitades --`schedule_task` aparca en `scheduled`, que
+    no es despachable, y `unblock_task` la devuelve respetando a los padres--
+    pero no guarda el CUANDO: su docstring dice que lo destraba "un cron
+    externo". El cron somos nosotros, y el instante va en el `reason`, que es
+    donde el propio kanban registra por que se aparco la card.
+
+    Devuelve `(dormidas, despertadas)`.
+    """
+    ahora = time.time()
+    dormidas = despertadas = 0
+    for t in k.list_tasks(conn):
+        seg = _segundos_de(t.assignee)
+        if seg is None:
+            continue
+        if t.status == "ready":
+            # Recien ahora sus padres cerraron: el plazo cuenta desde aca y no
+            # desde que se compilo el grafo, que puede haber sido la semana
+            # pasada.
+            if k.schedule_task(conn, t.id,
+                               reason=f"espera de {int(seg)}s: "
+                                      f"despierta a las {int(ahora + seg)}"):
+                dormidas += 1
+        elif t.status == "scheduled":
+            runs = k.list_runs(conn, t.id)
+            marca = _HASTA.search((runs[-1].summary or "") if runs else "")
+            # Sin marca legible no se puede saber cuando toca. Se despierta:
+            # dejarla dormida para siempre por un dato que no pudimos leer es
+            # peor que correr un nodo que no ejecuta nada.
+            if not marca or ahora >= float(marca.group(1)):
+                if k.unblock_task(conn, t.id):
+                    k.complete_task(conn, t.id, summary="Espera cumplida",
+                                    result="Espera cumplida",
+                                    metadata={"orquester_status": "success",
+                                              "claimer": "reloj"})
+                    despertadas += 1
+    return dormidas, despertadas
+
+
 def _hay_futuro(conn, *, esperar_gates: bool = False) -> bool:
     """¿Queda alguna card que TODAVIA pueda avanzar?
 
@@ -156,7 +215,12 @@ def _hay_futuro(conn, *, esperar_gates: bool = False) -> bool:
         if tid in visto:
             return False                   # ciclo: nadie lo va a desatar
         t = tareas[tid]
-        if t.assignee == GATE and t.status == "ready" and not esperar_gates:
+        if _segundos_de(t.assignee) is not None and t.status == "scheduled":
+            # Una espera dormida SI va a avanzar sola: la despierta el reloj en
+            # una vuelta siguiente. Sin esto la corrida se cerraba a los tres
+            # segundos dando el flujo por terminado.
+            valor = True
+        elif t.assignee == GATE and t.status == "ready" and not esperar_gates:
             # Un gate en `ready` esta esperando a una persona. Nada de lo que
             # este proceso hace lo va a mover, asi que para una corrida
             # headless NO es futuro: es un final, y con nombre propio. Con
@@ -279,6 +343,8 @@ def correr(board: str, *, tope_usd: float = None, listo=None, espera: float = 3.
                 print(f"[{board}] tope de US$ {tope_usd} alcanzado: no se "
                       f"arrancan nodos nuevos")
                 return {"motivo": "tope", "vueltas": vueltas, "nodos": nodos}
+
+            atender_esperas(conn)
 
             if gates == "aprobar":
                 for g in gates_esperando(conn):

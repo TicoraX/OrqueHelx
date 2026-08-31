@@ -7,9 +7,9 @@
 
 ## Dónde está el código
 
-- Commit `3815c19` — feat(cli): un gate pendiente pausa la corrida en vez de colgarla
+- Commit `81f6b7d` — fix: los ocho hallazgos de la revision de CodeRabbit, y uno que salio de probarlos
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 8
+- Árbol limpio: **no** · sin pushear: 0
 
 ## Runtime prestado
 
@@ -21,7 +21,7 @@
 ## Verificación
 
 - `ARQUITECTURA.md` §10: **70 afirmaciones**, 1 pendiente(s)
-- 24 tests: api_rbac, auth_studio, capacidades, chat, cli, compilador, concurrencia_reintentos, consumo, contract, contrato_ui, dag_heterogeneo, dag_rombo, disposicion, dos_dispatchers, esfuerzo_presupuesto, guardarrailes, mcp_export, modo_app, parada, pin_hermes, rebanada_vertical, reporte, ui_expansion, ui_navegador
+- 26 tests: api_rbac, auth_studio, capacidades, chat, ciclo_refinamiento, cli, compilador, concurrencia_reintentos, consumo, contract, contrato_ui, dag_heterogeneo, dag_rombo, disposicion, dos_dispatchers, esfuerzo_presupuesto, espera, guardarrailes, mcp_export, modo_app, parada, pin_hermes, rebanada_vertical, reporte, ui_expansion, ui_navegador
 
 ## Decisiones tomadas (no re-litigar sin motivo nuevo)
 
@@ -47,10 +47,11 @@
 
 ## Bloqueos
 
-- 8 commit(s) sin pushear
+- hay cambios sin commitear
 
 ## Qué sigue
 
+- 12 commit(s) pusheados y sin mergear a master (rama de trabajo)
 - `docker compose up -d db` si vas a usar multiusuario
 - §10 tiene 1 afirmación(es) pendiente(s)
 - conectar el Studio a la API multiusuario (hoy le habla directo al motor)

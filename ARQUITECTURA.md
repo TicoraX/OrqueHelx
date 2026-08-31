@@ -800,6 +800,31 @@ que lo hace util como gate de CI, y es lo que fija `tests/test_cli.py` (que
 corre un DAG de punta a punta reemplazando `run_backend`, o sea sin agentes de
 verdad ni servidor HTTP).
 
+### Nodos de espera: el que destraba es el reloj
+
+Un nodo `tipo: espera` con `esperar_segundos` no lo ejecuta nadie: se duerme y
+despierta solo. `scheduled` ya estaba en `VALID_STATUSES` y no lo usaba nadie
+nuestro, y el kanban trae las dos mitades --`schedule_task` aparca la card
+fuera del alcance de cualquier dispatcher, `unblock_task` la devuelve
+respetando a los padres--. Lo unico que falta es el **cuando**, que su propio
+docstring delega en "un cron externo": ese cron es `corrida.atender_esperas`,
+que corre una vez por vuelta del bucle.
+
+Dos decisiones:
+
+- **El plazo viaja en el `assignee`** (`reloj:<segundos>`), que es el campo de
+  ruteo, igual que `orquester-external:<runtime>` y `human`. No se inventa un
+  campo ni se mete el dato en uno que significa otra cosa: asi llegamos al bug
+  de `skills`. Hermes lo ve como un assignee que no es un perfil, o sea
+  nonspawnable, que es exactamente lo que queremos.
+- **El plazo cuenta desde que la card queda `ready`**, no desde que se compilo
+  el grafo: el grafo puede haberse guardado la semana pasada. El instante de
+  despertar se escribe en el `reason` de `schedule_task`, que es donde el
+  propio kanban registra por que se aparco la card.
+
+`_hay_futuro` cuenta una espera dormida como viva --va a avanzar sola-- a
+diferencia de un gate, que necesita a una persona.
+
 ### El ciclo de refinamiento: el linter es el critico
 
 Un nodo que dice "listo" no prueba nada: lo dice igual si dejo el workspace
