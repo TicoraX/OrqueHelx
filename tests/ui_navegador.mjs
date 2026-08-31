@@ -545,6 +545,36 @@ const copia = await p.evaluate(() => {
 ok(!copia.falta && copia.original === 2 && copia.duplicado === 3,
    `duplicar da un nodo independiente del original (original ${copia.original}, copia ${copia.duplicado})`);
 
+// Un error de compilación nombra el nodo por su id ("nodo 'X': falta
+// 'titulo'"), y ese id no aparece en ningún lado del canvas. Encontrado
+// explorando el Studio como usuario real: con más de dos o tres nodos, el
+// mensaje por si solo no dice DONDE mirar. `seleccionarNodoDeError` tiene
+// que saltar al panel del nodo que el mensaje nombra.
+await p.evaluate(() => {
+  grafo.nodos = [
+    { id: 'con_titulo', titulo: 'este esta bien', runtime: 'opencode', x: 100, y: 100 },
+    { id: 'sin_titulo', titulo: '', runtime: 'opencode', x: 300, y: 100 },
+  ];
+  grafo.aristas = []; sel = null; selGroup.clear(); pintar();
+});
+await p.route('**/api/compilar', r => r.fulfill({
+  status: 400, contentType: 'application/json',
+  body: JSON.stringify({ error: "nodo 'sin_titulo': falta 'titulo'" }) }));
+await aDiseno();
+await p.click('#compilar');
+await p.waitForFunction(() => document.querySelector('.tab.activa')?.dataset.tab === 'nodo',
+                        null, { timeout: 5000 });
+const nodoTrasError = await p.evaluate(() => sel);
+ok(nodoTrasError === 'sin_titulo',
+   `un error de compilación selecciona el nodo que nombra (seleccionó '${nodoTrasError}')`);
+await p.unroute('**/api/compilar');
+// El 400 de arriba es A PROPOSITO (lo arma este mismo test) y el navegador lo
+// loguea como error de consola igual que loguearia uno real: sacarlo de
+// `errores` es parte del test, no esconder un fallo. Si el mensaje cambia,
+// esta linea no encuentra nada que sacar y el chequeo de abajo lo destapa.
+const i400 = errores.findIndex(e => e.includes('400'));
+if (i400 !== -1) errores.splice(i400, 1);
+
 ok(errores.length === 0, `sin errores de JS en toda la corrida${errores.length ? ': ' + errores[0] : ''}`);
 if (process.argv[3]) await p.screenshot({ path: process.argv[3], fullPage: false });
 console.log(fallos ? `\n${fallos} FALLA(S)` : '\nTODO OK');
