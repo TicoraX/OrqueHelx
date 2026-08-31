@@ -7,7 +7,7 @@ dependencias y promueve a `ready`; esto solo levanta trabajo ya programado.
 Corre en Python, no en TypeScript, a proposito: usa `kanban_db` como libreria
 en vez de reimplementar el protocolo de claim contra la misma SQLite.
 """
-import os, re, sys, threading
+import os, re, sys, threading, time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -56,6 +56,29 @@ MAX_PARALELO = 3
 # de desbloqueo por su cuenta (`BLOCK_RECURRENCE_LIMIT`), asi que un reintento
 # que se obstine termina en `triage` y no girando para siempre.
 MAX_INTENTOS = 2
+
+# Espera antes de reabrir un `transient`. `tick` corre cada ~3s, asi que sin
+# esto el reintento salia en la pasada siguiente al fallo: un rate limit del
+# proveedor o un servicio caido se volvia a chocar de inmediato y quemaba los
+# intentos en menos de diez segundos. Exponencial acotada, medida desde el
+# `ended_at` del ultimo run (dato que ya existe, sin campos nuevos).
+#
+# ponytail: el backoff es global, no por tipo de error. Un 429 y un timeout
+# esperan lo mismo. Distinguirlos pide clasificar el fallo en `backends`, y
+# recien vale la pena si aparece un caso que la espera fija trate mal.
+BACKOFF_BASE_S = 5
+BACKOFF_MAX_S = 60
+
+# Kill switch para volver al comportamiento viejo (reapertura inmediata). Se
+# lee UNA vez, como el resto de las constantes de modulo.
+BACKOFF_ACTIVO = os.environ.get("ORQUESTER_RETRY_BACKOFF") != "0"
+
+# El boton de reintento del Studio (`ui/server.py:_reintentar_nodo`) corre en el
+# hilo HTTP y este `reintentar()` en el del dispatcher: los dos llaman
+# `unblock_task` sobre la misma card. Sin lock compartido, el click humano y la
+# pasada automatica podian desbloquear dos veces la misma card y contarla como
+# dos reaperturas. Los dos lados toman ESTE lock.
+_LOCK_RETRY = threading.Lock()
 
 # Fallos que NO se reintentan: no se arreglan solos y reintentarlos solo gasta
 # tiempo y cuota. Van como `capability`, que es el tipo que Hermes reserva para
@@ -409,10 +432,25 @@ def reintentar(conn) -> list[str]:
             continue                      # dependencia o fallo permanente
         # Intentos previos contados desde `task_runs`, no desde memoria: el
         # dispatcher puede reiniciarse y el conteo tiene que sobrevivir.
-        intentos = len(k.list_runs(conn, t.id, include_active=False))
-        if intentos < MAX_INTENTOS:
+        runs = k.list_runs(conn, t.id, include_active=False)
+        intentos = len(runs)
+        if intentos >= MAX_INTENTOS:
+            continue
+        if BACKOFF_ACTIVO and intentos:
+            fin = runs[-1].ended_at          # en orden de arranque: el ultimo
+            espera = min(BACKOFF_BASE_S * 2 ** (intentos - 1), BACKOFF_MAX_S)
+            if fin and time.time() - fin < espera:
+                continue                  # todavia no; se mira de nuevo al proximo tick
+        # El chequeo y el desbloqueo, bajo el mismo lock que usa el boton
+        # manual: la card se relee FRESCA adentro porque `t` es de antes de
+        # esperar el lock y el otro hilo pudo haberla movido.
+        with _LOCK_RETRY:
+            fresca = k.get_task(conn, t.id)
+            if not fresca or fresca.status != "blocked" \
+                    or fresca.block_kind != "transient":
+                continue
             k.unblock_task(conn, t.id)
-            reabiertas.append(t.id)
+        reabiertas.append(t.id)
     return reabiertas
 
 

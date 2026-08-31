@@ -868,17 +868,23 @@ def _reintentar_nodo(board: str, task_id: str) -> dict:
     ejecutar pisando su propio entregable, y sobre una `running` le saca la
     card al dispatcher que la tiene reclamada. Los unicos estados de los que
     se puede volver son los que este boton dice atender.
+
+    Todo bajo `dispatcher._LOCK_RETRY`: esto corre en el hilo HTTP y
+    `loop.reintentar()` en el del dispatcher, y sin el lock los dos podian
+    mirar la misma card `blocked` y desbloquearla dos veces. Es un click
+    humano, asi que tomar el lock entero no le cuesta nada a nadie.
     """
     conn = _conn(board)
-    t = k.get_task(conn, task_id)
-    if not t:
-        raise ValueError(f"no existe la card {task_id}")
-    # `failed` no existe en `VALID_STATUSES`: un fallo terminal en Hermes
-    # termina en `triage`, y uno del dispatcher nuestro en `blocked`.
-    if t.status not in ("blocked", "triage", "scheduled"):
-        raise ValueError(f"la card {task_id} esta en '{t.status}': "
-                         "solo se reintenta lo bloqueado")
-    k.unblock_task(conn, task_id)
+    with dispatcher._LOCK_RETRY:
+        t = k.get_task(conn, task_id)
+        if not t:
+            raise ValueError(f"no existe la card {task_id}")
+        # `failed` no existe en `VALID_STATUSES`: un fallo terminal en Hermes
+        # termina en `triage`, y uno del dispatcher nuestro en `blocked`.
+        if t.status not in ("blocked", "triage", "scheduled"):
+            raise ValueError(f"la card {task_id} esta en '{t.status}': "
+                             "solo se reintenta lo bloqueado")
+        k.unblock_task(conn, task_id)
     return {"ok": True, "task_id": task_id, "estado_previo": t.status}
 
 
