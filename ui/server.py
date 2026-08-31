@@ -25,6 +25,7 @@ import loop as dispatcher
 import corrida
 import exportar as mcp
 import capacidades
+import validadores
 
 HTML = Path(__file__).parent / "index.html"
 GRAFOS = RAIZ / "ui" / "grafos"
@@ -1389,7 +1390,7 @@ def _generar_dataset_jsonl(board: str = None) -> dict:
     }
 
 
-def _arrancar(board: str, tope_usd: float = None) -> dict:
+def _arrancar(board: str, tope_usd: float = None, validador: str = None) -> dict:
     # El nombre se valida ACA y no en la ruta: `_arrancar` tiene dos llamadores
     # (`/api/correr` y el modo App), y una guarda puesta en uno solo es como
     # llegamos a la mitad de los bugs de esta rama.
@@ -1415,7 +1416,7 @@ def _arrancar(board: str, tope_usd: float = None) -> dict:
             # aprobar esta en la pantalla--, asi que un gate no corta la
             # corrida. El default del motor es no esperar, que es lo correcto
             # sin nadie mirando.
-            corrida.correr(board, tope_usd=tope_usd, gates="esperar")
+            corrida.correr(board, tope_usd=tope_usd, gates="esperar", validador=validador)
         finally:
             _corriendo.pop(board, None)
 
@@ -2296,7 +2297,16 @@ class Handler(BaseHTTPRequestHandler):
                     return self._responder(400, {"error": f"presupuesto invalido: {tope!r}"})
                 if tope is not None and tope <= 0:
                     return self._responder(400, {"error": "el presupuesto tiene que ser > 0"})
-                return self._responder(200, _arrancar(cuerpo.get("board", "orquester"), tope))
+                validador = cuerpo.get("validador") or None
+                # Mismo criterio que el CLI (`orquester run --validar`): un
+                # nombre que no esta en la tabla es un typo del usuario, no un
+                # comando a ejecutar. Rechazarlo aca evita que el dispatcher lo
+                # descubra recien al terminar el primer nodo.
+                if validador and not validadores.existe(validador):
+                    return self._responder(400, {"error": f"validador desconocido: "
+                                                          f"{validador!r}"})
+                return self._responder(200, _arrancar(cuerpo.get("board", "orquester"), tope,
+                                                       validador))
             if self.path == "/api/plantilla":
                 # Usar una plantilla = copiarla a los grafos propios, con el
                 # nombre que elija quien la usa. La plantilla no se toca nunca.

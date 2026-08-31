@@ -606,6 +606,13 @@
       </div>
 
       <div>
+        <label style="display:flex; align-items:center; gap:6px; margin:0;">
+          <input type="checkbox" id="validadorPyflakes" style="width:auto;">
+          Validar con pyflakes <span class="tenue">— bloquea el nodo si introduce errores nuevos</span>
+        </label>
+      </div>
+
+      <div>
         <label for="reglas">Reglas del flujo <span class="tenue">— van a TODOS los nodos</span></label>
         <textarea id="reglas" placeholder="Ej: no instales dependencias; no modifiques archivos; respondé en español."></textarea>
       </div>
@@ -710,12 +717,18 @@
           <select id="tipo">
             <option value="agente">Agente (se ejecuta)</option>
             <option value="gate">Gate (aprobación humana)</option>
+            <option value="espera">Espera (pausa el flujo)</option>
             <option value="nota">Nota (solo explica, no se ejecuta)</option>
           </select>
         </div>
         <div id="boxGate" style="display:none; background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:8px; font-size:11.5px;">
           <div style="color:var(--tenue); margin-bottom:6px;">Este nodo detiene el flujo hasta que confirmes la aprobación humana.</div>
           <button id="btnAprobarGate" style="display:none; background:#2ea043; color:#fff; width:100%; padding:6px; font-weight:bold; font-size:12px;">Aprobar Gate y Continuar</button>
+        </div>
+        <div id="boxEspera" style="display:none; background:var(--hundido); border:1px solid var(--linea); border-radius:var(--radio); padding:8px; font-size:11.5px;">
+          <div style="color:var(--tenue); margin-bottom:6px;">Este nodo no ejecuta nada: destraba a sus hijos cuando pasan los segundos indicados.</div>
+          <label for="esperaSegundos" style="margin:0;">Segundos de espera</label>
+          <input id="esperaSegundos" type="number" min="1" placeholder="ej. 300">
         </div>
         <div id="camposAgente" style="display:flex; flex-direction:column; gap:8px;">
         <div><label for="runtime">Ejecutor</label>
@@ -1206,6 +1219,7 @@ function pintar() {
   for (const n of grafo.nodos) {
     const nota = n.tipo === "nota";
     const gate = n.tipo === "gate" || n.tipo === "aprobacion";
+    const espera = n.tipo === "espera";
     const est = nota ? null : estado[ids[n.id]]?.estado;
     const esSel = sel === n.id || selGroup.has(n.id);
     const esAislado = !nota && grafo.nodos.length > 1 && !conectados.has(n.id);
@@ -1220,9 +1234,9 @@ function pintar() {
     const r = document.createElementNS(svg.namespaceURI, "rect");
     const ancho = nota ? A * 1.35 : A, alto = nota ? ALTO * 1.9 : ALTO;
     r.setAttribute("width", ancho); r.setAttribute("height", alto); r.setAttribute("rx", "8");
-    r.setAttribute("fill", est ? COLOR[est] || "#4a5160" : (nota ? "#1b1f2a" : (gate ? "#251e2b" : "#252a34")));
-    
-    let strokeColor = nota ? "#5c6478" : (gate ? "#e5c07b" : (RT_COLOR[n.runtime] || "#8e9aab"));
+    r.setAttribute("fill", est ? COLOR[est] || "#4a5160" : (nota ? "#1b1f2a" : (gate ? "#251e2b" : (espera ? "#1e2b2b" : "#252a34"))));
+
+    let strokeColor = nota ? "#5c6478" : (gate ? "#e5c07b" : (espera ? "#5fb3b3" : (RT_COLOR[n.runtime] || "#8e9aab")));
     if (esAislado && !est) strokeColor = "#e5c07b";
     r.setAttribute("stroke", strokeColor);
 
@@ -1715,8 +1729,14 @@ function refrescarEditor() {
   if (n) {
     const nota = n.tipo === "nota";
     const gate = n.tipo === "gate" || n.tipo === "aprobacion";
-    $("#tipo").value = nota ? "nota" : (gate ? "gate" : "agente");
-    $("#camposAgente").style.display = (nota || gate) ? "none" : "flex";
+    const espera = n.tipo === "espera";
+    $("#tipo").value = nota ? "nota" : (gate ? "gate" : (espera ? "espera" : "agente"));
+    $("#camposAgente").style.display = (nota || gate || espera) ? "none" : "flex";
+    const boxEspera = $("#boxEspera");
+    if (boxEspera) {
+      boxEspera.style.display = espera ? "block" : "none";
+      if (espera) $("#esperaSegundos").value = n.esperar_segundos || "";
+    }
     const boxGate = $("#boxGate");
     if (boxGate) {
       boxGate.style.display = gate ? "block" : "none";
@@ -1736,7 +1756,7 @@ function refrescarEditor() {
       }
     }
     $("#titulo").value = n.titulo || "";
-    if (!nota && !gate) {
+    if (!nota && !gate && !espera) {
       $("#runtime").value = n.runtime;
       $("#modelo").value = n.modelo || "";
       $("#workspace").value = n.workspace || "";
@@ -2088,6 +2108,7 @@ function renderPaletteResultados(filtro) {
     { label: "Abrir Cuotas, Modelos y Secretos", cat: "Sistema", icon: "[Info]", run: () => $("#btnCuotas").click() },
     { label: "Nuevo Nodo Agente", cat: "Lienzo", icon: "[+]", run: () => { anotar(); const id = nuevoId(); grafo.nodos.push({ id, titulo: "Nueva tarea", runtime: "claude-code", x: 200, y: 200 }); sel = id; refrescarEditor(); pintar(); } },
     { label: "Nuevo Nodo Gate (Aprobación)", cat: "Lienzo", icon: "[Gate]", run: () => { anotar(); const id = nuevoId(); grafo.nodos.push({ id, titulo: "Aprobación Humana", tipo: "gate", x: 200, y: 200 }); sel = id; refrescarEditor(); pintar(); } },
+    { label: "Nuevo Nodo Espera", cat: "Lienzo", icon: "[Espera]", run: () => { anotar(); const id = nuevoId(); grafo.nodos.push({ id, titulo: "Espera", tipo: "espera", esperar_segundos: 300, x: 200, y: 200 }); sel = id; refrescarEditor(); pintar(); } },
     { label: "Nueva Nota Explicativa", cat: "Lienzo", icon: "[Nota]", run: () => { anotar(); const id = nuevoId(); grafo.nodos.push({ id, titulo: "Nota explicativa", tipo: "nota", x: 200, y: 200 }); sel = id; refrescarEditor(); pintar(); } },
     ...(TODAS_PLANTILLAS || []).map(p => ({
       label: `Cargar Plantilla: ${p.nombre}`,
@@ -2585,11 +2606,26 @@ $("#tipo").onchange = e => {
     // Una nota no se ejecuta: sus aristas dejarian de significar nada, y el
     // compilador las rechaza. Se sacan al convertir, no al compilar.
     grafo.aristas = grafo.aristas.filter(([p, h]) => p !== n.id && h !== n.id);
+  } else if (e.target.value === "gate") {
+    n.tipo = "gate";
+  } else if (e.target.value === "espera") {
+    n.tipo = "espera";
   } else {
     delete n.tipo;
     if (!n.runtime) n.runtime = "hermes";
   }
   refrescarEditor(); pintar();
+};
+$("#esperaSegundos").oninput = e => {
+  const n = buscar(sel);
+  if (!n) return;
+  const v = e.target.value.trim();
+  // Numero o nada: un string a medio escribir ("30" -> "3") no debe quedar
+  // guardado como texto, porque el compilador lo rechaza recien al compilar
+  // y el usuario ya se fue a otra pestaña.
+  if (v === "") { delete n.esperar_segundos; return; }
+  const num = Number(v);
+  if (Number.isFinite(num)) n.esperar_segundos = num;
 };
 $("#runtime").onchange = e => {
   const n = buscar(sel);
@@ -2768,8 +2804,9 @@ $("#compilar").onclick = async () => {
 };
 $("#correr").onclick = async () => {
   if (!Object.keys(ids).length) return avisar("Compilá el grafo antes de ejecutarlo.", "error");
-  const { ok, datos } = await api("/api/correr",
-    { board: grafo.board, presupuesto_usd: grafo.presupuesto_usd || "" });
+  const { ok, datos } = await api("/api/correr", {
+    board: grafo.board, presupuesto_usd: grafo.presupuesto_usd || "",
+    validador: $("#validadorPyflakes").checked ? "pyflakes" : "" });
   if (!ok) return avisar(datos.error, "error");
   avisar(datos.ok
     ? "Dispatcher arrancado. Los nodos externos corren ahora." +
