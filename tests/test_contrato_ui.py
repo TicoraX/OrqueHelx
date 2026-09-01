@@ -543,6 +543,26 @@ try:
         f"un validador inventado deberia rechazarse con 400: {codigo} {datos}")
     print("9. `/api/correr` rechaza un validador que no esta en la tabla: OK")
 
+    # 10. `/api/reporte/descargar` no pasaba por `pedir()` (arma headers a mano,
+    # no devuelve JSON) y no tenia NINGUN test propio — hallazgo de la revision
+    # del plan de tabla de rutas (docs/PLAN-2026-09-01-tabla-de-rutas.md, R0):
+    # es la rama de mayor riesgo de transcripcion manual del refactor y la
+    # unica sin red de seguridad. Pedido crudo, no via `pedir()`.
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{PUERTO}/api/reporte/descargar?board={BOARD}&formato=markdown",
+        headers={"X-Orquester-Token": TOKEN})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        cuerpo_reporte = r.read()
+        content_disposition = r.headers.get("Content-Disposition", "")
+        content_type = r.headers.get("Content-Type", "")
+    assert r.status == 200, r.status
+    assert content_disposition.startswith("attachment; filename=\"reporte-"), \
+        f"falta el header de descarga: {content_disposition!r}"
+    assert "text/markdown" in content_type, content_type
+    assert len(cuerpo_reporte) > 0, "el reporte descargado vino vacio"
+    print("10. `/api/reporte/descargar` manda el header de descarga y el "
+          f"cuerpo ({len(cuerpo_reporte)} bytes): OK")
+
     print(f"\n   afuera del contraste, a proposito ({len(AFUERA)}):")
     for ruta, motivo in sorted(AFUERA.items()):
         print(f"     {ruta:26} {motivo}")
