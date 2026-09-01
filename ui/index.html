@@ -2797,8 +2797,26 @@ async function api(ruta, cuerpo) {
   }
 }
 
+// Los errores de validación del compilador nombran el nodo por su id
+// (`nodo 'ntmu8p': falta 'titulo'`) y ese id no aparece en ningún lado del
+// canvas — antes de esto, encontrar CUÁL nodo tenía el problema en un grafo
+// de más de dos o tres nodos era adivinar. Selecciona el nodo y salta a su
+// panel, igual que hace un clic real sobre el nodo (ver `svg.ondblclick`).
+function seleccionarNodoDeError(msg) {
+  const m = /nodo '([^']+)'/.exec(msg || "");
+  const n = m && buscar(m[1]);
+  if (!n) return;
+  sel = n.id;
+  selGroup.clear();
+  selGroup.add(n.id);
+  refrescarEditor();
+  pintar();
+  activarTab("nodo");
+}
+
 $("#validar").onclick = async () => {
   const { ok, datos } = await api("/api/validar", grafo);
+  if (!ok) seleccionarNodoDeError(datos.error);
   avisar(ok ? "El grafo es válido." : datos.error, ok ? "ok" : "error");
 };
 $("#guardar").onclick = async () => {
@@ -2829,7 +2847,7 @@ $("#ordenar").onclick = async () => {
 };
 $("#compilar").onclick = async () => {
   const { ok, datos } = await api("/api/compilar", { ...grafo, valores: VALORES });
-  if (!ok) return avisar(datos.error, "error");
+  if (!ok) { seleccionarNodoDeError(datos.error); return avisar(datos.error, "error"); }
   ids = datos.ids;
   avisar(`Compilado: ${Object.keys(ids).length} cards en '${grafo.board}'.`, "ok");
   refrescarEstado();
