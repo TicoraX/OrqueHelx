@@ -203,6 +203,12 @@ def TABLA(grafo, board, repo, tarea, snap, sucio, plantilla, copia):
             "intentos[].fin", "intentos[].resumen", "intentos[].error",
             "eventos[].kind", "eventos[].cuando", "eventos[].detalle",
         ]),
+        # Visor de diff (docs/PLAN-2026-08-31-visor-diff-en-vivo.md): la card
+        # de prueba no tiene workspace declarado, asi que `caso` sale
+        # "sin_workspace" -- lo que importa aca es que las 5 claves viajan
+        # siempre, no que este board en particular tenga cambios.
+        (f"/api/nodo/diff?board={board}&task={tarea}", None,
+         ["ok", "caso", "stat", "diff", "truncado"]),
 
         # --- Guardar, abrir, copiar y borrar ----------------------------------
         # `abrirGrafo(datos, nombre)`: el grafo llega en la raiz de la respuesta,

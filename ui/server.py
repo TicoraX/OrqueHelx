@@ -550,6 +550,57 @@ def _traza(board: str, task_id: str) -> dict:
     }
 
 
+# Cap de tamaño del diff: mismo orden de magnitud que ya usa el codigo
+# (`resumen[:400]` en `_estado()`, `limpiar_salida(str(e))[:2000]` en
+# `loop.py`) -- no un numero inventado para esta feature.
+_CAP_DIFF = 2000
+
+
+def _diff_nodo(board: str, task_id: str) -> dict:
+    """Diff del workspace de una card ya ejecutada -- que tocó el nodo, no
+    solo qué dijo que hizo.
+
+    Tres casos posibles (Premisa 2 de
+    `docs/PLAN-2026-08-31-visor-diff-en-vivo.md`, verificados contra
+    `kanban_db`/`loop.py`/`backends.py`): un nodo `orquester-external:*` sin
+    `workspace` declarado no tiene NINGUNA carpeta propia (`workspace_path`
+    es `NULL`, el proceso heredó el cwd del dispatcher); una carpeta que
+    existió pudo limpiarse con el botón manual mientras tanto; y la carpeta
+    puede no ser un repo git. Los tres son "caso", no un `es_git` binario.
+
+    Reusa el mismo endurecimiento que `_analizar_workspace`
+    (`SIN_HOOKS`/`_sin_filtros`/`_git`, a nivel de módulo) MÁS
+    `--no-textconv`: `git diff` invoca `diff.<driver>.textconv` si el repo
+    lo declara, y `_sin_filtros` no lo cubre (solo `clean`/`smudge`/
+    `process`, que es lo que usan `status`/`add`/checkout).
+    """
+    conn = _conn(board)
+    t = k.get_task(conn, task_id)
+    if t is None:
+        raise ValueError(f"no existe la card {task_id}")
+    ruta = getattr(t, "workspace_path", None)
+    if not ruta:
+        return {"ok": True, "caso": "sin_workspace", "stat": "", "diff": "", "truncado": False}
+    p = Path(ruta)
+    if not p.exists() or not p.is_dir():
+        return {"ok": True, "caso": "workspace_perdido", "stat": "", "diff": "", "truncado": False}
+    if _git(p, "rev-parse", "--is-inside-work-tree") != "true":
+        return {"ok": True, "caso": "no_es_git", "stat": "", "diff": "", "truncado": False}
+
+    extra = _sin_filtros(p)
+    stat = _git(p, "diff", "--stat", "--no-textconv", extra=extra)
+    if not stat:
+        return {"ok": True, "caso": "ok", "stat": "", "diff": "", "truncado": False}
+    if len(stat) > _CAP_DIFF:
+        # El stat solo ya es enorme (muchisimos archivos/lineas): pedir el
+        # diff completo seria mas grande todavia. Se corta aca, barato.
+        return {"ok": True, "caso": "ok", "stat": stat[:_CAP_DIFF], "diff": "",
+                "truncado": True}
+    crudo = _git(p, "diff", "--no-textconv", extra=extra)
+    return {"ok": True, "caso": "ok", "stat": stat, "diff": crudo[:_CAP_DIFF],
+            "truncado": len(crudo) > _CAP_DIFF}
+
+
 def _consumo(board: str) -> dict:
     """Consumo del board: por nodo, por runtime y agregado.
 
@@ -1588,6 +1639,61 @@ def _limpiar_workspaces(board: str = None, task_id: str = None) -> dict:
     }
 
 
+# Detectar Git. Los `-c` no son decoracion: `git` lee el `.git/config` de la
+# carpeta que se le apunta, y `core.fsmonitor` / `core.hooksPath` son
+# comandos que ejecuta el propio git. Se usa ANTES de que nadie autorice
+# correr un agente, asi que mirar (o diffear) una carpeta descargada no
+# puede ejecutar lo que esa carpeta diga. Un `-c` de la linea de comandos le
+# gana al config del repo.
+#
+# A nivel de modulo y no closures de una funcion: `_diff_nodo` (visor de
+# diff) necesita el mismo endurecimiento que `_analizar_workspace`, y
+# `docs/PLAN-2026-08-22.md` ya advirtio que reimplementarlo reabre el
+# agujero que costo trabajo cerrar la primera vez.
+SIN_HOOKS = ["-c", "core.fsmonitor=", "-c", "core.hooksPath=",
+             "-c", "core.pager=cat", "-c", "protocol.ext.allow=never"]
+
+
+def _git(cwd: Path, *args, extra=()) -> str:
+    """La salida de un `git` en `cwd`, o vacio si no se pudo."""
+    try:
+        r = subprocess.run(["git", *SIN_HOOKS, *extra, *args], cwd=str(cwd),
+                           capture_output=True, text=True, timeout=3,
+                           stdin=subprocess.DEVNULL, encoding="utf-8",
+                           errors="replace")
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def _sin_filtros(cwd: Path) -> list:
+    """Neutraliza los filtros de contenido que el repo tenga definidos.
+
+    `core.fsmonitor` no era el unico comando que git ejecuta solo: para
+    decidir si un archivo esta modificado, `git status` corre el filtro
+    `clean` que el `.gitattributes` del repo elija, y el comando de ese
+    filtro sale del `.git/config` del repo. Los nombres no se pueden
+    adivinar, pero SI se pueden leer: `git config --get-regexp` solo lee, y
+    cada driver encontrado se pisa con `cat` (identidad) por linea de
+    comandos, que le gana al config del repo.
+
+    Cubre `clean`/`smudge`/`process` (lo que usan `status`/`add`/checkout).
+    `git diff` ADEMAS invoca `diff.<driver>.textconv` si el repo lo declara
+    -- un driver que no esta en esta lista. Quien llame `_git(..., "diff",
+    ...)` tiene que pasar `--no-textconv` en `args`, no confiar en que esto
+    lo cubre.
+    """
+    salida = []
+    for linea in _git(cwd, "config", "--local", "--name-only", "--get-regexp",
+                      r"^filter\..*\.(clean|smudge|process)$").splitlines():
+        clave = linea.strip()
+        # `cat` (identidad) para clean/smudge, que esperan un comando que
+        # copie stdin a stdout; vacio para `process`, que se apaga asi.
+        salida += ["-c", f"{clave}=cat" if clave.endswith(("clean", "smudge"))
+                   else f"{clave}="]
+    return salida
+
+
 def _analizar_workspace(ruta: str) -> dict:
     """Inspecciona una carpeta para detectar su stack, tests y estado git."""
     if not ruta or not str(ruta).strip():
@@ -1648,53 +1754,16 @@ def _analizar_workspace(ruta: str) -> dict:
             stack = nombre if stack == "Desconocido" else f"{stack} + {nombre}"
             comando_tests = comando_tests or cmd
 
-    # Detectar Git. Los `-c` no son decoracion: `git` lee el `.git/config` de la
-    # carpeta que se le apunta, y `core.fsmonitor` / `core.hooksPath` son
-    # comandos que ejecuta el propio git. Este endpoint se dispara con el boton
-    # "Abrir", ANTES de que nadie autorice correr un agente, asi que mirar una
-    # carpeta descargada no puede ejecutar lo que esa carpeta diga. Un `-c` de
-    # la linea de comandos le gana al config del repo.
-    SIN_HOOKS = ["-c", "core.fsmonitor=", "-c", "core.hooksPath=",
-                 "-c", "core.pager=cat", "-c", "protocol.ext.allow=never"]
-
-    def _git(*args, extra=()) -> str:
-        """La salida de un `git` en esta carpeta, o vacio si no se pudo."""
-        try:
-            r = subprocess.run(["git", *SIN_HOOKS, *extra, *args], cwd=str(p),
-                               capture_output=True, text=True, timeout=3,
-                               stdin=subprocess.DEVNULL, encoding="utf-8",
-                               errors="replace")
-            return r.stdout.strip() if r.returncode == 0 else ""
-        except Exception:
-            return ""
-
-    def _sin_filtros() -> list:
-        """Neutraliza los filtros de contenido que el repo tenga definidos.
-
-        `core.fsmonitor` no era el unico comando que git ejecuta solo: para
-        decidir si un archivo esta modificado, `git status` corre el filtro
-        `clean` que el `.gitattributes` del repo elija, y el comando de ese
-        filtro sale del `.git/config` del repo. Los nombres no se pueden
-        adivinar, pero SI se pueden leer: `git config --get-regexp` solo lee, y
-        cada driver encontrado se pisa con `cat` (identidad) por linea de
-        comandos, que le gana al config del repo.
-        """
-        salida = []
-        for linea in _git("config", "--local", "--name-only", "--get-regexp",
-                          r"^filter\..*\.(clean|smudge|process)$").splitlines():
-            clave = linea.strip()
-            # `cat` (identidad) para clean/smudge, que esperan un comando que
-            # copie stdin a stdout; vacio para `process`, que se apaga asi.
-            salida += ["-c", f"{clave}=cat" if clave.endswith(("clean", "smudge"))
-                       else f"{clave}="]
-        return salida
-
-    es_git = _git("rev-parse", "--is-inside-work-tree") == "true"
-    git_branch = _git("branch", "--show-current") if es_git else ""
+    # Este endpoint se dispara con el boton "Abrir", ANTES de que nadie
+    # autorice correr un agente: mirar una carpeta descargada no puede
+    # ejecutar lo que esa carpeta diga (`SIN_HOOKS`/`_sin_filtros` a nivel
+    # de modulo, arriba, compartidas con el visor de diff).
+    es_git = _git(p, "rev-parse", "--is-inside-work-tree") == "true"
+    git_branch = _git(p, "branch", "--show-current") if es_git else ""
     # El unico de los cuatro que corre filtros de contenido.
-    git_cambios = (len(_git("status", "--porcelain", extra=_sin_filtros()).splitlines())
+    git_cambios = (len(_git(p, "status", "--porcelain", extra=_sin_filtros(p)).splitlines())
                    if es_git else 0)
-    ultimo_commit = _git("log", "-1", "--oneline") if es_git else ""
+    ultimo_commit = _git(p, "log", "-1", "--oneline") if es_git else ""
 
     return {
         "ok": True,
@@ -2035,6 +2104,9 @@ class Handler(BaseHTTPRequestHandler):
         if ruta == "/api/traza":
             return self._responder(200, _traza(params.get("board", "orquester"),
                                                params.get("task", "")))
+        if ruta == "/api/nodo/diff":
+            return self._responder(200, _diff_nodo(params.get("board", "orquester"),
+                                                    params.get("task", "")))
         if ruta == "/api/plantillas":
             return self._responder(200, _catalogo())
         if ruta == "/api/grafos":

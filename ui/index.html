@@ -1420,7 +1420,39 @@ async function cargarTraza() {
     (datos.block_kind ? `<div class="intento mal">bloqueo: <b>${esc(datos.block_kind)}</b></div>` : "") +
     resultado + gasto +
     (intentos || "") +
-    (eventos ? `<details style="margin-top:6px;"><summary style="cursor:pointer; color:var(--tenue); font-size:11px; margin-bottom:4px;">Eventos del kanban (${(datos.eventos||[]).length})</summary>${eventos}</details>` : '<div class="d">sin eventos todavía</div>');
+    (eventos ? `<details style="margin-top:6px;"><summary style="cursor:pointer; color:var(--tenue); font-size:11px; margin-bottom:4px;">Eventos del kanban (${(datos.eventos||[]).length})</summary>${eventos}</details>` : '<div class="d">sin eventos todavía</div>') +
+    `<details id="detallesDiff" style="margin-top:6px;">
+       <summary style="cursor:pointer; color:var(--tenue); font-size:11px; margin-bottom:4px;">Diff del workspace</summary>
+       <div id="cajaDiff" class="d">cargando…</div>
+     </details>`;
+
+  // Carga perezosa: un `git diff` cuesta (hasta 3s por invocación en el
+  // servidor), y la mayoría de las veces que se mira la traza a nadie le
+  // interesa el diff — se pide recién al abrir el `<details>`, una vez.
+  const detallesDiff = $("#detallesDiff");
+  if (detallesDiff) {
+    let cargado = false;
+    detallesDiff.ontoggle = async () => {
+      if (!detallesDiff.open || cargado) return;
+      cargado = true;
+      const { datos: d } = await api(
+        `/api/nodo/diff?board=${encodeURIComponent(grafo.board)}&task=${tid}`);
+      const caja = $("#cajaDiff");
+      if (!caja) return;
+      const MENSAJE = { sin_workspace: "Este nodo no tiene workspace propio (corrió sin carpeta declarada).",
+                        workspace_perdido: "El workspace de este nodo ya no existe en disco.",
+                        no_es_git: "El workspace de este nodo no es un repositorio git." };
+      if (d.caso !== "ok") {
+        caja.textContent = MENSAJE[d.caso] || "No se pudo obtener el diff.";
+      } else if (!d.stat) {
+        caja.textContent = "Sin cambios en el workspace.";
+      } else {
+        caja.innerHTML = `<pre style="white-space:pre-wrap; font-size:10.5px; margin:4px 0;">${esc(d.stat)}</pre>` +
+          (d.diff ? `<pre style="white-space:pre-wrap; font-size:10.5px; margin:4px 0;">${esc(d.diff)}</pre>` : "") +
+          (d.truncado ? `<div class="d">(cortado — el diff es más grande)</div>` : "");
+      }
+    };
+  }
 
   const boxReintento = $("#boxReintentarNodo");
   if (boxReintento) {
