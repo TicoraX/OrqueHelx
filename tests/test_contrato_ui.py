@@ -529,6 +529,14 @@ try:
         srv._runtime_para_chatear = rt_real
         srv._arrancar = arrancar_real
 
+    # 9. `/api/correr` con un validador desconocido se rechaza ANTES de arrancar
+    # el dispatcher, no diez minutos despues cuando el primer nodo termina y el
+    # nombre no matchea nada en `validadores.VALIDADORES`.
+    codigo, datos = pedir("/api/correr", {"board": BOARD, "validador": "no-existe"})
+    assert codigo == 400 and "validador desconocido" in datos.get("error", ""), (
+        f"un validador inventado deberia rechazarse con 400: {codigo} {datos}")
+    print("9. `/api/correr` rechaza un validador que no esta en la tabla: OK")
+
     print(f"\n   afuera del contraste, a proposito ({len(AFUERA)}):")
     for ruta, motivo in sorted(AFUERA.items()):
         print(f"     {ruta:26} {motivo}")

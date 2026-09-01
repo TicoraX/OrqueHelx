@@ -13,6 +13,7 @@ import html, hmac, json, os, re, secrets, shutil, subprocess, sys, threading, ti
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qsl
+import urllib.request
 
 RAIZ = Path(__file__).resolve().parent.parent
 for sub in ("hermes-agent", "dispatcher", "compiler", "mcp_exporter"):
@@ -25,6 +26,7 @@ import loop as dispatcher
 import corrida
 import exportar as mcp
 import capacidades
+import validadores
 
 HTML = Path(__file__).parent / "index.html"
 GRAFOS = RAIZ / "ui" / "grafos"
@@ -196,6 +198,13 @@ _topes: dict[str, float] = {}
 # puerto es entregar una terminal. Se genera uno por arranque salvo que se fije
 # `ORQUESTER_TOKEN` (util para dejarlo estable entre reinicios).
 TOKEN = os.environ.get("ORQUESTER_TOKEN") or secrets.token_urlsafe(24)
+
+# Webhook de fin de corrida. `notificarNativo()` en la UI (Notification API)
+# solo avisa con la pestaña abierta; esto es lo que de verdad cumple "uso
+# diario sin tener el Studio abierto" — un POST generico sirve para
+# Slack/Discord/ntfy.sh/receptor propio sin agregar una dependencia por
+# servicio. Sin URL configurada, no hace nada.
+WEBHOOK_URL = os.environ.get("ORQUESTER_WEBHOOK_URL") or None
 
 # Nombres aceptados en la cabecera `Host`. Un `http.server` escuchando en
 # 127.0.0.1 sin esta comprobacion es vulnerable a DNS rebinding: una pagina
@@ -480,6 +489,31 @@ def _estado(board: str) -> dict:
             "resumen": (getattr(t, "result", None) or "")[:400],
         }
     return {"tareas": tareas, "corriendo": board in _corriendo}
+
+
+def _notificar_webhook(board: str) -> None:
+    """POST generico al terminar una corrida. Silencioso si falla o no esta
+    configurado: un webhook caido no puede tumbar el hilo del dispatcher, y
+    reintentarlo agrega una cola y un estado que este ciclo no necesita.
+
+    Solo manda CONTEOS por estado, no `resumen` (que en `_estado()` lleva
+    contenido de cada card, recortado a 400 caracteres) — el webhook es para
+    avisar que algo termino, no para llevarse el entregable por otra puerta.
+    """
+    if not WEBHOOK_URL:
+        return
+    try:
+        tareas = _estado(board).get("tareas", {})
+        conteo: dict[str, int] = {}
+        for t in tareas.values():
+            conteo[t["estado"]] = conteo.get(t["estado"], 0) + 1
+        cuerpo = json.dumps({"board": board, "conteo_por_estado": conteo,
+                             "total": len(tareas), "ts": int(time.time())}).encode()
+        req = urllib.request.Request(WEBHOOK_URL, data=cuerpo,
+                                     headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=5).close()
+    except Exception:
+        pass  # ver docstring: nunca debe afectar la corrida
 
 
 def _traza(board: str, task_id: str) -> dict:
@@ -867,17 +901,23 @@ def _reintentar_nodo(board: str, task_id: str) -> dict:
     ejecutar pisando su propio entregable, y sobre una `running` le saca la
     card al dispatcher que la tiene reclamada. Los unicos estados de los que
     se puede volver son los que este boton dice atender.
+
+    Todo bajo `dispatcher._LOCK_RETRY`: esto corre en el hilo HTTP y
+    `loop.reintentar()` en el del dispatcher, y sin el lock los dos podian
+    mirar la misma card `blocked` y desbloquearla dos veces. Es un click
+    humano, asi que tomar el lock entero no le cuesta nada a nadie.
     """
     conn = _conn(board)
-    t = k.get_task(conn, task_id)
-    if not t:
-        raise ValueError(f"no existe la card {task_id}")
-    # `failed` no existe en `VALID_STATUSES`: un fallo terminal en Hermes
-    # termina en `triage`, y uno del dispatcher nuestro en `blocked`.
-    if t.status not in ("blocked", "triage", "scheduled"):
-        raise ValueError(f"la card {task_id} esta en '{t.status}': "
-                         "solo se reintenta lo bloqueado")
-    k.unblock_task(conn, task_id)
+    with dispatcher._LOCK_RETRY:
+        t = k.get_task(conn, task_id)
+        if not t:
+            raise ValueError(f"no existe la card {task_id}")
+        # `failed` no existe en `VALID_STATUSES`: un fallo terminal en Hermes
+        # termina en `triage`, y uno del dispatcher nuestro en `blocked`.
+        if t.status not in ("blocked", "triage", "scheduled"):
+            raise ValueError(f"la card {task_id} esta en '{t.status}': "
+                             "solo se reintenta lo bloqueado")
+        k.unblock_task(conn, task_id)
     return {"ok": True, "task_id": task_id, "estado_previo": t.status}
 
 
@@ -1389,7 +1429,7 @@ def _generar_dataset_jsonl(board: str = None) -> dict:
     }
 
 
-def _arrancar(board: str, tope_usd: float = None) -> dict:
+def _arrancar(board: str, tope_usd: float = None, validador: str = None) -> dict:
     # El nombre se valida ACA y no en la ruta: `_arrancar` tiene dos llamadores
     # (`/api/correr` y el modo App), y una guarda puesta en uno solo es como
     # llegamos a la mitad de los bugs de esta rama.
@@ -1415,9 +1455,10 @@ def _arrancar(board: str, tope_usd: float = None) -> dict:
             # aprobar esta en la pantalla--, asi que un gate no corta la
             # corrida. El default del motor es no esperar, que es lo correcto
             # sin nadie mirando.
-            corrida.correr(board, tope_usd=tope_usd, gates="esperar")
+            corrida.correr(board, tope_usd=tope_usd, gates="esperar", validador=validador)
         finally:
             _corriendo.pop(board, None)
+            _notificar_webhook(board)
 
     # Chequeo y alta bajo el mismo lock: ver `_LOCK_ARRANQUE`.
     h = threading.Thread(target=_correr, daemon=True)
@@ -2296,7 +2337,16 @@ class Handler(BaseHTTPRequestHandler):
                     return self._responder(400, {"error": f"presupuesto invalido: {tope!r}"})
                 if tope is not None and tope <= 0:
                     return self._responder(400, {"error": "el presupuesto tiene que ser > 0"})
-                return self._responder(200, _arrancar(cuerpo.get("board", "orquester"), tope))
+                validador = cuerpo.get("validador") or None
+                # Mismo criterio que el CLI (`orquester run --validar`): un
+                # nombre que no esta en la tabla es un typo del usuario, no un
+                # comando a ejecutar. Rechazarlo aca evita que el dispatcher lo
+                # descubra recien al terminar el primer nodo.
+                if validador and not validadores.existe(validador):
+                    return self._responder(400, {"error": f"validador desconocido: "
+                                                          f"{validador!r}"})
+                return self._responder(200, _arrancar(cuerpo.get("board", "orquester"), tope,
+                                                       validador))
             if self.path == "/api/plantilla":
                 # Usar una plantilla = copiarla a los grafos propios, con el
                 # nombre que elija quien la usa. La plantilla no se toca nunca.

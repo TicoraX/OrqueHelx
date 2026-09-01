@@ -7,13 +7,13 @@
 
 ## Dónde está el código
 
-- Commit `d0810bc` — Merge pull request #2 from TicoraX/feat/features-y-mejoras
+- Commit `0d33240` — docs: el plan al dia, y las dos features que el Studio no sabe dibujar
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: **no** · sin pushear: 0
+- Árbol limpio: sí · sin pushear: 0
 
 ## Runtime prestado
 
-- Pin de Hermes: `b7f628025905` · el clon está en el pin: sí
+- Pin de Hermes: `b7f628025905` · el clon está en el pin: **no**
 - CLI instalado: v0.20.1
 - Binarios: claude ✓, opencode ✓, agy ✓, hermes ✓, node ✓, docker ✓
 - Postgres del plano de control: **no**
@@ -47,7 +47,7 @@
 
 ## Bloqueos
 
-- hay cambios sin commitear
+- el clon de Hermes no está en el commit del pin: revalidar la suite o volver al pin
 
 ## Qué sigue
 

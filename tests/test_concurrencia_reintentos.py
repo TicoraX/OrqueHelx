@@ -5,16 +5,25 @@ asi el test mide el mecanismo y no la latencia de un modelo.
 
     uv run --python 3.11 --with jsonschema python ..\\tests\\test_concurrencia_reintentos.py
 """
-import sys, tempfile, time
+import os, sys, tempfile, time
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ / "dispatcher"))
 sys.path.insert(0, str(RAIZ / "hermes-agent"))
 
+# El backoff de reintentos se apaga para TODO el archivo: lo de abajo prueba la
+# mecanica (conteo, tope, permanente vs transitorio) y llama `reintentar()`
+# justo despues del fallo, sin esperar. El backoff en si tiene su propia
+# seccion al final, que lo prende a mano. Va antes del import de `loop`: la
+# constante se lee una sola vez, al importar el modulo.
+os.environ["ORQUESTER_RETRY_BACKOFF"] = "0"
+
 import backends as b
 import loop
 import hermes_cli.kanban_db as k
+
+assert loop.BACKOFF_ACTIVO is False, "el kill switch del backoff no se leyo"
 
 db = Path(tempfile.mkdtemp()) / "conc.db"
 k.init_db(db_path=db)
@@ -170,4 +179,58 @@ assert loop._queda_trabajo(c_r) is True, "no conto una card en `ready`"
 c_r.close()
 print("10. una card `ready` cuenta como trabajo pendiente: OK")
 
-print("\nOK: paralelismo acotado y reintentos que terminan.")
+# --- 11. Backoff: un transient no se reabre en la misma pasada del fallo ---
+# Sin esto, `tick` (cada ~3s) reabria el nodo en la pasada siguiente al fallo y
+# un rate limit se volvia a chocar de inmediato, quemando los intentos.
+loop.BACKOFF_ACTIVO = True
+try:
+    b.BACKENDS["opencode"] = (lambda g, e: ["python", "-c", FALLA], b._primer_objeto)
+    bo = k.create_task(conn, title="falla y espera", assignee=loop.carril("opencode"))
+    loop.ejecutar_una(conn, bo, timeout=60)
+    assert k.get_task(conn, bo).block_kind == "transient", k.get_task(conn, bo)
+
+    assert bo not in loop.reintentar(conn), \
+        "con backoff activo no puede reabrirse en el mismo instante del fallo"
+    assert k.get_task(conn, bo).status == "blocked"
+    print(f"11. con backoff, el fallo recien ocurrido NO se reabre "
+          f"(espera {loop.BACKOFF_BASE_S}s): OK")
+
+    # Y cumplido el plazo, si. El margen cubre que `ended_at` esta en segundos
+    # enteros y puede haberse redondeado hacia abajo.
+    time.sleep(loop.BACKOFF_BASE_S + 1.5)
+    assert bo in loop.reintentar(conn), "cumplido el backoff tiene que reabrirse"
+    assert k.get_task(conn, bo).status == "ready"
+    print("12. cumplido el plazo, el mismo nodo se reabre: OK")
+
+    # --- 12. El re-chequeo bajo lock: si la card ya no es reabrible, se saltea ---
+    # `reintentar()` decide sobre una lista leida antes de tomar `_LOCK_RETRY`;
+    # el boton manual del Studio (`ui/server.py:_reintentar_nodo`) toma el MISMO
+    # lock y puede haber movido la card en el medio. Se simula secuencialmente:
+    # la card queda `blocked` para la lista y `ready` para la relectura.
+    # Sin backoff: lo que se prueba aca es el re-chequeo, no la espera.
+    loop.BACKOFF_ACTIVO = False
+    lk = k.create_task(conn, title="la mueven en el medio", assignee=loop.carril("opencode"))
+    loop.ejecutar_una(conn, lk, timeout=60)
+    assert k.get_task(conn, lk).status == "blocked"
+
+    original = k.get_task
+    def _mover_al_releer(c, tid, *a, **kw):
+        # Solo la relectura de adentro del lock ve la card ya desbloqueada.
+        if tid == lk:
+            k.get_task = original
+            original(c, tid, *a, **kw)          # el manual gana la carrera
+            k.unblock_task(c, tid)
+            return original(c, tid, *a, **kw)
+        return original(c, tid, *a, **kw)
+    k.get_task = _mover_al_releer
+    try:
+        reab = loop.reintentar(conn)
+    finally:
+        k.get_task = original
+    assert lk not in reab, "no puede contar como reabierta una card que ya movio otro"
+    assert k.get_task(conn, lk).status == "ready"
+    print("13. el re-chequeo bajo lock saltea la card que ya movio el boton manual: OK")
+finally:
+    loop.BACKOFF_ACTIVO = False
+
+print("\nOK: paralelismo acotado, backoff y reintentos que terminan.")
