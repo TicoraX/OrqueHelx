@@ -276,7 +276,24 @@ para este volumen.
 | 7 | Agregar R4: anotar (no arreglar) inconsistencias de guarda vistas de paso | CEO (medio) | Auto-decidido — costo cero, no mezcla alcance |
 | 8 | Ejecutar ahora, no esperar a la conexión con la API multiusuario | CEO (alto) | **Decidido por el usuario**: la investigación ya está hecha (56 rutas contadas, excepciones identificadas, firma fijada) — dejarlo para después la tira, y "conectar la API" no tiene fecha en `ESTADO.md`, podría quedar pospuesto indefinidamente |
 
-**Estado: plan aprobado, ejecutar R0→R1→R2→R3→R4.**
+**Estado: R0→R1→R2→R3→R4 implementados y verificados.** 56 rutas reales
+(23 GET + 33 POST, 52 únicas con los 4 paths compartidos deduplicados),
+`_RUTAS_GET`/`_RUTAS_POST` construidas y confirmadas contra el código real
+al importar el módulo. `test_contrato_ui.py` introspecciona los dicts
+(119 claves contrastadas, igual que antes del refactor). R4: releída la
+allowlist de token durante la extracción, sin encontrar inconsistencias —
+sigue siendo solo `"/"` y `/api/capacidades`.
+
+**Hallazgo colateral, no relacionado con este plan, arreglado igual**: al
+correr la suite completa (disciplina de este refactor: "cada ruta ya
+ejercitada sigue en verde") apareció `tests/test_consumo.py` roto — un bug
+preexistente del backoff de D3 (PR #3), no de este refactor: el test
+llamaba `loop.reintentar()` inmediatamente después de un fallo sin
+desactivar `BACKOFF_ACTIVO`, así que nunca reabría la card. Mismo arreglo
+que ya se le había aplicado a `test_concurrencia_reintentos.py` en el plan
+de `BackendError` (PR #4): `loop.BACKOFF_ACTIVO = False` antes de la
+secuencia fallo→reintento→cierre que el test mecánicamente necesita
+inmediata.
 
 ## 8. Sobre la pregunta 8: lo que hay que saber para decidir
 

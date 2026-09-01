@@ -18,7 +18,7 @@ el navegador, por su lado, barre el texto visible buscando `undefined`.
 
     uv run --python 3.11 --with jsonschema --with pyyaml python tests/test_contrato_ui.py
 """
-import gc, json, os, re, sqlite3, subprocess, sys, tempfile, time
+import gc, json, os, sqlite3, subprocess, sys, tempfile, time
 import urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 
@@ -230,6 +230,12 @@ def TABLA(grafo, board, repo, tarea, snap, sucio, plantilla, copia):
 # Lo que NO se contrasta, y por que. Se imprime al terminar: una omision dicha
 # es una decision; una omision callada es el bug de la proxima tanda.
 AFUERA = {
+    # HTML estatico, no JSON: no hay claves que contrastar. El regex viejo
+    # de este chequeo solo miraba paths "/api/...", asi que "/" quedaba
+    # afuera del radar por accidente -- la introspeccion de los dicts reales
+    # (docs/PLAN-2026-09-01-tabla-de-rutas.md) lo encuentra, y ahora queda
+    # declarado a proposito en vez de invisible.
+    "/": "sirve ui/index.html crudo, no hay claves JSON que contrastar",
     # Se contrastan igual, sin HTTP y sin agente, en el punto 8.
     "/api/generar-grafo": "por HTTP llamaria a un agente; su forma va en el punto 8",
     "/api/optimizar-goal": "por HTTP llamaria a un agente; su forma va en el punto 8",
@@ -437,13 +443,26 @@ try:
     # comparacion a mano encontrara SEIS rutas que no estaban ni en la tabla ni
     # en AFUERA: no se habian excluido por ningun motivo, se habian perdido.
     #
-    # Del fuente y no de una lista escrita al lado: una lista al lado es otra
-    # cosa que se queda vieja. Es la misma idea que `test_pin_hermes`.
-    fuente = (RAIZ / "ui" / "server.py").read_text(encoding="utf-8")
-    del_servidor = set(re.findall(r'(?:ruta|self\.path) == "(/api/[^"]+)"', fuente))
+    # Del CODIGO REAL y no de una lista escrita al lado: una lista al lado es
+    # otra cosa que se queda vieja. Es la misma idea que `test_pin_hermes`.
+    #
+    # Hasta docs/PLAN-2026-09-01-tabla-de-rutas.md esto regexeaba el TEXTO
+    # fuente de server.py (`if self.path == "..."` / `if ruta == "..."`). El
+    # refactor de rutas a `_RUTAS_GET`/`_RUTAS_POST` hizo que ese patron
+    # dejara de existir en el texto -- introspeccionar los dicts reales es
+    # mas robusto (no depende de como este escrito el `if`, sino de lo que
+    # el servidor va a despachar de verdad) y sigue siendo la misma idea:
+    # la fuente de verdad es el codigo, no una lista aparte.
+    sys.path.insert(0, str(RAIZ / "ui"))
+    import server as srv
+    # `|`, no comparar cada dict por separado: 4 paths existen en AMBOS
+    # (/api/grafo, /api/exportar-dataset, /api/workspace/analizar,
+    # /api/reporte-corrida -- GET y POST hacen cosas distintas con el mismo
+    # path). Compararlos aparte generaria 4 "huerfanas" falsas.
+    del_servidor = set(srv._RUTAS_GET) | set(srv._RUTAS_POST)
     assert len(del_servidor) >= 40, (
-        f"el patron encontro {len(del_servidor)} rutas: cambio la forma de "
-        "despachar en server.py y este chequeo dejo de mirar lo que decia mirar")
+        f"la introspeccion encontro {len(del_servidor)} rutas: cambio la forma "
+        "de despachar en server.py y este chequeo dejo de mirar lo que decia mirar")
 
     declaradas = {r.split("?")[0] for r, _, _ in
                   TABLA(GRAFO, BOARD, repo, tarea, snap, SUCIO, PLANTILLA, COPIA)}
@@ -469,8 +488,7 @@ try:
     # En proceso y no por HTTP: lo que se pregunta es la forma de un diccionario,
     # y el HTTP no agrega nada a esa pregunta. Ademas es lo unico que permite
     # stubbear el agente, que en el subproceso del Studio esta fuera de alcance.
-    sys.path.insert(0, str(RAIZ / "ui"))
-    import server as srv
+    # (`server` ya se importo mas arriba, para el punto 7 — import idempotente.)
 
     GRAFO_DEL_AGENTE = json.dumps({
         "board": "disenado", "nodos": [
