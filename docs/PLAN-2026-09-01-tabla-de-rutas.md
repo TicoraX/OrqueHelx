@@ -274,7 +274,9 @@ para este volumen.
 | 5 | Deduplicar `_RUTAS_GET`/`_RUTAS_POST` explícitamente en R3 (4 paths compartidos) | Eng (medio) | Auto-decidido |
 | 6 | `try/except` externo envuelve la llamada al despachador, no cada entrada | Eng (bajo) | Auto-decidido |
 | 7 | Agregar R4: anotar (no arreglar) inconsistencias de guarda vistas de paso | CEO (medio) | Auto-decidido — costo cero, no mezcla alcance |
-| **8** | **¿Ejecutar este plan ahora, o esperar a que "conectar el Studio a la API multiusuario" (próximo paso ya anotado en `ESTADO.md`) toque `server.py` de todos modos y hacer el refactor de paso ahí?** | **CEO (alto)** | **Sin decidir — pregunta al usuario** |
+| 8 | Ejecutar ahora, no esperar a la conexión con la API multiusuario | CEO (alto) | **Decidido por el usuario**: la investigación ya está hecha (56 rutas contadas, excepciones identificadas, firma fijada) — dejarlo para después la tira, y "conectar la API" no tiene fecha en `ESTADO.md`, podría quedar pospuesto indefinidamente |
+
+**Estado: plan aprobado, ejecutar R0→R1→R2→R3→R4.**
 
 ## 8. Sobre la pregunta 8: lo que hay que saber para decidir
 
