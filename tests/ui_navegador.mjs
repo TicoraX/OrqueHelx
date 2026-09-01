@@ -545,6 +545,52 @@ const copia = await p.evaluate(() => {
 ok(!copia.falta && copia.original === 2 && copia.duplicado === 3,
    `duplicar da un nodo independiente del original (original ${copia.original}, copia ${copia.duplicado})`);
 
+// El panel de diff (F3 de docs/PLAN-2026-08-31-visor-diff-en-vivo.md) carga
+// perezoso, recien al abrir el <details>. La logica de git real (los tres
+// casos, el bloqueo de textconv) la prueba tests/test_visor_diff.py sobre
+// el servidor de verdad; aca solo el cableado de la UI, mockeado.
+await p.route('**/api/traza*', r => r.fulfill({
+  status: 200, contentType: 'application/json',
+  body: JSON.stringify({ titulo: 'nodo', estado: 'done', intentos: [], eventos: [] }) }));
+await p.route('**/api/nodo/diff*', r => r.fulfill({
+  status: 200, contentType: 'application/json',
+  body: JSON.stringify({ ok: true, caso: 'ok', stat: ' a.txt | 1 +',
+                        diff: '+linea nueva', truncado: false }) }));
+await p.evaluate(() => { ids = { n1: 't_diff_test' }; sel = 'n1'; });
+await p.click('.tab[data-tab="obs"]');
+await p.evaluate(() => cargarTraza());
+// El `setInterval(refrescarEstado, 2500)` de la pagina puede re-renderizar
+// `#traza` (y con el, un `<details>` NUEVO, cerrado) en cualquier momento,
+// compitiendo con el click de este test. En vez de click + wait separados
+// (una carrera real: el re-render puede caer justo entre los dos), el
+// predicado se auto-cura: si lo encuentra cerrado, lo abre el mismo, y
+// reintenta hasta que el contenido aparezca — sobrevive a que lo vuelvan a
+// pintar en el medio.
+await p.waitForFunction(() => {
+  const d = document.querySelector('#detallesDiff');
+  if (!d) return false;
+  if (!d.open) { d.open = true; d.dispatchEvent(new Event('toggle')); }
+  return document.querySelector('#cajaDiff')?.textContent.includes('a.txt');
+}, null, { timeout: 8000 });
+ok(true, 'el panel de diff pinta el stat al abrirse (mockeado)');
+
+await p.unroute('**/api/nodo/diff*');
+await p.route('**/api/nodo/diff*', r => r.fulfill({
+  status: 200, contentType: 'application/json',
+  body: JSON.stringify({ ok: true, caso: 'sin_workspace', stat: '', diff: '', truncado: false }) }));
+// `cargarTraza()` re-arma el `<details>` desde cero (innerHTML entero), asi
+// que el `cargado` de la carga perezosa es un closure nuevo por llamada.
+await p.evaluate(() => cargarTraza());
+await p.waitForFunction(() => {
+  const d = document.querySelector('#detallesDiff');
+  if (!d) return false;
+  if (!d.open) { d.open = true; d.dispatchEvent(new Event('toggle')); }
+  return document.querySelector('#cajaDiff')?.textContent.includes('no tiene workspace propio');
+}, null, { timeout: 8000 });
+ok(true, 'el caso sin_workspace muestra su propio mensaje, no uno generico');
+await p.unroute('**/api/traza*');
+await p.unroute('**/api/nodo/diff*');
+
 ok(errores.length === 0, `sin errores de JS en toda la corrida${errores.length ? ': ' + errores[0] : ''}`);
 if (process.argv[3]) await p.screenshot({ path: process.argv[3], fullPage: false });
 console.log(fallos ? `\n${fallos} FALLA(S)` : '\nTODO OK');
