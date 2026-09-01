@@ -203,5 +203,8 @@ correcta") y no hay motivo nuevo para reabrir.
 | 5 | F1+F2+F3 completo, con panel de diff — no solo stat en el reporte | CEO (medio) | **Decidido por el usuario**: el caso real es revisar QUÉ cambió línea por línea, no solo cuántos archivos; con `--no-textconv` ya cerrando el riesgo extra, el costo de seguridad del diff completo sobre el stat-only es chico |
 | 6 | Seguir con el visor de diff ahora; el refactor de rutas de `ui/server.py` entra como su propio plan, después | CEO (alto) | **Decidido por el usuario**: mezclar un refactor con una feature en el mismo PR complica la revisión; el refactor es mecánico y de bajo riesgo por sí solo, mejor como su propia pasada enfocada |
 
-**Estado: plan aprobado, F1→F2→F3.** El refactor de rutas de `ui/server.py`
-queda anotado como el próximo plan natural — no se pierde, se secuencia.
+**Estado: F1+F2+F3 implementados y verificados** (`tests/test_visor_diff.py`
+6/6, incluye el ataque de `textconv` confirmado bloqueado; `test_contrato_ui.py`
+119 claves; `ui_navegador.mjs` en verde). El refactor de rutas de
+`ui/server.py` queda anotado como el próximo plan natural — no se pierde,
+se secuencia.
