@@ -209,6 +209,10 @@ def TABLA(grafo, board, repo, tarea, snap, sucio, plantilla, copia):
         # siempre, no que este board en particular tenga cambios.
         (f"/api/nodo/diff?board={board}&task={tarea}", None,
          ["ok", "caso", "stat", "diff", "truncado"]),
+        # Lecciones por repositorio (docs/PLAN-2026-09-01-lecciones-por-
+        # repositorio.md): misma card sin workspace, `workspace` sale false.
+        (f"/api/nodo/lecciones?board={board}&task={tarea}", None,
+         ["ok", "workspace", "texto"]),
 
         # --- Guardar, abrir, copiar y borrar ----------------------------------
         # `abrirGrafo(datos, nombre)`: el grafo llega en la raiz de la respuesta,

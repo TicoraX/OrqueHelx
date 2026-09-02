@@ -601,6 +601,35 @@ def _diff_nodo(board: str, task_id: str) -> dict:
             "truncado": len(crudo) > _CAP_DIFF}
 
 
+def _lecciones_nodo(board: str, task_id: str) -> dict:
+    """Lecciones manuales del repo del nodo -- el mismo archivo que lee
+    `compile.py` al compilar (T2, docs/PLAN-2026-09-01-lecciones-por-
+    repositorio.md). Sin workspace no hay donde guardarlas."""
+    conn = _conn(board)
+    t = k.get_task(conn, task_id)
+    if t is None:
+        raise ValueError(f"no existe la card {task_id}")
+    ruta = getattr(t, "workspace_path", None)
+    if not ruta:
+        return {"ok": True, "workspace": False, "texto": ""}
+    archivo = Path(ruta) / compilador.NOMBRE_LECCIONES
+    texto = archivo.read_text(encoding="utf-8", errors="replace") if archivo.is_file() else ""
+    return {"ok": True, "workspace": True, "texto": texto}
+
+
+def _guardar_lecciones_nodo(board: str, task_id: str, texto: str) -> dict:
+    conn = _conn(board)
+    t = k.get_task(conn, task_id)
+    if t is None:
+        raise ValueError(f"no existe la card {task_id}")
+    ruta = getattr(t, "workspace_path", None)
+    if not ruta:
+        raise ValueError("el nodo no tiene workspace, no hay donde guardar lecciones")
+    sello = f"<!-- actualizado {time.strftime('%Y-%m-%d')} -->\n"
+    (Path(ruta) / compilador.NOMBRE_LECCIONES).write_text(sello + texto, encoding="utf-8")
+    return {"ok": True}
+
+
 def _consumo(board: str) -> dict:
     """Consumo del board: por nodo, por runtime y agregado.
 
@@ -2208,6 +2237,8 @@ _RUTAS_GET = {
         params.get("board", "orquester"), params.get("task", ""))),
     "/api/nodo/diff": lambda self, params: self._responder(200, _diff_nodo(
         params.get("board", "orquester"), params.get("task", ""))),
+    "/api/nodo/lecciones": lambda self, params: self._responder(200, _lecciones_nodo(
+        params.get("board", "orquester"), params.get("task", ""))),
     "/api/plantillas": lambda self, params: self._responder(200, _catalogo()),
     "/api/grafos": lambda self, params: self._responder(
         200, {"grafos": sorted(p.stem for p in GRAFOS.glob("*.json"))}),
@@ -2482,6 +2513,16 @@ def _post_nodo_parar(self, cuerpo):
     return self._responder(200, _parar_nodo(board, tid))
 
 
+def _post_nodo_lecciones(self, cuerpo):
+    board = cuerpo.get("board", "orquester")
+    tid = cuerpo.get("task_id") or ""
+    texto = cuerpo.get("texto") or ""
+    try:
+        return self._responder(200, _guardar_lecciones_nodo(board, tid, texto))
+    except Exception as e:
+        return self._fallo_400("error guardando lecciones", e)
+
+
 def _post_gate_aprobar(self, cuerpo):
     board = cuerpo.get("board", "orquester")
     tid = cuerpo.get("task_id") or ""
@@ -2575,6 +2616,7 @@ _RUTAS_POST = {
     "/api/mcp": _post_mcp,
     "/api/parar": _post_parar,
     "/api/nodo/parar": _post_nodo_parar,
+    "/api/nodo/lecciones": _post_nodo_lecciones,
     "/api/gate/aprobar": _post_gate_aprobar,
     "/api/reporte/generar": _post_reporte_generar,
     "/api/correr": _post_correr,

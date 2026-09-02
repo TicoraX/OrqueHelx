@@ -6,7 +6,7 @@ endpoint por fuera de la guardia.
 
     uv run --python 3.11 --with jsonschema python ..\\tests\\test_auth_studio.py
 """
-import json, os, re, subprocess, sys, tempfile, time, urllib.error, urllib.request
+import json, os, subprocess, sys, tempfile, time, urllib.error, urllib.request
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -79,18 +79,16 @@ try:
     # mano: la de antes decia "se recorren TODAS" y cubria 18 de 34, porque cada
     # endpoint nuevo habia que acordarse de agregarlo. El riesgo que este test
     # dice cubrir es exactamente ese, y una lista escrita a mano no lo cubre.
-    fuente = (RAIZ / "ui" / "server.py").read_text(encoding="utf-8")
-    rutas_get = sorted(set(re.findall(r'ruta == "(/api/[^"]*)"', fuente)))
-    rutas_post = sorted(set(re.findall(r'self\.path == "(/api/[^"]*)"', fuente)))
-    # El agujero de sacar rutas con una regex es la ruta escrita de otra forma:
-    # un `in`, una variable, un helper. Contra eso no alcanza un minimo de
-    # rutas encontradas: un umbral se cumple igual con una afuera. Se toman
-    # TODOS los literales /api/... del fuente y se exige que cada uno haya
-    # caido en alguna de las dos listas; el que se escape, este assert lo
-    # nombra en vez de dejarlo sin cubrir.
-    todas = set(re.findall(r'"(/api/[^"]*)"', fuente))
-    huerfanas = todas - set(rutas_get) - set(rutas_post)
-    assert not huerfanas, f"rutas /api que este test no cubre: {sorted(huerfanas)}"
+    #
+    # Las rutas viven en tablas de despacho (`_RUTAS_GET`/`_RUTAS_POST`,
+    # docs/PLAN-2026-09-01-tabla-de-rutas.md) desde el refactor de rutas --
+    # una regex sobre `ruta == "..."` ya no encuentra nada, cada ruta quedaba
+    # "huerfana" y este test rechazaba TODO el fuente. Introspeccion de los
+    # dicts reales, mismo criterio que test_contrato_ui.py.
+    sys.path.insert(0, str(RAIZ / "ui"))
+    import server as srv
+    rutas_get = sorted(r for r in srv._RUTAS_GET if r.startswith("/api/"))
+    rutas_post = sorted(r for r in srv._RUTAS_POST if r.startswith("/api/"))
     assert rutas_get and rutas_post, (rutas_get, rutas_post)
 
     # La unica excepcion deliberada: no expone nada del usuario, solo que sabe

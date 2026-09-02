@@ -591,6 +591,65 @@ ok(true, 'el caso sin_workspace muestra su propio mensaje, no uno generico');
 await p.unroute('**/api/traza*');
 await p.unroute('**/api/nodo/diff*');
 
+// El panel de lecciones (L2 de docs/PLAN-2026-09-01-lecciones-por-
+// repositorio.md), mismo cableado perezoso que el de diff: solo la UI,
+// mockeada -- la lectura/escritura real del archivo la prueba
+// tests/test_compilador.py y el endpoint via test_contrato_ui.py.
+// `/api/traza` tambien tiene que re-mockearse: se desmockeo arriba, y
+// `cargarTraza()` lo llama primero -- sin esto pega contra el servidor de
+// verdad por una tarea ('t_diff_test') que no existe.
+await p.route('**/api/traza*', r => r.fulfill({
+  status: 200, contentType: 'application/json',
+  body: JSON.stringify({ titulo: 'nodo', estado: 'done', intentos: [], eventos: [] }) }));
+await p.route('**/api/nodo/diff*', r => r.fulfill({
+  status: 200, contentType: 'application/json',
+  body: JSON.stringify({ ok: true, caso: 'sin_workspace', stat: '', diff: '', truncado: false }) }));
+await p.route('**/api/nodo/lecciones*', r => {
+  if (r.request().method() === 'POST') {
+    return r.fulfill({ status: 200, contentType: 'application/json',
+                       body: JSON.stringify({ ok: true }) });
+  }
+  return r.fulfill({ status: 200, contentType: 'application/json',
+                     body: JSON.stringify({ ok: true, workspace: true, texto: 'no uses tabs' }) });
+});
+await p.evaluate(() => cargarTraza());
+await p.waitForFunction(() => {
+  const d = document.querySelector('#detallesLecciones');
+  if (!d) return false;
+  if (!d.open) { d.open = true; d.dispatchEvent(new Event('toggle')); }
+  return document.querySelector('#txtLecciones')?.value.includes('no uses tabs');
+}, null, { timeout: 8000 });
+ok(true, 'el panel de lecciones carga el texto existente al abrirse (mockeado)');
+
+await p.click('#btnGuardarLecciones');
+await p.waitForFunction(() =>
+  document.querySelector('#estadoLecciones')?.textContent === 'guardado',
+  null, { timeout: 8000 });
+ok(true, 'guardar lecciones confirma con "guardado"');
+
+await p.unroute('**/api/nodo/lecciones*');
+await p.route('**/api/nodo/lecciones*', r => r.fulfill({
+  status: 200, contentType: 'application/json',
+  body: JSON.stringify({ ok: true, workspace: false, texto: '' }) }));
+await p.evaluate(() => cargarTraza());
+await p.waitForFunction(() => {
+  const d = document.querySelector('#detallesLecciones');
+  if (!d) return false;
+  if (!d.open) { d.open = true; d.dispatchEvent(new Event('toggle')); }
+  return document.querySelector('#cajaLecciones')?.textContent.includes('no tiene workspace propio');
+}, null, { timeout: 8000 });
+ok(true, 'sin workspace, el panel de lecciones avisa en vez de mostrar un editor vacio');
+
+// `sel` sigue apuntando a 'n1' (mockeado): el `setInterval(refrescarEstado,
+// 2500)` de la pagina llama `cargarTraza()` sola si `sel` esta puesto, y
+// desde aca al final del guion hay margen real para que dispare DESPUES de
+// los `unroute` de abajo -- contra el servidor de verdad, por una tarea que
+// no existe. Limpiar `sel` apaga ese llamado antes de soltar los mocks.
+await p.evaluate(() => { sel = null; });
+await p.unroute('**/api/traza*');
+await p.unroute('**/api/nodo/diff*');
+await p.unroute('**/api/nodo/lecciones*');
+
 ok(errores.length === 0, `sin errores de JS en toda la corrida${errores.length ? ': ' + errores[0] : ''}`);
 if (process.argv[3]) await p.screenshot({ path: process.argv[3], fullPage: false });
 console.log(fallos ? `\n${fallos} FALLA(S)` : '\nTODO OK');

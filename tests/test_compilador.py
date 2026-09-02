@@ -159,4 +159,29 @@ assert set(ids_gate) == {"a", "g1", "b"}
 assert k.get_task(conn, ids_gate["g1"]).assignee == "human"
 print("10. los nodos gate compilan con assignee='human' y respetan dependencias: OK")
 
+# --- Lecciones por repositorio (T2, docs/PLAN-2026-09-01-lecciones-por-repositorio.md) ---
+ws_con = Path(tempfile.mkdtemp())
+(ws_con / c.NOMBRE_LECCIONES).write_text("No uses tabs en este repo.", encoding="utf-8")
+ws_sin = Path(tempfile.mkdtemp())
+
+NW = lambda i, ws: {"id": i, "titulo": f"tarea {i}", "runtime": "hermes", "workspace": str(ws)}
+g_lec = {"board": "lecciones", "nodos": [NW("a", ws_con), NW("b", ws_sin)], "aristas": []}
+ids_lec = c.compilar(g_lec, board="notas")
+body_a = k.get_task(conn, ids_lec["a"]).body or ""
+assert "No uses tabs" in body_a and "Lecciones de este repositorio" in body_a, \
+    f"las lecciones no llegaron: {body_a!r}"
+body_b = k.get_task(conn, ids_lec["b"]).body
+assert body_b in (None, ""), f"invento lecciones sin archivo: {body_b!r}"
+print("11. lecciones del workspace llegan al body, sin archivo no invento nada: OK")
+
+# Truncamiento a 4000 chars con marcador visible.
+ws_largo = Path(tempfile.mkdtemp())
+(ws_largo / c.NOMBRE_LECCIONES).write_text("x" * 5000, encoding="utf-8")
+g_largo = {"board": "lecciones", "nodos": [NW("c", ws_largo)], "aristas": []}
+ids_largo = c.compilar(g_largo, board="notas")
+body_c = k.get_task(conn, ids_largo["c"]).body or ""
+assert "truncadas" in body_c and body_c.count("x") <= c.LIMITE_LECCIONES, \
+    f"no trunco las lecciones largas: {len(body_c)} chars"
+print("12. lecciones de mas de 4000 chars se truncan con marcador: OK")
+
 print("\nOK: el compilador traduce el grafo al kanban.")

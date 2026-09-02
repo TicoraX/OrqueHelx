@@ -1424,6 +1424,10 @@ async function cargarTraza() {
     `<details id="detallesDiff" style="margin-top:6px;">
        <summary style="cursor:pointer; color:var(--tenue); font-size:11px; margin-bottom:4px;">Diff del workspace</summary>
        <div id="cajaDiff" class="d">cargando…</div>
+     </details>` +
+    `<details id="detallesLecciones" style="margin-top:6px;">
+       <summary style="cursor:pointer; color:var(--tenue); font-size:11px; margin-bottom:4px;">Lecciones de este repositorio</summary>
+       <div id="cajaLecciones" class="d">cargando…</div>
      </details>`;
 
   // Carga perezosa: un `git diff` cuesta (hasta 3s por invocación en el
@@ -1451,6 +1455,39 @@ async function cargarTraza() {
           (d.diff ? `<pre style="white-space:pre-wrap; font-size:10.5px; margin:4px 0;">${esc(d.diff)}</pre>` : "") +
           (d.truncado ? `<div class="d">(cortado — el diff es más grande)</div>` : "");
       }
+    };
+  }
+
+  const detallesLecciones = $("#detallesLecciones");
+  if (detallesLecciones) {
+    let cargado = false;
+    detallesLecciones.ontoggle = async () => {
+      if (!detallesLecciones.open || cargado) return;
+      cargado = true;
+      const { datos: l } = await api(
+        `/api/nodo/lecciones?board=${encodeURIComponent(grafo.board)}&task=${tid}`);
+      const caja = $("#cajaLecciones");
+      if (!caja) return;
+      if (!l.workspace) {
+        caja.textContent = "Este nodo no tiene workspace propio — no hay dónde guardar lecciones.";
+        return;
+      }
+      caja.innerHTML =
+        `<textarea id="txtLecciones" style="width:100%; min-height:120px; font-size:11px;
+           font-family:inherit; box-sizing:border-box;">${esc(l.texto)}</textarea>
+         <div style="display:flex; gap:6px; margin-top:4px; align-items:center;">
+           <button class="res-btn" id="btnGuardarLecciones">Guardar</button>
+           <span id="estadoLecciones" class="d"></span>
+         </div>`;
+      $("#btnGuardarLecciones").onclick = async () => {
+        const estado = $("#estadoLecciones");
+        estado.textContent = "guardando…";
+        const { ok } = await api("/api/nodo/lecciones", {
+          board: grafo.board, task_id: tid, texto: $("#txtLecciones").value,
+        });
+        estado.textContent = ok ? "guardado" : "error al guardar";
+        if (ok) setTimeout(() => { estado.textContent = ""; }, 1500);
+      };
     };
   }
 
