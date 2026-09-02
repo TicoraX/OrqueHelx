@@ -2083,87 +2083,13 @@ class Handler(BaseHTTPRequestHandler):
                 break
 
     def _get(self, ruta, params):
-        if ruta == "/":
-            return self._responder(200, HTML.read_bytes(), "text/html; charset=utf-8")
-        if ruta == "/api/eventos":
-            return self._stream_eventos(params.get("board", "orquester"))
-        if ruta == "/api/skills/catalogo":
-            return self._responder(200, _catalogo_skills())
-        if ruta == "/api/estado":
-            return self._responder(200, _estado(params.get("board", "orquester")))
-        if ruta == "/api/capacidades":
-            # Sin token: no expone nada del usuario, solo que sabe hacer este
-            # motor. Un agente lo consulta antes de armar un grafo.
-            return self._responder(200, capacidades.tabla())
-        if ruta == "/api/modelos":
-            # Con token: lanza un subproceso (`agy models` consulta al
-            # proveedor). No va junto a /api/capacidades, que es estatico.
-            return self._responder(200, capacidades.modelos(params.get("runtime", "")))
-        if ruta == "/api/consumo":
-            return self._responder(200, _consumo(params.get("board", "orquester")))
-        if ruta == "/api/traza":
-            return self._responder(200, _traza(params.get("board", "orquester"),
-                                               params.get("task", "")))
-        if ruta == "/api/nodo/diff":
-            return self._responder(200, _diff_nodo(params.get("board", "orquester"),
-                                                    params.get("task", "")))
-        if ruta == "/api/plantillas":
-            return self._responder(200, _catalogo())
-        if ruta == "/api/grafos":
-            return self._responder(200, {"grafos": sorted(p.stem for p in GRAFOS.glob("*.json"))})
-        if ruta == "/api/boards":
-            return self._responder(200, {"boards": [b.get("slug") for b in k.list_boards() if b.get("slug")]})
-        if ruta == "/api/telemetria":
-            return self._responder(200, _telemetria(params.get("board", "orquester")))
-        if ruta == "/api/historial":
-            return self._responder(200, _historial())
-        if ruta == "/api/doctor":
-            return self._responder(200, capacidades.doctor())
-        if ruta == "/api/secretos-status":
-            return self._responder(200, capacidades.secretos_status())
-        if ruta == "/api/reporte-corrida":
-            return self._responder(200, _generar_reporte_corrida(params.get("board", "orquester"), params.get("formato", "markdown")))
-        if ruta == "/api/reporte/descargar":
-            board = params.get("board", "orquester")
-            formato = params.get("formato", "markdown").lower()
-            res = _generar_reporte_corrida(board, formato)
-            if not res.get("ok"):
-                return self._responder(400, res)
-            ext = "html" if formato == "html" else "md"
-            mime = "text/html; charset=utf-8" if formato == "html" else "text/markdown; charset=utf-8"
-            contenido_bytes = res["reporte"].encode("utf-8")
-            # El nombre sale de la query. Hoy no es explotable --`_conn` rechaza
-            # un board que no existe, y el kanban no deja crear uno con comillas
-            # ni saltos de linea--, pero la cabecera no deberia depender de una
-            # regla que vive en otro archivo: una comilla cierra el parametro y
-            # un CR/LF parte la respuesta en dos.
-            nombre = re.sub(r"[^\w.-]", "_", board)[:80] or "reporte"
-            self.send_response(200)
-            self.send_header("Content-Type", mime)
-            self.send_header("Content-Disposition",
-                             f'attachment; filename="reporte-{nombre}.{ext}"')
-            self.send_header("X-Content-Type-Options", "nosniff")
-            self.send_header("Content-Length", str(len(contenido_bytes)))
-            self.end_headers()
-            self.wfile.write(contenido_bytes)
-            return
-        if ruta == "/api/snapshots":
-            return self._responder(200, _listar_snapshots(params.get("board", "")))
-        if ruta == "/api/workspaces":
-            return self._responder(200, _listar_workspaces())
-        if ruta == "/api/workspace/analizar":
-            return self._responder(200, _analizar_workspace(params.get("ruta", "")))
-        if ruta == "/api/exportar-dataset":
-            return self._responder(200, _generar_dataset_jsonl(params.get("board")))
-        if ruta == "/api/grafo":
-            try:
-                f = _archivo(params.get("nombre", ""))
-            except ValueError as e:
-                return self._responder(400, {"error": str(e)})
-            if not f.exists():
-                return self._responder(404, {"error": "no existe"})
-            return self._responder(200, json.loads(f.read_text(encoding="utf-8")))
-        return self._responder(404, {"error": "ruta desconocida"})
+        # Tabla de despacho armada al final del archivo (`_RUTAS_GET`), no
+        # acá: las funciones que referencia necesitan existir primero.
+        # Ver docs/PLAN-2026-09-01-tabla-de-rutas.md para el porqué.
+        manejador = _RUTAS_GET.get(ruta)
+        if manejador is None:
+            return self._responder(404, {"error": "ruta desconocida"})
+        return manejador(self, params)
 
     # 8 MB. Esto recibe grafos, no subidas: sin techo, un `Content-Length`
     # enorme se reserva en memoria antes de que nadie mire el contenido.
@@ -2191,264 +2117,14 @@ class Handler(BaseHTTPRequestHandler):
             cuerpo = json.loads(self.rfile.read(largo) or b"{}")
             if not isinstance(cuerpo, dict):
                 return self._responder(400, {"error": "el cuerpo tiene que ser un objeto JSON"})
-            if self.path == "/api/validar":
-                compilador.validar(cuerpo)
-                return self._responder(200, {"ok": True})
-            if self.path == "/api/chat":
-                # Un turno de conversacion con el ejecutor elegido. La sesion
-                # la guarda el CLI: aca solo viaja el id de ida y vuelta, asi
-                # que el Studio no persiste ninguna conversacion.
-                rt = cuerpo.get("runtime", "")
-                if rt not in dispatcher.BACKENDS:
-                    return self._responder(400, {"error": f"'{rt}' no puede chatear"})
-                if not (cuerpo.get("mensaje") or "").strip():
-                    return self._responder(400, {"error": "mensaje vacio"})
-                try:
-                    r = dispatcher.run_chat(
-                        rt, cuerpo["mensaje"],
-                        sesion=cuerpo.get("sesion") or None,
-                        cwd=cuerpo.get("workspace") or None,
-                        modelo=cuerpo.get("modelo") or None,
-                        esfuerzo=cuerpo.get("esfuerzo") or None,
-                        timeout=int(cuerpo.get("timeout") or 600))
-                except Exception as e:
-                    return self._responder(400, {"error": str(e)[:1500]})
-                return self._responder(200, r)
-            if self.path == "/api/ordenar":
-                # Solo calcula: no guarda ni compila nada. La UI aplica las
-                # coordenadas que recibe.
-                compilador.validar(cuerpo, capacidades=False)
-                return self._responder(200, {"posiciones": disposicion.ordenar(cuerpo)})
-            if self.path == "/api/optimizar-goal":
-                goal = cuerpo.get("goal") or ""
-                rt = cuerpo.get("runtime") or "claude-code"
-                reglas = cuerpo.get("reglas") or ""
-                try:
-                    res = _optimizar_goal(goal, runtime=rt, reglas=reglas,
-                                          dry_run=bool(cuerpo.get("dry_run")))
-                    return self._responder(200, {"ok": True, **res})
-                except ValueError as e:
-                    return self._responder(400, {"error": str(e)})
-            if self.path == "/api/exportar-mermaid":
-                try:
-                    return self._responder(200, {"ok": True, "mermaid": _generar_mermaid(cuerpo)})
-                except Exception as e:
-                    return self._fallo_400("no se pudo generar mermaid", e)
-            if self.path == "/api/generar-grafo":
-                desc = cuerpo.get("descripcion") or ""
-                rt = cuerpo.get("runtime") or "claude-code"
-                dry = bool(cuerpo.get("dry_run"))
-                try:
-                    # Con `actual`, el pedido REFINA ese grafo en vez de diseñar
-                    # uno nuevo, y `sesion` encadena los refinamientos.
-                    res = _generar_grafo(desc, runtime=rt, dry_run=dry,
-                                         actual=cuerpo.get("actual") or None,
-                                         sesion=cuerpo.get("sesion") or None)
-                    return self._responder(200, {"ok": True, **res})
-                except ValueError as e:
-                    return self._responder(400, {"error": str(e)})
-                except Exception as e:
-                    return self._responder(500, {"error": f"error generando grafo: {e}"})
-            if self.path == "/api/reintentar-nodo":
-                board = cuerpo.get("board") or "orquester"
-                tid = cuerpo.get("task_id") or ""
-                try:
-                    res = _reintentar_nodo(board, tid)
-                    return self._responder(200, res)
-                except ValueError as e:
-                    return self._responder(400, {"error": str(e)})
-                except Exception as e:
-                    return self._responder(500, {"error": f"error reintentando nodo: {e}"})
-            if self.path == "/api/exportar-ci":
-                try:
-                    return self._responder(200, {"ok": True, "workflow": _generar_ci_workflow(cuerpo)})
-                except Exception as e:
-                    return self._fallo_400("error generando workflow CI", e)
-            if self.path == "/api/exportar-python":
-                try:
-                    return self._responder(200, {"ok": True, "script": _generar_script_python(cuerpo)})
-                except Exception as e:
-                    return self._fallo_400("error generando script python", e)
-            if self.path == "/api/simular":
-                try:
-                    return self._responder(200, _simular_flujo(cuerpo))
-                except Exception as e:
-                    return self._fallo_400("error simulando flujo", e)
-            if self.path == "/api/analizar-grafo":
-                try:
-                    return self._responder(200, {"ok": True, "hallazgos": compilador.analizar(cuerpo)})
-                except Exception as e:
-                    return self._fallo_400("error analizando grafo", e)
-            if self.path == "/api/trazabilidad-grafo":
-                nid = cuerpo.get("nodo") or ""
-                g = cuerpo.get("grafo") or {}
-                try:
-                    return self._responder(200, compilador.trazabilidad(g, nid))
-                except Exception as e:
-                    return self._fallo_400("error en trazabilidad", e)
-            if self.path == "/api/snapshot":
-                b = cuerpo.get("board") or "orquester"
-                g = cuerpo.get("grafo") or {}
-                desc = cuerpo.get("descripcion") or ""
-                try:
-                    return self._responder(200, _guardar_snapshot(b, g, desc))
-                except Exception as e:
-                    return self._fallo_400("error guardando snapshot", e)
-            if self.path == "/api/snapshot/restaurar":
-                sid = cuerpo.get("id") or ""
-                try:
-                    return self._responder(200, _restaurar_snapshot(sid))
-                except Exception as e:
-                    return self._fallo_400("error restaurando snapshot", e)
-            if self.path == "/api/snapshot/diff":
-                sid = cuerpo.get("id") or ""
-                cid = cuerpo.get("compare_id") or None
-                g = cuerpo.get("grafo_actual") or None
-                try:
-                    return self._responder(200, _diff_snapshots(sid, grafo_actual=g, compare_id=cid))
-                except Exception as e:
-                    return self._fallo_400("error comparando snapshots", e)
-            if self.path == "/api/reporte-corrida":
-                b = cuerpo.get("board") or "orquester"
-                try:
-                    return self._responder(200, _generar_reporte_corrida(b))
-                except Exception as e:
-                    return self._fallo_400("error generando reporte", e)
-            if self.path == "/api/guardar-plantilla":
-                nom = cuerpo.get("nombre") or ""
-                desc = cuerpo.get("descripcion") or ""
-                g = cuerpo.get("grafo") or {}
-                try:
-                    return self._responder(200, _guardar_plantilla(
-                        nom, desc, g, pisar=bool(cuerpo.get("pisar"))))
-                except FileExistsError as e:
-                    return self._responder(409, {"error": str(e)})
-                except Exception as e:
-                    return self._fallo_400("error guardando plantilla", e)
-            if self.path == "/api/workspaces/limpiar":
-                b = cuerpo.get("board") or None
-                tid = cuerpo.get("task_id") or None
-                try:
-                    return self._responder(200, _limpiar_workspaces(board=b, task_id=tid))
-                except Exception as e:
-                    return self._fallo_400("error limpiando workspaces", e)
-            if self.path == "/api/exportar-dataset":
-                b = cuerpo.get("board") or None
-                try:
-                    return self._responder(200, _generar_dataset_jsonl(b))
-                except Exception as e:
-                    return self._fallo_400("error exportando dataset", e)
-            if self.path == "/api/workspace/elegir":
-                try:
-                    return self._responder(200, _elegir_carpeta())
-                except Exception as e:
-                    return self._fallo_400("error abriendo el selector", e)
-            if self.path == "/api/workspace/analizar":
-                try:
-                    return self._responder(200, _analizar_workspace(cuerpo.get("ruta", "")))
-                except Exception as e:
-                    return self._fallo_400("error analizando workspace", e)
-            if self.path == "/api/orquestar-intencion":
-                try:
-                    return self._responder(200, _orquestar_intencion(cuerpo))
-                except Exception as e:
-                    return self._fallo_400("error orquestando intencion", e)
-            if self.path == "/api/parametros":
-                # Los marcadores los detecta el exportador MCP, no una segunda
-                # regex en el navegador: si se duplica, se desincroniza y el
-                # Studio compila con un `{{marcador}}` que llega literal al disco.
-                # `faltan` sale del mismo lugar que los parametros: si la UI
-                # los contara por su cuenta, marcaria en ambar uno distinto del
-                # que rechaza el compilador.
-                todos = mcp.parametros(cuerpo)
-                valores = cuerpo.get("valores") or {}
-                return self._responder(200, {
-                    "parametros": todos,
-                    "faltan": [x for x in todos if not str(valores.get(x, "")).strip()],
-                })
-            if self.path == "/api/compilar":
-                # Un grafo con marcadores no se compila crudo: `sustituir` exige
-                # que esten todos y falla con el nombre del que falta.
-                grafo = (mcp.sustituir(cuerpo, cuerpo.get("valores") or {})
-                         if mcp.parametros(cuerpo) else cuerpo)
-                ids = compilador.compilar(grafo, board=cuerpo.get("board"))
-                return self._responder(200, {"ok": True, "ids": ids})
-            if self.path == "/api/mcp":
-                nombre = cuerpo.get("board") or "sin-nombre"
-                return self._responder(200, {
-                    "tool": nombre,
-                    "parametros": mcp.parametros(cuerpo),
-                    "config": {"mcpServers": {nombre: {
-                        "command": "python",
-                        "args": [str(RAIZ / "mcp_exporter" / "mcp_server.py"),
-                                 str(_archivo(nombre))],
-                    }}},
-                })
-            if self.path == "/api/parar":
-                board = cuerpo.get("board", "orquester")
-                res = _parar_board(board)
-                return self._responder(200, res)
-            if self.path == "/api/nodo/parar":
-                board = cuerpo.get("board", "orquester")
-                tid = cuerpo.get("task_id") or ""
-                return self._responder(200, _parar_nodo(board, tid))
-            if self.path == "/api/gate/aprobar":
-                board = cuerpo.get("board", "orquester")
-                tid = cuerpo.get("task_id") or ""
-                resultado = cuerpo.get("resultado") or None
-                return self._responder(200, _aprobar_gate(board, tid, resultado))
-            if self.path == "/api/reporte/generar":
-                board = cuerpo.get("board", "orquester")
-                formato = cuerpo.get("formato", "markdown")
-                return self._responder(200, _generar_reporte_corrida(board, formato))
-            if self.path == "/api/correr":
-                tope = cuerpo.get("presupuesto_usd")
-                try:
-                    tope = float(tope) if str(tope or "").strip() else None
-                except ValueError:
-                    return self._responder(400, {"error": f"presupuesto invalido: {tope!r}"})
-                if tope is not None and tope <= 0:
-                    return self._responder(400, {"error": "el presupuesto tiene que ser > 0"})
-                validador = cuerpo.get("validador") or None
-                # Mismo criterio que el CLI (`orquester run --validar`): un
-                # nombre que no esta en la tabla es un typo del usuario, no un
-                # comando a ejecutar. Rechazarlo aca evita que el dispatcher lo
-                # descubra recien al terminar el primer nodo.
-                if validador and not validadores.existe(validador):
-                    return self._responder(400, {"error": f"validador desconocido: "
-                                                          f"{validador!r}"})
-                return self._responder(200, _arrancar(cuerpo.get("board", "orquester"), tope,
-                                                       validador))
-            if self.path == "/api/plantilla":
-                # Usar una plantilla = copiarla a los grafos propios, con el
-                # nombre que elija quien la usa. La plantilla no se toca nunca.
-                # Mismo validador que los grafos y los snapshots. Aca la
-                # comparacion era `origen.parent != PLANTILLAS` SIN `.resolve()`:
-                # hoy no se escapa, pero era el tercer criterio distinto para lo
-                # mismo, y el que fallo en `_guardar_snapshot` era uno de esos.
-                origen = _ruta_segura(cuerpo.get("plantilla") or "", PLANTILLAS,
-                                      "plantilla")
-                if not origen.is_file():
-                    return self._responder(404, {"error": "no existe esa plantilla"})
-                g = json.loads(origen.read_text(encoding="utf-8"))
-                g["board"] = cuerpo.get("nombre") or g.get("board") or "sin-nombre"
-                destino = _archivo(g["board"])
-                if destino.exists() and not cuerpo.get("pisar"):
-                    return self._responder(409, {"error": f"ya tenés un grafo llamado "
-                                                          f"'{g['board']}'"})
-                destino.write_text(json.dumps(g, indent=2, ensure_ascii=False),
-                                   encoding="utf-8")
-                return self._responder(200, {"ok": True, "grafo": g})
-            if self.path == "/api/grafo/borrar":
-                f = _archivo(cuerpo.get("board") or "")
-                if not f.is_file():
-                    return self._responder(404, {"error": "no existe"})
-                f.unlink()
-                return self._responder(200, {"ok": True})
-            if self.path == "/api/grafo":
-                _archivo(cuerpo.get("board") or "").write_text(
-                    json.dumps(cuerpo, indent=2, ensure_ascii=False), encoding="utf-8")
-                return self._responder(200, {"ok": True})
+            # Tabla de despacho armada al final del archivo (`_RUTAS_POST`):
+            # ver docs/PLAN-2026-09-01-tabla-de-rutas.md para el porqué. El
+            # try/except de abajo envuelve la LLAMADA, no cada ruta — mismo
+            # alcance que antes, cuando envolvía toda la cadena de ifs.
+            manejador = _RUTAS_POST.get(self.path)
+            if manejador is None:
+                return self._responder(404, {"error": "ruta desconocida"})
+            return manejador(self, cuerpo)
         except compilador.ErrorDeGrafo as e:
             # El mensaje va tal cual al canvas: por eso los errores del
             # compilador nombran el nodo culpable.
@@ -2461,10 +2137,451 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             traceback.print_exc()
             return self._responder(500, {"ok": False, "error": f"{type(e).__name__}: {e}"})
-        return self._responder(404, {"error": "ruta desconocida"})
 
     def log_message(self, *a):
         pass                                  # sin ruido de acceso en consola
+
+
+# ---------------------------------------------------------------------------
+# Tabla de despacho de rutas (docs/PLAN-2026-09-01-tabla-de-rutas.md).
+#
+# Antes esto eran dos cadenas de `if self.path == "..."` / `if ruta == "..."`
+# de 56 ramas en total, sin ningun lugar que las listara todas juntas. Cada
+# funcion de aca abajo es el cuerpo verbatim de una rama que tenia mas de un
+# `return self._responder(...)` -- movida, no reescrita. Firma uniforme:
+# `(self, params)` para GET, `(self, cuerpo)` para POST.
+#
+# `/api/eventos` y `/api/reporte/descargar` (GET) NO llaman a `self.
+# _responder`: la primera hace streaming SSE de verdad, la segunda arma
+# headers de descarga a mano. No "normalizarlas" a `_responder` -- ese es
+# exactamente el cambio de comportamiento que este refactor promete no hacer.
+# ---------------------------------------------------------------------------
+
+def _get_grafo(self, params):
+    try:
+        f = _archivo(params.get("nombre", ""))
+    except ValueError as e:
+        return self._responder(400, {"error": str(e)})
+    if not f.exists():
+        return self._responder(404, {"error": "no existe"})
+    return self._responder(200, json.loads(f.read_text(encoding="utf-8")))
+
+
+def _get_reporte_descargar(self, params):
+    board = params.get("board", "orquester")
+    formato = params.get("formato", "markdown").lower()
+    res = _generar_reporte_corrida(board, formato)
+    if not res.get("ok"):
+        return self._responder(400, res)
+    ext = "html" if formato == "html" else "md"
+    mime = "text/html; charset=utf-8" if formato == "html" else "text/markdown; charset=utf-8"
+    contenido_bytes = res["reporte"].encode("utf-8")
+    # El nombre sale de la query. Hoy no es explotable --`_conn` rechaza
+    # un board que no existe, y el kanban no deja crear uno con comillas
+    # ni saltos de linea--, pero la cabecera no deberia depender de una
+    # regla que vive en otro archivo: una comilla cierra el parametro y
+    # un CR/LF parte la respuesta en dos.
+    nombre = re.sub(r"[^\w.-]", "_", board)[:80] or "reporte"
+    self.send_response(200)
+    self.send_header("Content-Type", mime)
+    self.send_header("Content-Disposition",
+                     f'attachment; filename="reporte-{nombre}.{ext}"')
+    self.send_header("X-Content-Type-Options", "nosniff")
+    self.send_header("Content-Length", str(len(contenido_bytes)))
+    self.end_headers()
+    self.wfile.write(contenido_bytes)
+
+
+_RUTAS_GET = {
+    "/": lambda self, params: self._responder(200, HTML.read_bytes(), "text/html; charset=utf-8"),
+    "/api/eventos": lambda self, params: self._stream_eventos(params.get("board", "orquester")),
+    "/api/skills/catalogo": lambda self, params: self._responder(200, _catalogo_skills()),
+    "/api/estado": lambda self, params: self._responder(200, _estado(params.get("board", "orquester"))),
+    # Sin token: no expone nada del usuario, solo que sabe hacer este motor.
+    # Un agente lo consulta antes de armar un grafo.
+    "/api/capacidades": lambda self, params: self._responder(200, capacidades.tabla()),
+    # Con token: lanza un subproceso (`agy models` consulta al proveedor).
+    # No va junto a /api/capacidades, que es estatico.
+    "/api/modelos": lambda self, params: self._responder(200, capacidades.modelos(params.get("runtime", ""))),
+    "/api/consumo": lambda self, params: self._responder(200, _consumo(params.get("board", "orquester"))),
+    "/api/traza": lambda self, params: self._responder(200, _traza(
+        params.get("board", "orquester"), params.get("task", ""))),
+    "/api/nodo/diff": lambda self, params: self._responder(200, _diff_nodo(
+        params.get("board", "orquester"), params.get("task", ""))),
+    "/api/plantillas": lambda self, params: self._responder(200, _catalogo()),
+    "/api/grafos": lambda self, params: self._responder(
+        200, {"grafos": sorted(p.stem for p in GRAFOS.glob("*.json"))}),
+    "/api/boards": lambda self, params: self._responder(
+        200, {"boards": [b.get("slug") for b in k.list_boards() if b.get("slug")]}),
+    "/api/telemetria": lambda self, params: self._responder(200, _telemetria(params.get("board", "orquester"))),
+    "/api/historial": lambda self, params: self._responder(200, _historial()),
+    "/api/doctor": lambda self, params: self._responder(200, capacidades.doctor()),
+    "/api/secretos-status": lambda self, params: self._responder(200, capacidades.secretos_status()),
+    "/api/reporte-corrida": lambda self, params: self._responder(200, _generar_reporte_corrida(
+        params.get("board", "orquester"), params.get("formato", "markdown"))),
+    "/api/reporte/descargar": _get_reporte_descargar,
+    "/api/snapshots": lambda self, params: self._responder(200, _listar_snapshots(params.get("board", ""))),
+    "/api/workspaces": lambda self, params: self._responder(200, _listar_workspaces()),
+    "/api/workspace/analizar": lambda self, params: self._responder(200, _analizar_workspace(params.get("ruta", ""))),
+    "/api/exportar-dataset": lambda self, params: self._responder(200, _generar_dataset_jsonl(params.get("board"))),
+    "/api/grafo": _get_grafo,
+}
+
+
+def _post_validar(self, cuerpo):
+    compilador.validar(cuerpo)
+    return self._responder(200, {"ok": True})
+
+
+def _post_chat(self, cuerpo):
+    # Un turno de conversacion con el ejecutor elegido. La sesion la guarda
+    # el CLI: aca solo viaja el id de ida y vuelta, asi que el Studio no
+    # persiste ninguna conversacion.
+    rt = cuerpo.get("runtime", "")
+    if rt not in dispatcher.BACKENDS:
+        return self._responder(400, {"error": f"'{rt}' no puede chatear"})
+    if not (cuerpo.get("mensaje") or "").strip():
+        return self._responder(400, {"error": "mensaje vacio"})
+    try:
+        r = dispatcher.run_chat(
+            rt, cuerpo["mensaje"],
+            sesion=cuerpo.get("sesion") or None,
+            cwd=cuerpo.get("workspace") or None,
+            modelo=cuerpo.get("modelo") or None,
+            esfuerzo=cuerpo.get("esfuerzo") or None,
+            timeout=int(cuerpo.get("timeout") or 600))
+    except Exception as e:
+        return self._responder(400, {"error": str(e)[:1500]})
+    return self._responder(200, r)
+
+
+def _post_ordenar(self, cuerpo):
+    # Solo calcula: no guarda ni compila nada. La UI aplica las coordenadas
+    # que recibe.
+    compilador.validar(cuerpo, capacidades=False)
+    return self._responder(200, {"posiciones": disposicion.ordenar(cuerpo)})
+
+
+def _post_optimizar_goal(self, cuerpo):
+    goal = cuerpo.get("goal") or ""
+    rt = cuerpo.get("runtime") or "claude-code"
+    reglas = cuerpo.get("reglas") or ""
+    try:
+        res = _optimizar_goal(goal, runtime=rt, reglas=reglas,
+                              dry_run=bool(cuerpo.get("dry_run")))
+        return self._responder(200, {"ok": True, **res})
+    except ValueError as e:
+        return self._responder(400, {"error": str(e)})
+
+
+def _post_exportar_mermaid(self, cuerpo):
+    try:
+        return self._responder(200, {"ok": True, "mermaid": _generar_mermaid(cuerpo)})
+    except Exception as e:
+        return self._fallo_400("no se pudo generar mermaid", e)
+
+
+def _post_generar_grafo(self, cuerpo):
+    desc = cuerpo.get("descripcion") or ""
+    rt = cuerpo.get("runtime") or "claude-code"
+    dry = bool(cuerpo.get("dry_run"))
+    try:
+        # Con `actual`, el pedido REFINA ese grafo en vez de diseñar uno
+        # nuevo, y `sesion` encadena los refinamientos.
+        res = _generar_grafo(desc, runtime=rt, dry_run=dry,
+                             actual=cuerpo.get("actual") or None,
+                             sesion=cuerpo.get("sesion") or None)
+        return self._responder(200, {"ok": True, **res})
+    except ValueError as e:
+        return self._responder(400, {"error": str(e)})
+    except Exception as e:
+        return self._responder(500, {"error": f"error generando grafo: {e}"})
+
+
+def _post_reintentar_nodo(self, cuerpo):
+    board = cuerpo.get("board") or "orquester"
+    tid = cuerpo.get("task_id") or ""
+    try:
+        res = _reintentar_nodo(board, tid)
+        return self._responder(200, res)
+    except ValueError as e:
+        return self._responder(400, {"error": str(e)})
+    except Exception as e:
+        return self._responder(500, {"error": f"error reintentando nodo: {e}"})
+
+
+def _post_exportar_ci(self, cuerpo):
+    try:
+        return self._responder(200, {"ok": True, "workflow": _generar_ci_workflow(cuerpo)})
+    except Exception as e:
+        return self._fallo_400("error generando workflow CI", e)
+
+
+def _post_exportar_python(self, cuerpo):
+    try:
+        return self._responder(200, {"ok": True, "script": _generar_script_python(cuerpo)})
+    except Exception as e:
+        return self._fallo_400("error generando script python", e)
+
+
+def _post_simular(self, cuerpo):
+    try:
+        return self._responder(200, _simular_flujo(cuerpo))
+    except Exception as e:
+        return self._fallo_400("error simulando flujo", e)
+
+
+def _post_analizar_grafo(self, cuerpo):
+    try:
+        return self._responder(200, {"ok": True, "hallazgos": compilador.analizar(cuerpo)})
+    except Exception as e:
+        return self._fallo_400("error analizando grafo", e)
+
+
+def _post_trazabilidad_grafo(self, cuerpo):
+    nid = cuerpo.get("nodo") or ""
+    g = cuerpo.get("grafo") or {}
+    try:
+        return self._responder(200, compilador.trazabilidad(g, nid))
+    except Exception as e:
+        return self._fallo_400("error en trazabilidad", e)
+
+
+def _post_snapshot(self, cuerpo):
+    b = cuerpo.get("board") or "orquester"
+    g = cuerpo.get("grafo") or {}
+    desc = cuerpo.get("descripcion") or ""
+    try:
+        return self._responder(200, _guardar_snapshot(b, g, desc))
+    except Exception as e:
+        return self._fallo_400("error guardando snapshot", e)
+
+
+def _post_snapshot_restaurar(self, cuerpo):
+    sid = cuerpo.get("id") or ""
+    try:
+        return self._responder(200, _restaurar_snapshot(sid))
+    except Exception as e:
+        return self._fallo_400("error restaurando snapshot", e)
+
+
+def _post_snapshot_diff(self, cuerpo):
+    sid = cuerpo.get("id") or ""
+    cid = cuerpo.get("compare_id") or None
+    g = cuerpo.get("grafo_actual") or None
+    try:
+        return self._responder(200, _diff_snapshots(sid, grafo_actual=g, compare_id=cid))
+    except Exception as e:
+        return self._fallo_400("error comparando snapshots", e)
+
+
+def _post_reporte_corrida(self, cuerpo):
+    b = cuerpo.get("board") or "orquester"
+    try:
+        return self._responder(200, _generar_reporte_corrida(b))
+    except Exception as e:
+        return self._fallo_400("error generando reporte", e)
+
+
+def _post_guardar_plantilla(self, cuerpo):
+    nom = cuerpo.get("nombre") or ""
+    desc = cuerpo.get("descripcion") or ""
+    g = cuerpo.get("grafo") or {}
+    try:
+        return self._responder(200, _guardar_plantilla(
+            nom, desc, g, pisar=bool(cuerpo.get("pisar"))))
+    except FileExistsError as e:
+        return self._responder(409, {"error": str(e)})
+    except Exception as e:
+        return self._fallo_400("error guardando plantilla", e)
+
+
+def _post_workspaces_limpiar(self, cuerpo):
+    b = cuerpo.get("board") or None
+    tid = cuerpo.get("task_id") or None
+    try:
+        return self._responder(200, _limpiar_workspaces(board=b, task_id=tid))
+    except Exception as e:
+        return self._fallo_400("error limpiando workspaces", e)
+
+
+def _post_exportar_dataset(self, cuerpo):
+    b = cuerpo.get("board") or None
+    try:
+        return self._responder(200, _generar_dataset_jsonl(b))
+    except Exception as e:
+        return self._fallo_400("error exportando dataset", e)
+
+
+def _post_workspace_elegir(self, cuerpo):
+    try:
+        return self._responder(200, _elegir_carpeta())
+    except Exception as e:
+        return self._fallo_400("error abriendo el selector", e)
+
+
+def _post_workspace_analizar(self, cuerpo):
+    try:
+        return self._responder(200, _analizar_workspace(cuerpo.get("ruta", "")))
+    except Exception as e:
+        return self._fallo_400("error analizando workspace", e)
+
+
+def _post_orquestar_intencion(self, cuerpo):
+    try:
+        return self._responder(200, _orquestar_intencion(cuerpo))
+    except Exception as e:
+        return self._fallo_400("error orquestando intencion", e)
+
+
+def _post_parametros(self, cuerpo):
+    # Los marcadores los detecta el exportador MCP, no una segunda regex en
+    # el navegador: si se duplica, se desincroniza y el Studio compila con
+    # un `{{marcador}}` que llega literal al disco. `faltan` sale del mismo
+    # lugar que los parametros: si la UI los contara por su cuenta, marcaria
+    # en ambar uno distinto del que rechaza el compilador.
+    todos = mcp.parametros(cuerpo)
+    valores = cuerpo.get("valores") or {}
+    return self._responder(200, {
+        "parametros": todos,
+        "faltan": [x for x in todos if not str(valores.get(x, "")).strip()],
+    })
+
+
+def _post_compilar(self, cuerpo):
+    # Un grafo con marcadores no se compila crudo: `sustituir` exige que
+    # esten todos y falla con el nombre del que falta.
+    grafo = (mcp.sustituir(cuerpo, cuerpo.get("valores") or {})
+             if mcp.parametros(cuerpo) else cuerpo)
+    ids = compilador.compilar(grafo, board=cuerpo.get("board"))
+    return self._responder(200, {"ok": True, "ids": ids})
+
+
+def _post_mcp(self, cuerpo):
+    nombre = cuerpo.get("board") or "sin-nombre"
+    return self._responder(200, {
+        "tool": nombre,
+        "parametros": mcp.parametros(cuerpo),
+        "config": {"mcpServers": {nombre: {
+            "command": "python",
+            "args": [str(RAIZ / "mcp_exporter" / "mcp_server.py"),
+                     str(_archivo(nombre))],
+        }}},
+    })
+
+
+def _post_parar(self, cuerpo):
+    board = cuerpo.get("board", "orquester")
+    res = _parar_board(board)
+    return self._responder(200, res)
+
+
+def _post_nodo_parar(self, cuerpo):
+    board = cuerpo.get("board", "orquester")
+    tid = cuerpo.get("task_id") or ""
+    return self._responder(200, _parar_nodo(board, tid))
+
+
+def _post_gate_aprobar(self, cuerpo):
+    board = cuerpo.get("board", "orquester")
+    tid = cuerpo.get("task_id") or ""
+    resultado = cuerpo.get("resultado") or None
+    return self._responder(200, _aprobar_gate(board, tid, resultado))
+
+
+def _post_reporte_generar(self, cuerpo):
+    board = cuerpo.get("board", "orquester")
+    formato = cuerpo.get("formato", "markdown")
+    return self._responder(200, _generar_reporte_corrida(board, formato))
+
+
+def _post_correr(self, cuerpo):
+    tope = cuerpo.get("presupuesto_usd")
+    try:
+        tope = float(tope) if str(tope or "").strip() else None
+    except ValueError:
+        return self._responder(400, {"error": f"presupuesto invalido: {tope!r}"})
+    if tope is not None and tope <= 0:
+        return self._responder(400, {"error": "el presupuesto tiene que ser > 0"})
+    validador = cuerpo.get("validador") or None
+    # Mismo criterio que el CLI (`orquester run --validar`): un nombre que
+    # no esta en la tabla es un typo del usuario, no un comando a ejecutar.
+    # Rechazarlo aca evita que el dispatcher lo descubra recien al terminar
+    # el primer nodo.
+    if validador and not validadores.existe(validador):
+        return self._responder(400, {"error": f"validador desconocido: "
+                                              f"{validador!r}"})
+    return self._responder(200, _arrancar(cuerpo.get("board", "orquester"), tope, validador))
+
+
+def _post_plantilla(self, cuerpo):
+    # Usar una plantilla = copiarla a los grafos propios, con el nombre que
+    # elija quien la usa. La plantilla no se toca nunca. Mismo validador que
+    # los grafos y los snapshots. Aca la comparacion era `origen.parent !=
+    # PLANTILLAS` SIN `.resolve()`: hoy no se escapa, pero era el tercer
+    # criterio distinto para lo mismo, y el que fallo en `_guardar_snapshot`
+    # era uno de esos.
+    origen = _ruta_segura(cuerpo.get("plantilla") or "", PLANTILLAS, "plantilla")
+    if not origen.is_file():
+        return self._responder(404, {"error": "no existe esa plantilla"})
+    g = json.loads(origen.read_text(encoding="utf-8"))
+    g["board"] = cuerpo.get("nombre") or g.get("board") or "sin-nombre"
+    destino = _archivo(g["board"])
+    if destino.exists() and not cuerpo.get("pisar"):
+        return self._responder(409, {"error": f"ya tenés un grafo llamado '{g['board']}'"})
+    destino.write_text(json.dumps(g, indent=2, ensure_ascii=False), encoding="utf-8")
+    return self._responder(200, {"ok": True, "grafo": g})
+
+
+def _post_grafo_borrar(self, cuerpo):
+    f = _archivo(cuerpo.get("board") or "")
+    if not f.is_file():
+        return self._responder(404, {"error": "no existe"})
+    f.unlink()
+    return self._responder(200, {"ok": True})
+
+
+def _post_grafo(self, cuerpo):
+    _archivo(cuerpo.get("board") or "").write_text(
+        json.dumps(cuerpo, indent=2, ensure_ascii=False), encoding="utf-8")
+    return self._responder(200, {"ok": True})
+
+
+_RUTAS_POST = {
+    "/api/validar": _post_validar,
+    "/api/chat": _post_chat,
+    "/api/ordenar": _post_ordenar,
+    "/api/optimizar-goal": _post_optimizar_goal,
+    "/api/exportar-mermaid": _post_exportar_mermaid,
+    "/api/generar-grafo": _post_generar_grafo,
+    "/api/reintentar-nodo": _post_reintentar_nodo,
+    "/api/exportar-ci": _post_exportar_ci,
+    "/api/exportar-python": _post_exportar_python,
+    "/api/simular": _post_simular,
+    "/api/analizar-grafo": _post_analizar_grafo,
+    "/api/trazabilidad-grafo": _post_trazabilidad_grafo,
+    "/api/snapshot": _post_snapshot,
+    "/api/snapshot/restaurar": _post_snapshot_restaurar,
+    "/api/snapshot/diff": _post_snapshot_diff,
+    "/api/reporte-corrida": _post_reporte_corrida,
+    "/api/guardar-plantilla": _post_guardar_plantilla,
+    "/api/workspaces/limpiar": _post_workspaces_limpiar,
+    "/api/exportar-dataset": _post_exportar_dataset,
+    "/api/workspace/elegir": _post_workspace_elegir,
+    "/api/workspace/analizar": _post_workspace_analizar,
+    "/api/orquestar-intencion": _post_orquestar_intencion,
+    "/api/parametros": _post_parametros,
+    "/api/compilar": _post_compilar,
+    "/api/mcp": _post_mcp,
+    "/api/parar": _post_parar,
+    "/api/nodo/parar": _post_nodo_parar,
+    "/api/gate/aprobar": _post_gate_aprobar,
+    "/api/reporte/generar": _post_reporte_generar,
+    "/api/correr": _post_correr,
+    "/api/plantilla": _post_plantilla,
+    "/api/grafo/borrar": _post_grafo_borrar,
+    "/api/grafo": _post_grafo,
+}
 
 
 if __name__ == "__main__":
