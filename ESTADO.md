@@ -7,13 +7,13 @@
 
 ## Dónde está el código
 
-- Commit `0d33240` — docs: el plan al dia, y las dos features que el Studio no sabe dibujar
+- Commit `7ffd060` — merge: incorporar el fix de QA (9422d0e) que se pusheo a worktree-regen-estado despues del squash de #3
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 0
+- Árbol limpio: sí · sin pushear: 2
 
 ## Runtime prestado
 
-- Pin de Hermes: `b7f628025905` · el clon está en el pin: **no**
+- Pin de Hermes: `b7f628025905` · el clon está en el pin: sí
 - CLI instalado: v0.20.1
 - Binarios: claude ✓, opencode ✓, agy ✓, hermes ✓, node ✓, docker ✓
 - Postgres del plano de control: **no**
@@ -21,7 +21,7 @@
 ## Verificación
 
 - `ARQUITECTURA.md` §10: **70 afirmaciones**, 1 pendiente(s)
-- 26 tests: api_rbac, auth_studio, capacidades, chat, ciclo_refinamiento, cli, compilador, concurrencia_reintentos, consumo, contract, contrato_ui, dag_heterogeneo, dag_rombo, disposicion, dos_dispatchers, esfuerzo_presupuesto, espera, guardarrailes, mcp_export, modo_app, parada, pin_hermes, rebanada_vertical, reporte, ui_expansion, ui_navegador
+- 28 tests: api_rbac, auth_studio, capacidades, chat, ciclo_refinamiento, cli, compilador, concurrencia_reintentos, consumo, contract, contrato_ui, dag_heterogeneo, dag_rombo, disposicion, dos_dispatchers, esfuerzo_presupuesto, espera, guardarrailes, mcp_export, modo_app, parada, pin_hermes, rebanada_vertical, reporte, ui_expansion, ui_navegador, visor_diff, webhook
 
 ## Decisiones tomadas (no re-litigar sin motivo nuevo)
 
@@ -47,7 +47,7 @@
 
 ## Bloqueos
 
-- el clon de Hermes no está en el commit del pin: revalidar la suite o volver al pin
+- 2 commit(s) sin pushear
 
 ## Qué sigue
 

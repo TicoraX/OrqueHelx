@@ -17,8 +17,8 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ / "hermes-agent"))
 import hermes_cli.kanban_db as k
 
-from backends import (run_backend, chat_backend, BackendError, BACKENDS,
-                      matar_procesos_activos, matar_proceso_task,
+from backends import (run_backend, chat_backend, BackendError, ErrorPermanente,
+                      BACKENDS, matar_procesos_activos, matar_proceso_task,
                       marcar_board, marcar_tarea)
 import validadores
 
@@ -212,14 +212,21 @@ def run_chat(runtime: str, mensaje: str, **kw) -> dict:
 def carril(runtime: str) -> str:
     """El `assignee` que le toca a un nodo de este runtime."""
     if runtime not in BACKENDS:
-        raise BackendError(f"runtime desconocido: {runtime}")
+        # ErrorPermanente y no BackendError: un runtime que no existe no se
+        # va a arreglar reintentando. Con BackendError generico (permanente
+        # default False) esto se clasificaba `transient` y se reintentaba
+        # sin sentido -- bug encontrado en la revision de ingenieria del
+        # plan de causa tipada, no relacionado con esa causa en si.
+        raise ErrorPermanente(f"runtime desconocido: {runtime}", causa="configuracion")
     return f"{CARRIL}:{runtime}"
 
 
 def _runtime_de(task) -> str:
     prefijo, _, runtime = (task.assignee or "").partition(":")
     if prefijo != CARRIL or runtime not in BACKENDS:
-        raise BackendError(f"la card {task.id} no declara runtime externo: {task.assignee!r}")
+        raise ErrorPermanente(
+            f"la card {task.id} no declara runtime externo: {task.assignee!r}",
+            causa="configuracion")
     return runtime
 
 
@@ -375,6 +382,14 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600,
         # Tambien el motivo del bloqueo: un CLI que falla suele devolver el
         # comando que intento, y ahi puede venir una clave en un `--flag`.
         msg = limpiar_salida(str(e))[:2000]
+        # `causa` va DESPUES del truncamiento a 2000, nunca antes: asi el
+        # prefijo llega entero pase lo que pase con el largo del mensaje.
+        # Es el unico lugar donde `Run.summary` guarda `causa` -- `reintentar()`
+        # la lee de aca (ver docs/PLAN-2026-08-31-backenderror-tipado.md).
+        # Solo observacional por ahora: nada todavia decide nada por esto.
+        causa = getattr(e, "causa", None)
+        if causa:
+            msg = f"causa:{causa}|{msg}"
         k.block_task(conn, task_id, reason=msg,
                      kind="capability" if e.permanente else "transient")
         return {"status": "failure", "summary": msg}
