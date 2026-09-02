@@ -1370,6 +1370,22 @@ function resumir() {
 
 let ULTIMO_RESULTADO = "";
 
+// --- Terminal en vivo (T1.4, docs/PLAN-2026-09-01-terminal-en-vivo.md) -----
+// `cargarTraza()` rearma `#traza` entero cada vez que corre (cada 2.5s, via
+// `refrescarEstado()`), asi que el texto acumulado vive ACA afuera, no en el
+// DOM -- si viviera solo en el DOM, cada rearmado lo perderia.
+let TERMINAL_TID = null, TERMINAL_OFFSET = 0, TERMINAL_TEXTO = "", TERMINAL_INTERVAL = null;
+
+async function _pollTerminal(tid, board, final) {
+  const { datos: t } = await api(
+    `/api/nodo/terminal?board=${encodeURIComponent(board)}&task=${tid}&offset=${TERMINAL_OFFSET}` +
+    (final ? "&final=1" : ""));
+  if (t.texto) TERMINAL_TEXTO += t.texto;
+  if (t.offset_nuevo != null) TERMINAL_OFFSET = t.offset_nuevo;
+  const caja = $("#cajaTerminal");
+  if (caja && t.texto) { caja.textContent = TERMINAL_TEXTO; caja.scrollTop = caja.scrollHeight; }
+}
+
 async function cargarTraza() {
   const tid = ids[sel];
   const caja = $("#bloqueTraza");
@@ -1416,9 +1432,15 @@ async function cargarTraza() {
       (u.intentos > 1 ? ` · ${u.intentos} intentos` : "") + `</div>`
     : "";
 
+  const terminalVivo = datos.estado === "running"
+    ? `<div class="res-wrap"><div class="res-hdr"><b>Terminal en vivo</b></div>
+         <pre id="cajaTerminal" style="max-height:220px; overflow:auto; white-space:pre-wrap;
+              font-size:10.5px; margin:4px 0;"></pre></div>`
+    : "";
+
   $("#traza").innerHTML =
     (datos.block_kind ? `<div class="intento mal">bloqueo: <b>${esc(datos.block_kind)}</b></div>` : "") +
-    resultado + gasto +
+    terminalVivo + resultado + gasto +
     (intentos || "") +
     (eventos ? `<details style="margin-top:6px;"><summary style="cursor:pointer; color:var(--tenue); font-size:11px; margin-bottom:4px;">Eventos del kanban (${(datos.eventos||[]).length})</summary>${eventos}</details>` : '<div class="d">sin eventos todavía</div>') +
     `<details id="detallesDiff" style="margin-top:6px;">
@@ -1456,6 +1478,26 @@ async function cargarTraza() {
           (d.truncado ? `<div class="d">(cortado — el diff es más grande)</div>` : "");
       }
     };
+  }
+
+  if (TERMINAL_INTERVAL && TERMINAL_TID !== tid) {
+    // Se cambio de nodo mientras uno anterior seguia corriendo: no lo dejes
+    // pollenado en segundo plano para siempre, aunque nadie lo este mirando.
+    clearInterval(TERMINAL_INTERVAL); TERMINAL_INTERVAL = null; TERMINAL_TID = null;
+  }
+  if (datos.estado === "running") {
+    if (TERMINAL_TID !== tid) {
+      // Nodo nuevo (o primera vez que se ve corriendo): arranca de cero.
+      TERMINAL_TID = tid; TERMINAL_OFFSET = 0; TERMINAL_TEXTO = "";
+      TERMINAL_INTERVAL = setInterval(() => _pollTerminal(tid, grafo.board, false), 1000);
+    }
+    _pollTerminal(tid, grafo.board, false);   // no esperar el primer tick
+  } else if (TERMINAL_TID === tid) {
+    // Dejo de correr: un ultimo poll con final=1 (vacia lo que habia quedado
+    // retenido en el borde, ver `_SOLAPE_TERMINAL` en el servidor) y frena.
+    if (TERMINAL_INTERVAL) { clearInterval(TERMINAL_INTERVAL); TERMINAL_INTERVAL = null; }
+    _pollTerminal(tid, grafo.board, true);
+    TERMINAL_TID = null;
   }
 
   const detallesLecciones = $("#detallesLecciones");

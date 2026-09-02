@@ -555,32 +555,53 @@ def chat_backend(runtime: str, mensaje: str, *, sesion: str = None,
             "uso": extraer(proc.stdout) if extraer else _uso_vacio(runtime)}
 
 
-def _correr(runtime: str, argv: list[str], *, timeout: int, cwd: str = None):
+def _correr(runtime: str, argv: list[str], *, timeout: int, cwd: str = None,
+           archivo_terminal: Path = None):
     """Lanzar un CLI de agente. Las reglas de invocacion viven ACA, una vez.
 
     Estaban duplicadas y la duplicacion costo caro: el bug de `stdin` heredado
     se arreglo primero en `run_backend` y aparecio de nuevo, identico, en el
     exportador MCP. Una sola copia o vuelve a pasar.
+
+    `archivo_terminal`, si se pasa, redirige stdout+stderr COMBINADOS a ese
+    archivo en vez de a un `PIPE` (T1.1, docs/PLAN-2026-09-01-terminal-en-
+    vivo.md): quien va leyendo el archivo desde afuera ve el output
+    progresivo mientras el proceso corre -- `communicate()` bufferea todo
+    hasta que el proceso termina, que es exactamente lo que no sirve para
+    una terminal en vivo. `communicate()` devuelve `(None, None)` cuando los
+    streams estan redirigidos a archivo, asi que el `stdout`/`stderr` del
+    `CompletedProcess` final se arma leyendo el archivo, no del retorno de
+    `communicate()`.
     """
     prohibidos = FLAGS_PROHIBIDOS.intersection(argv)
     if prohibidos:
         raise ErrorPermanente(f"flags de bypass prohibidos: {sorted(prohibidos)}")
+    fh = open(archivo_terminal, "w", encoding="utf-8", errors="replace") if archivo_terminal else None
+    proc = None
     try:
-        proc = subprocess.Popen(
-            _resolver_argv(argv),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            stdin=subprocess.DEVNULL,
-            cwd=cwd,
-        )
-        registrar_proceso(proc)
         try:
-            stdout, stderr = proc.communicate(timeout=timeout)
+            proc = subprocess.Popen(
+                _resolver_argv(argv),
+                stdout=fh or subprocess.PIPE,
+                stderr=subprocess.STDOUT if fh else subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                stdin=subprocess.DEVNULL,
+                cwd=cwd,
+            )
+            registrar_proceso(proc)
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout)
+            finally:
+                desregistrar_proceso(proc)
         finally:
-            desregistrar_proceso(proc)
+            # Cerrado ANTES de leerlo: en Windows un archivo con el handle de
+            # escritura todavia abierto puede devolver contenido incompleto.
+            if fh:
+                fh.close()
+        if fh:
+            stdout, stderr = archivo_terminal.read_text(encoding="utf-8", errors="replace"), ""
         return subprocess.CompletedProcess(
             args=argv,
             returncode=proc.returncode,
@@ -598,13 +619,21 @@ def _correr(runtime: str, argv: list[str], *, timeout: int, cwd: str = None):
             proc.communicate()
         except Exception:
             pass
+        if archivo_terminal is not None:
+            # El archivo ya esta cerrado (finally de arriba corrio antes de
+            # que este except se alcance): lo escrito hasta el corte es todo
+            # lo que hay, se lee en vez de lo que `communicate()` ya no da.
+            parcial = archivo_terminal.read_text(encoding="utf-8", errors="replace")[-400:]
+            raise BackendError(
+                f"{runtime} excedio {timeout}s. Salida parcial: {parcial!r}",
+                causa="timeout") from e
         raise BackendError(f"{runtime} excedio {timeout}s", causa="timeout") from e
 
 
 def run_backend(runtime: str, goal: str, *, timeout: int = 600,
                 cwd: str = None, herramientas: list[str] = None,
                 modelo: str = None, esfuerzo: str = None,
-                presupuesto: float = None) -> dict:
+                presupuesto: float = None, archivo_terminal: Path = None) -> dict:
     """Invocar `runtime` con `goal` y devolver un AgentAdapterOutput validado.
 
     `cwd` es el directorio donde corre el agente: sin esto heredaria el del
@@ -620,6 +649,11 @@ def run_backend(runtime: str, goal: str, *, timeout: int = 600,
     agy gobiernan permisos por su propia config. Se documenta en vez de
     simularlo, porque un permiso que se cree concedido y no lo esta es peor que
     uno ausente.
+
+    `archivo_terminal` es la capa intermedia que falta entre `loop.ejecutar_una`
+    (que arma la ruta, tiene `task_id`) y `_correr` (que la usa, no sabe de
+    kanban) -- `run_backend` no la toca, solo la reenvia (T1.2, docs/PLAN-
+    2026-09-01-terminal-en-vivo.md).
     """
     if runtime not in BACKENDS:
         raise ErrorPermanente(f"runtime desconocido: {runtime}")
@@ -646,7 +680,8 @@ def run_backend(runtime: str, goal: str, *, timeout: int = 600,
             argv += ["--allowedTools", ",".join(herramientas)]
         argv += _flags_extra(runtime, esfuerzo, presupuesto)
 
-        proc = _correr(runtime, argv, timeout=timeout, cwd=cwd)
+        proc = _correr(runtime, argv, timeout=timeout, cwd=cwd,
+                      archivo_terminal=archivo_terminal)
 
     # Deliberadamente NO se mira proc.returncode: `agy -p` sale 0 aunque falle
     # (SS4.1, verificado). El veredicto sale de parsear la salida.
