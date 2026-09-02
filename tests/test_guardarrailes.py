@@ -164,7 +164,10 @@ try:
     loop.ejecutar_una(conn, ids["c"], timeout=30)
     assert k.get_task(conn, ids["c"]).status == "blocked"
 
-    # El tick siguiente lo reabre y lo vuelve a correr.
+    # El tick siguiente lo reabre y lo vuelve a correr. D3 exige una espera
+    # minima entre intentos (`BACKOFF_ACTIVO`); sin desactivarla el reintento
+    # inmediato de este test no encuentra nada que reabrir todavia.
+    loop.BACKOFF_ACTIVO = False
     assert ids["c"] in loop.reintentar(conn), "el fallo transitorio no se reabrio"
     loop.run_backend = _backend_que_mira_el_contexto
     loop.ejecutar_una(conn, ids["c"], timeout=30)
