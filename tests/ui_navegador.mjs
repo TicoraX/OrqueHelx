@@ -724,7 +724,6 @@ ok(pollTerminal === trasFlush,
    `el polling no debe seguir en segundo plano despues de done (${trasFlush} -> ${pollTerminal})`);
 
 await p.unroute('**/api/nodo/terminal*');
-
 // `sel` sigue apuntando a 'n1' (mockeado): el `setInterval(refrescarEstado,
 // 2500)` de la pagina llama `cargarTraza()` sola si `sel` esta puesto, y
 // desde aca al final del guion hay margen real para que dispare DESPUES de
