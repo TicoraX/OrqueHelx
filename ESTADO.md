@@ -7,7 +7,7 @@
 
 ## Dónde está el código
 
-- Commit `4310042` — Tabla de despacho para las 56 rutas de ui/server.py (#6)
+- Commit `efcf8b1` — fix(lecciones): no apilar sellos de fecha, capar la lectura del archivo
 - Remoto: https://github.com/TicoraX/orquester.git
 - Árbol limpio: **no** · sin pushear: 0
 
@@ -21,7 +21,7 @@
 ## Verificación
 
 - `ARQUITECTURA.md` §10: **70 afirmaciones**, 1 pendiente(s)
-- 28 tests: api_rbac, auth_studio, capacidades, chat, ciclo_refinamiento, cli, compilador, concurrencia_reintentos, consumo, contract, contrato_ui, dag_heterogeneo, dag_rombo, disposicion, dos_dispatchers, esfuerzo_presupuesto, espera, guardarrailes, mcp_export, modo_app, parada, pin_hermes, rebanada_vertical, reporte, ui_expansion, ui_navegador, visor_diff, webhook
+- 29 tests: api_rbac, auth_studio, capacidades, chat, ciclo_refinamiento, cli, compilador, concurrencia_reintentos, consumo, contract, contrato_ui, dag_heterogeneo, dag_rombo, disposicion, dos_dispatchers, esfuerzo_presupuesto, espera, guardarrailes, lecciones, mcp_export, modo_app, parada, pin_hermes, rebanada_vertical, reporte, ui_expansion, ui_navegador, visor_diff, webhook
 
 ## Decisiones tomadas (no re-litigar sin motivo nuevo)
 
@@ -51,7 +51,7 @@
 
 ## Qué sigue
 
-- 14 commit(s) pusheados y sin mergear a master (rama de trabajo)
+- 20 commit(s) pusheados y sin mergear a master (rama de trabajo)
 - `docker compose up -d db` si vas a usar multiusuario
 - §10 tiene 1 afirmación(es) pendiente(s)
 - conectar el Studio a la API multiusuario (hoy le habla directo al motor)

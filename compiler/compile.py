@@ -34,6 +34,27 @@ RUNTIMES = set(BACKENDS) | {"hermes"}
 # y un "\n" se convirtio en un salto de linea real mas de una vez.
 SEPARADOR = chr(10) * 2
 ENCABEZADO_REGLAS = "## Reglas del flujo" + chr(10)
+ENCABEZADO_LECCIONES = "## Lecciones de este repositorio" + chr(10)
+NOMBRE_LECCIONES = ".orquester-lecciones.md"
+LIMITE_LECCIONES = 4000
+
+
+def _leer_lecciones(workspace: str | None) -> str | None:
+    """Lecciones manuales del repo del nodo, si el archivo existe (T2,
+    docs/PLAN-2026-09-01-lecciones-por-repositorio.md)."""
+    if not workspace:
+        return None
+    ruta = Path(workspace) / NOMBRE_LECCIONES
+    if not ruta.is_file():
+        return None
+    # Leer como mucho el cap + 1: un archivo de lecciones enorme (alguien lo
+    # pisa con otra cosa por error) no tiene que cargarse entero en memoria
+    # solo para descartar casi todo despues.
+    with ruta.open(encoding="utf-8", errors="replace") as f:
+        texto = f.read(LIMITE_LECCIONES + 1)
+    if len(texto) > LIMITE_LECCIONES:
+        texto = texto[:LIMITE_LECCIONES] + "\n[... lecciones truncadas, archivo más largo ...]"
+    return texto.strip() or None
 
 
 def es_nota(nodo: dict) -> bool:
@@ -271,13 +292,15 @@ def compilar(grafo: dict, *, board: str = None) -> dict[str, str]:
     ids = {}
     for nodo in _orden_topologico(grafo):
         parents = [ids[p] for p, h in aristas if h == nodo["id"]]
+        lecciones = _leer_lecciones(nodo.get("workspace"))
         try:
             ids[nodo["id"]] = k.create_task(
                 conn,
                 title=nodo["titulo"],
                 body=SEPARADOR.join(x for x in
                                   (nodo.get("cuerpo"),
-                                   ENCABEZADO_REGLAS + reglas if reglas else None)
+                                   ENCABEZADO_REGLAS + reglas if reglas else None,
+                                   ENCABEZADO_LECCIONES + lecciones if lecciones else None)
                                   if x) or None,
                 assignee=_assignee(nodo),
                 parents=parents,
