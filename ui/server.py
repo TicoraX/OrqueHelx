@@ -651,6 +651,9 @@ def _lecciones_nodo(board: str, task_id: str) -> dict:
     return {"ok": True, "workspace": True, "texto": texto}
 
 
+_SELLO_LECCIONES = re.compile(r"^<!-- actualizado \d{4}-\d{2}-\d{2} -->\n")
+
+
 def _guardar_lecciones_nodo(board: str, task_id: str, texto: str) -> dict:
     conn = _conn(board)
     t = k.get_task(conn, task_id)
@@ -659,6 +662,10 @@ def _guardar_lecciones_nodo(board: str, task_id: str, texto: str) -> dict:
     ruta = getattr(t, "workspace_path", None)
     if not ruta:
         raise ValueError("el nodo no tiene workspace, no hay donde guardar lecciones")
+    # El panel manda el archivo tal cual lo leyo, sello viejo incluido: sin
+    # sacarlo antes, cada guardado apila un `<!-- actualizado ... -->` mas
+    # arriba del anterior.
+    texto = _SELLO_LECCIONES.sub("", texto, count=1)
     sello = f"<!-- actualizado {time.strftime('%Y-%m-%d')} -->\n"
     (Path(ruta) / compilador.NOMBRE_LECCIONES).write_text(sello + texto, encoding="utf-8")
     return {"ok": True}

@@ -47,7 +47,11 @@ def _leer_lecciones(workspace: str | None) -> str | None:
     ruta = Path(workspace) / NOMBRE_LECCIONES
     if not ruta.is_file():
         return None
-    texto = ruta.read_text(encoding="utf-8", errors="replace")
+    # Leer como mucho el cap + 1: un archivo de lecciones enorme (alguien lo
+    # pisa con otra cosa por error) no tiene que cargarse entero en memoria
+    # solo para descartar casi todo despues.
+    with ruta.open(encoding="utf-8", errors="replace") as f:
+        texto = f.read(LIMITE_LECCIONES + 1)
     if len(texto) > LIMITE_LECCIONES:
         texto = texto[:LIMITE_LECCIONES] + "\n[... lecciones truncadas, archivo más largo ...]"
     return texto.strip() or None
