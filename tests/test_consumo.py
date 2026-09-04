@@ -103,6 +103,13 @@ b.USO["opencode"] = lambda out: dict(b._uso_vacio("opencode"), entrada=10, total
                                      costo_usd=0.25)
 
 t = k.create_task(conn, title="nodo con reintento", assignee=loop.carril("opencode"))
+# El backoff de D3 (dispatcher/loop.py) espera un minimo antes de reabrir un
+# transient -- sin apagarlo, `reintentar()` de la linea de abajo no reabre
+# nada (llama demasiado pronto despues del fallo) y este test paso a fallar
+# con "deberia haber 2 intentos: 1". Bug preexistente de D3, encontrado
+# corriendo la suite completa durante el refactor de tabla de rutas -- no
+# tiene nada que ver con las rutas, se arregla igual porque esta roto.
+loop.BACKOFF_ACTIVO = False
 loop.ejecutar_una(conn, t, timeout=60)          # falla -> bloquea
 loop.reintentar(conn)
 loop.ejecutar_una(conn, t, timeout=60)          # ahora cierra

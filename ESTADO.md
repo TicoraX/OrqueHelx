@@ -7,9 +7,9 @@
 
 ## Dónde está el código
 
-- Commit `7ffd060` — merge: incorporar el fix de QA (9422d0e) que se pusheo a worktree-regen-estado despues del squash de #3
+- Commit `4310042` — Tabla de despacho para las 56 rutas de ui/server.py (#6)
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 2
+- Árbol limpio: **no** · sin pushear: 0
 
 ## Runtime prestado
 
@@ -47,10 +47,11 @@
 
 ## Bloqueos
 
-- 2 commit(s) sin pushear
+- hay cambios sin commitear
 
 ## Qué sigue
 
+- 14 commit(s) pusheados y sin mergear a master (rama de trabajo)
 - `docker compose up -d db` si vas a usar multiusuario
 - §10 tiene 1 afirmación(es) pendiente(s)
 - conectar el Studio a la API multiusuario (hoy le habla directo al motor)
