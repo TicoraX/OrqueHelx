@@ -3,13 +3,13 @@
 > Generado por `contexto/estado.py`. **No editar a mano**: se sobrescribe.
 > Un traspaso escrito a mano queda viejo y nadie se entera.
 
-**Fase:** producto en uso
+**Fase:** con pendientes
 
 ## Dónde está el código
 
-- Commit `5464195` — docs(D0): spike de apps/api corrido de punta a punta
+- Commit `efcf8b1` — fix(lecciones): no apilar sellos de fecha, capar la lectura del archivo
 - Remoto: https://github.com/TicoraX/orquester.git
-- Árbol limpio: sí · sin pushear: 0
+- Árbol limpio: **no** · sin pushear: 0
 
 ## Runtime prestado
 
@@ -21,7 +21,7 @@
 ## Verificación
 
 - `ARQUITECTURA.md` §10: **70 afirmaciones**, 1 pendiente(s)
-- 27 tests: api_rbac, auth_studio, capacidades, chat, ciclo_refinamiento, cli, compilador, concurrencia_reintentos, consumo, contract, contrato_ui, dag_heterogeneo, dag_rombo, disposicion, dos_dispatchers, esfuerzo_presupuesto, espera, guardarrailes, mcp_export, modo_app, parada, pin_hermes, rebanada_vertical, reporte, ui_expansion, ui_navegador, webhook
+- 29 tests: api_rbac, auth_studio, capacidades, chat, ciclo_refinamiento, cli, compilador, concurrencia_reintentos, consumo, contract, contrato_ui, dag_heterogeneo, dag_rombo, disposicion, dos_dispatchers, esfuerzo_presupuesto, espera, guardarrailes, lecciones, mcp_export, modo_app, parada, pin_hermes, rebanada_vertical, reporte, ui_expansion, ui_navegador, visor_diff, webhook
 
 ## Decisiones tomadas (no re-litigar sin motivo nuevo)
 
@@ -47,11 +47,11 @@
 
 ## Bloqueos
 
-- ninguno
+- hay cambios sin commitear
 
 ## Qué sigue
 
-- 6 commit(s) pusheados y sin mergear a master (rama de trabajo)
+- 20 commit(s) pusheados y sin mergear a master (rama de trabajo)
 - `docker compose up -d db` si vas a usar multiusuario
 - §10 tiene 1 afirmación(es) pendiente(s)
 - conectar el Studio a la API multiusuario (hoy le habla directo al motor)
