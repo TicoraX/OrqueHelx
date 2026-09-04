@@ -558,11 +558,21 @@ _CAP_DIFF = 2000
 # Cuantos bytes se retienen sin mandar todavia en cada lectura del log de
 # terminal (T1.3, docs/PLAN-2026-09-01-terminal-en-vivo.md): una credencial
 # puede caer partida justo en el borde de esta lectura y la siguiente, y el
-# filtro (`limpiar_salida`) es por substring exacto -- no ve una mitad. Se
-# manda recien cuando ese pedazo ya no esta en el borde vivo del archivo: un
-# poll de retraso en los ultimos bytes, a cambio de nunca dejar pasar una
+# filtro (`limpiar_salida`) es por substring/regex exacto -- no ve una mitad.
+# Se manda recien cuando ese pedazo ya no esta en el borde vivo del archivo:
+# un poll de retraso en los ultimos bytes, a cambio de nunca dejar pasar una
 # credencial cortada en dos lecturas.
-_SOLAPE_TERMINAL = 256
+#
+# 4096 y no 256 (revision de ingenieria via CodeRabbit sobre PR #9): una
+# clave privada entera (`_FORMAS_SECRETO` en loop.py la reconoce como bloque
+# multilinea) puede pasar largo los 256 bytes -- una RSA de 4096 bits ronda
+# los 3300 caracteres en PEM. Con 256, esa clave se hubiera partido en dos
+# pedazos que NINGUNO de los dos matchea el patron completo, y se hubiera
+# colado entera sin tapar. 4096 cubre PEM de RSA 4096 bits con margen.
+# ponytail: sigue siendo un techo fijo, no una garantia para CUALQUIER largo
+# de credencial -- un valor de entorno mas largo que esto podria partirse
+# igual. Subir el numero de nuevo si aparece un caso real mas largo.
+_SOLAPE_TERMINAL = 4096
 
 
 def _terminal_nodo(board: str, task_id: str, offset: int, final: bool = False) -> dict:
@@ -575,8 +585,17 @@ def _terminal_nodo(board: str, task_id: str, offset: int, final: bool = False) -
     de estar en el borde.
     """
     conn = _conn(board)
+    if k.get_task(conn, task_id) is None:
+        raise ValueError(f"no existe la card {task_id}")
     db = dispatcher._archivo_de(conn)
-    ruta = Path(db).parent / "workspaces" / task_id / "terminal.log"
+    raiz = (Path(db).parent / "workspaces").resolve()
+    ruta = (raiz / task_id / "terminal.log").resolve()
+    # `task_id` viaja en la query: sin validar que resuelve DENTRO de la raiz
+    # de workspaces, un id armado a mano (`../../..` o una ruta absoluta --
+    # `Path` deja que el lado derecho de `/` pise al izquierdo si es
+    # absoluto) leeria cualquier archivo del servidor, no un log de terminal.
+    if not ruta.is_relative_to(raiz):
+        raise ValueError("task_id invalido")
     if not ruta.is_file():
         return {"texto": "", "offset_nuevo": offset}
     with open(ruta, "rb") as fh:

@@ -105,7 +105,8 @@ print("6. sin archivo de terminal todavia, el poll devuelve vacio sin explotar: 
 os.environ["FAKE_TEST_API_KEY"] = "sk-super-secreta-de-mentira-larga"
 CREDENCIAL = os.environ["FAKE_TEST_API_KEY"]
 
-ruta_log.write_text("arrancando el nodo\n" + "x" * 300, encoding="utf-8")
+RELLENO = srv._SOLAPE_TERMINAL + 50    # mas grande que el solapamiento: fuerza a mandar algo
+ruta_log.write_text("arrancando el nodo\n" + "x" * RELLENO, encoding="utf-8")
 r1 = srv._terminal_nodo(BOARD, task_id, 0)
 assert "arrancando" in r1["texto"], r1
 # Retiene los ultimos _SOLAPE_TERMINAL bytes: no llega a mandar el archivo
@@ -118,7 +119,7 @@ print("7. el poll retiene los ultimos bytes (borde vivo), no manda el archivo en
 # se escribe de forma que la mitad quede del lado retenido de r1.
 with open(ruta_log, "a", encoding="utf-8") as fh:
     fh.write(CREDENCIAL)
-    fh.write("y" * 300)               # empuja la credencial lejos del borde vivo
+    fh.write("y" * RELLENO)           # empuja la credencial lejos del borde vivo
 r2 = srv._terminal_nodo(BOARD, task_id, r1["offset_nuevo"])
 assert CREDENCIAL not in r2["texto"], "la credencial partida en el borde se colo sin tapar"
 assert "[credencial del entorno tapada]" in r2["texto"], r2["texto"][:120]
@@ -129,5 +130,44 @@ r3 = srv._terminal_nodo(BOARD, task_id, r2["offset_nuevo"], final=True)
 assert r3["offset_nuevo"] == ruta_log.stat().st_size, \
     "final=True deberia vaciar todo lo retenido, no dejar nada pendiente"
 print("9. final=True vacia todo lo que habia quedado retenido: OK")
+
+# --- Credencial mas larga que los 256 bytes del solapamiento viejo ----------
+# (revision de ingenieria via CodeRabbit sobre PR #9): una clave privada PEM
+# entera, que `_FORMAS_SECRETO` reconoce como bloque multilinea. Con el
+# solapamiento viejo (256) esto se hubiera partido en dos pedazos, NINGUNO de
+# los dos matchea el patron completo, y la clave se hubiera colado sin tapar.
+CLAVE_PEM = ("-----BEGIN RSA PRIVATE KEY-----\n" +
+            "\n".join("MIIEow" + "A" * 60 for _ in range(15)) +
+            "\n-----END RSA PRIVATE KEY-----")
+assert len(CLAVE_PEM) > 256, "la clave de prueba tiene que superar el solapamiento viejo"
+task_id_pem = c.compilar(
+    {"board": BOARD, "aristas": [], "nodos": [{"id": "npem", "titulo": "nodo pem", "runtime": "opencode"}]},
+    board=BOARD)["npem"]
+ruta_pem = Path(db).parent / "workspaces" / task_id_pem / "terminal.log"
+ruta_pem.parent.mkdir(parents=True, exist_ok=True)
+ruta_pem.write_text("arrancando\n" + "x" * RELLENO, encoding="utf-8")
+p1 = srv._terminal_nodo(BOARD, task_id_pem, 0)
+with open(ruta_pem, "a", encoding="utf-8") as fh:
+    fh.write(CLAVE_PEM)
+    fh.write("y" * RELLENO)
+p2 = srv._terminal_nodo(BOARD, task_id_pem, p1["offset_nuevo"])
+assert "-----BEGIN RSA PRIVATE KEY-----" not in p2["texto"], \
+    f"la clave PEM larga se colo sin tapar: {p2['texto'][:200]!r}"
+# Regex de patron (`_FORMAS_SECRETO`), no substring de entorno: el marcador
+# es distinto ("tapada", sin "del entorno").
+assert "[credencial tapada]" in p2["texto"], p2["texto"][:200]
+print("10. una clave PEM mas larga que 256 bytes, partida en el borde, tambien queda tapada: OK")
+
+# --- task_id que no corresponde a ninguna card ------------------------------
+# Antes esto armaba la ruta del archivo directo con el `task_id` que llega
+# por query, sin validar nada: un id ajeno (o una ruta absoluta, que `Path`
+# deja pisar el lado izquierdo del `/`) leia cualquier archivo del servidor.
+# Con la validacion, ni siquiera llega a intentarlo.
+try:
+    srv._terminal_nodo(BOARD, "t_no_existe_esta_card", 0)
+    raise SystemExit("FALLA: acepto un task_id que no es una card real")
+except ValueError as e:
+    assert "no existe" in str(e), e
+print("11. un task_id que no corresponde a ninguna card se rechaza antes de tocar disco: OK")
 
 print("\nOK: el mecanismo de archivo+polling de la terminal en vivo funciona.")
