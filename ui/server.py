@@ -555,6 +555,59 @@ def _traza(board: str, task_id: str) -> dict:
 # `loop.py`) -- no un numero inventado para esta feature.
 _CAP_DIFF = 2000
 
+# Cuantos bytes se retienen sin mandar todavia en cada lectura del log de
+# terminal (T1.3, docs/PLAN-2026-09-01-terminal-en-vivo.md): una credencial
+# puede caer partida justo en el borde de esta lectura y la siguiente, y el
+# filtro (`limpiar_salida`) es por substring/regex exacto -- no ve una mitad.
+# Se manda recien cuando ese pedazo ya no esta en el borde vivo del archivo:
+# un poll de retraso en los ultimos bytes, a cambio de nunca dejar pasar una
+# credencial cortada en dos lecturas.
+#
+# 4096 y no 256 (revision de ingenieria via CodeRabbit sobre PR #9): una
+# clave privada entera (`_FORMAS_SECRETO` en loop.py la reconoce como bloque
+# multilinea) puede pasar largo los 256 bytes -- una RSA de 4096 bits ronda
+# los 3300 caracteres en PEM. Con 256, esa clave se hubiera partido en dos
+# pedazos que NINGUNO de los dos matchea el patron completo, y se hubiera
+# colado entera sin tapar. 4096 cubre PEM de RSA 4096 bits con margen.
+# ponytail: sigue siendo un techo fijo, no una garantia para CUALQUIER largo
+# de credencial -- un valor de entorno mas largo que esto podria partirse
+# igual. Subir el numero de nuevo si aparece un caso real mas largo.
+_SOLAPE_TERMINAL = 4096
+
+
+def _terminal_nodo(board: str, task_id: str, offset: int, final: bool = False) -> dict:
+    """Poll del log de terminal en vivo de un nodo (T1.3).
+
+    `final=True` (el cliente lo manda una vez, al ver que el nodo dejo de
+    estar 'running') manda TODO lo que quede sin retener nada -- si no,
+    los ultimos `_SOLAPE_TERMINAL` bytes de una corrida que ya termino no se
+    mandarian nunca, porque nunca llega una lectura "siguiente" que los deje
+    de estar en el borde.
+    """
+    conn = _conn(board)
+    if k.get_task(conn, task_id) is None:
+        raise ValueError(f"no existe la card {task_id}")
+    db = dispatcher._archivo_de(conn)
+    raiz = (Path(db).parent / "workspaces").resolve()
+    ruta = (raiz / task_id / "terminal.log").resolve()
+    # `task_id` viaja en la query: sin validar que resuelve DENTRO de la raiz
+    # de workspaces, un id armado a mano (`../../..` o una ruta absoluta --
+    # `Path` deja que el lado derecho de `/` pise al izquierdo si es
+    # absoluto) leeria cualquier archivo del servidor, no un log de terminal.
+    if not ruta.is_relative_to(raiz):
+        raise ValueError("task_id invalido")
+    if not ruta.is_file():
+        return {"texto": "", "offset_nuevo": offset}
+    with open(ruta, "rb") as fh:
+        fh.seek(offset)
+        crudo = fh.read()
+    if final or len(crudo) <= _SOLAPE_TERMINAL:
+        a_mandar = crudo if final else b""
+    else:
+        a_mandar = crudo[:-_SOLAPE_TERMINAL]
+    return {"texto": dispatcher.limpiar_salida(a_mandar.decode("utf-8", errors="replace")),
+            "offset_nuevo": offset + len(a_mandar)}
+
 
 def _diff_nodo(board: str, task_id: str) -> dict:
     """Diff del workspace de una card ya ejecutada -- que tocó el nodo, no
@@ -2246,6 +2299,9 @@ _RUTAS_GET = {
         params.get("board", "orquester"), params.get("task", ""))),
     "/api/nodo/lecciones": lambda self, params: self._responder(200, _lecciones_nodo(
         params.get("board", "orquester"), params.get("task", ""))),
+    "/api/nodo/terminal": lambda self, params: self._responder(200, _terminal_nodo(
+        params.get("board", "orquester"), params.get("task", ""),
+        int(params.get("offset") or 0), params.get("final") == "1")),
     "/api/plantillas": lambda self, params: self._responder(200, _catalogo()),
     "/api/grafos": lambda self, params: self._responder(
         200, {"grafos": sorted(p.stem for p in GRAFOS.glob("*.json"))}),

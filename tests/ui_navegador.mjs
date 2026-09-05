@@ -670,6 +670,60 @@ await p.waitForFunction(() => {
 }, null, { timeout: 8000 });
 ok(true, 'sin workspace, el panel de lecciones avisa en vez de mostrar un editor vacio');
 
+// Terminal en vivo (T1.4 de docs/PLAN-2026-09-01-terminal-en-vivo.md): arranca
+// el polling con el nodo 'running', lo mantiene mientras sigue asi, y lo
+// frena solo (con un ultimo poll `final=1`) al pasar a 'done'.
+let pollTerminal = 0;
+await p.unroute('**/api/nodo/lecciones*');
+await p.unroute('**/api/traza*');
+await p.route('**/api/traza*', r => r.fulfill({
+  status: 200, contentType: 'application/json',
+  body: JSON.stringify({ titulo: 'nodo', estado: 'running', intentos: [], eventos: [] }) }));
+await p.route('**/api/nodo/terminal*', r => {
+  pollTerminal++;
+  const offset = Number(new URL(r.request().url()).searchParams.get('offset') || 0);
+  const texto = `linea ${pollTerminal}\n`;
+  return r.fulfill({ status: 200, contentType: 'application/json',
+                     body: JSON.stringify({ texto, offset_nuevo: offset + texto.length }) });
+});
+await p.evaluate(() => cargarTraza());
+await p.waitForFunction(() => document.querySelector('#cajaTerminal')?.textContent.includes('linea 1'),
+                        null, { timeout: 8000 });
+ok(true, 'la terminal en vivo arranca el polling apenas el nodo esta running (mockeado)');
+
+const antesDeSeguir = pollTerminal;
+await p.waitForTimeout(1200);       // mas de un tick del setInterval(1000ms)
+ok(pollTerminal > antesDeSeguir,
+   `el polling sigue mientras el nodo sigue running (${antesDeSeguir} -> ${pollTerminal})`);
+
+const antesDeDone = pollTerminal;
+await p.unroute('**/api/traza*');
+await p.route('**/api/traza*', r => r.fulfill({
+  status: 200, contentType: 'application/json',
+  body: JSON.stringify({ titulo: 'nodo', estado: 'done', intentos: [], eventos: [] }) }));
+await p.evaluate(() => cargarTraza());
+// La caja NO desaparece en esta misma pasada: le debemos el poll final
+// (revision de ingenieria via CodeRabbit -- si se sacara antes, el ultimo
+// pedazo retenido en el servidor no tendria donde pintarse).
+await p.waitForFunction(() => document.querySelector('#cajaTerminal') != null,
+                        null, { timeout: 8000 });
+const trasFlush = pollTerminal;
+ok(trasFlush - antesDeDone <= 1,
+   `al pasar a done deberia haber a lo sumo un poll final, hubo ${trasFlush - antesDeDone}`);
+await p.waitForTimeout(300);        // que el poll final (fire-and-forget) asiente TERMINAL_TID
+ok(!!(await p.evaluate(() => document.querySelector('#cajaTerminal')?.textContent.includes('linea'))),
+   'la caja sigue mostrando lo acumulado durante el poll final, no se vacia');
+
+// Recien en el PROXIMO refresco (el `TERMINAL_TID` ya se limpio solo cuando
+// el poll final resolvio) la caja desaparece.
+await p.evaluate(() => cargarTraza());
+await p.waitForFunction(() => !document.querySelector('#cajaTerminal'), null, { timeout: 8000 });
+ok(true, 'en el refresco siguiente al poll final, la caja ya desaparece');
+await p.waitForTimeout(1500);       // mas de un tick si el intervalo siguiera vivo
+ok(pollTerminal === trasFlush,
+   `el polling no debe seguir en segundo plano despues de done (${trasFlush} -> ${pollTerminal})`);
+
+await p.unroute('**/api/nodo/terminal*');
 // `sel` sigue apuntando a 'n1' (mockeado): el `setInterval(refrescarEstado,
 // 2500)` de la pagina llama `cargarTraza()` sola si `sel` esta puesto, y
 // desde aca al final del guion hay margen real para que dispare DESPUES de

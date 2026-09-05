@@ -1370,6 +1370,37 @@ function resumir() {
 
 let ULTIMO_RESULTADO = "";
 
+// --- Terminal en vivo (T1.4, docs/PLAN-2026-09-01-terminal-en-vivo.md) -----
+// `cargarTraza()` rearma `#traza` entero cada vez que corre (cada 2.5s, via
+// `refrescarEstado()`), asi que el texto acumulado vive ACA afuera, no en el
+// DOM -- si viviera solo en el DOM, cada rearmado lo perderia.
+let TERMINAL_TID = null, TERMINAL_OFFSET = 0, TERMINAL_TEXTO = "", TERMINAL_INTERVAL = null;
+// `TERMINAL_GEN` se incrementa cada vez que se cambia de nodo/se frena el
+// polling: una respuesta que vuelve DESPUES de eso (red lenta, el poll final
+// tardo mas que el proximo cambio de nodo) se descarta en vez de escribir
+// sobre el estado de otro nodo. `TERMINAL_EN_VUELO` evita que dos pedidos se
+// crucen para el MISMO nodo: si el segundo saliera antes de que el primero
+// vuelva, los dos pedirian el mismo `offset` y duplicarian el texto.
+let TERMINAL_GEN = 0, TERMINAL_EN_VUELO = false;
+
+async function _pollTerminal(tid, board, final) {
+  if (TERMINAL_EN_VUELO) return;
+  TERMINAL_EN_VUELO = true;
+  const gen = TERMINAL_GEN;
+  try {
+    const { datos: t } = await api(
+      `/api/nodo/terminal?board=${encodeURIComponent(board)}&task=${tid}&offset=${TERMINAL_OFFSET}` +
+      (final ? "&final=1" : ""));
+    if (gen !== TERMINAL_GEN) return;   // se cambio de nodo mientras esperaba
+    if (t.texto) TERMINAL_TEXTO += t.texto;
+    if (t.offset_nuevo != null) TERMINAL_OFFSET = t.offset_nuevo;
+    const caja = $("#cajaTerminal");
+    if (caja && t.texto) { caja.textContent = TERMINAL_TEXTO; caja.scrollTop = caja.scrollHeight; }
+  } finally {
+    TERMINAL_EN_VUELO = false;
+  }
+}
+
 async function cargarTraza() {
   const tid = ids[sel];
   const caja = $("#bloqueTraza");
@@ -1416,9 +1447,19 @@ async function cargarTraza() {
       (u.intentos > 1 ? ` · ${u.intentos} intentos` : "") + `</div>`
     : "";
 
+  // Sigue mostrando la caja aunque el nodo ya no este 'running' mientras
+  // todavia le debemos el poll final (`TERMINAL_TID === tid`): si se sacara
+  // apenas cambia el estado, el ultimo pedazo retenido en el servidor
+  // (`_SOLAPE_TERMINAL`) nunca tendria donde pintarse.
+  const terminalVivo = (datos.estado === "running" || TERMINAL_TID === tid)
+    ? `<div class="res-wrap"><div class="res-hdr"><b>Terminal en vivo</b></div>
+         <pre id="cajaTerminal" style="max-height:220px; overflow:auto; white-space:pre-wrap;
+              font-size:10.5px; margin:4px 0;"></pre></div>`
+    : "";
+
   $("#traza").innerHTML =
     (datos.block_kind ? `<div class="intento mal">bloqueo: <b>${esc(datos.block_kind)}</b></div>` : "") +
-    resultado + gasto +
+    terminalVivo + resultado + gasto +
     (intentos || "") +
     (eventos ? `<details style="margin-top:6px;"><summary style="cursor:pointer; color:var(--tenue); font-size:11px; margin-bottom:4px;">Eventos del kanban (${(datos.eventos||[]).length})</summary>${eventos}</details>` : '<div class="d">sin eventos todavía</div>') +
     `<details id="detallesDiff" style="margin-top:6px;">
@@ -1458,6 +1499,40 @@ async function cargarTraza() {
     };
   }
 
+  // `cargarTraza()` rearma `#traza` (y con el, `#cajaTerminal`) desde cero:
+  // repintar lo ya acumulado antes de que llegue el proximo poll evita que la
+  // caja se vea vacia un instante en cada refresco.
+  if (TERMINAL_TID === tid) {
+    const cajaViva = $("#cajaTerminal");
+    if (cajaViva && TERMINAL_TEXTO) cajaViva.textContent = TERMINAL_TEXTO;
+  }
+
+  if (TERMINAL_INTERVAL && TERMINAL_TID !== tid) {
+    // Se cambio de nodo mientras uno anterior seguia corriendo: no lo dejes
+    // pollenado en segundo plano para siempre, aunque nadie lo este mirando.
+    TERMINAL_GEN++;
+    clearInterval(TERMINAL_INTERVAL); TERMINAL_INTERVAL = null; TERMINAL_TID = null;
+  }
+  if (datos.estado === "running") {
+    if (TERMINAL_TID !== tid) {
+      // Nodo nuevo (o primera vez que se ve corriendo): arranca de cero.
+      TERMINAL_GEN++;
+      TERMINAL_TID = tid; TERMINAL_OFFSET = 0; TERMINAL_TEXTO = "";
+      TERMINAL_INTERVAL = setInterval(() => _pollTerminal(tid, grafo.board, false), 1000);
+    }
+    _pollTerminal(tid, grafo.board, false);   // no esperar el primer tick
+  } else if (TERMINAL_TID === tid) {
+    // Dejo de correr: un ultimo poll con final=1 (vacia lo que habia quedado
+    // retenido en el borde, ver `_SOLAPE_TERMINAL` en el servidor) y frena.
+    if (TERMINAL_INTERVAL) { clearInterval(TERMINAL_INTERVAL); TERMINAL_INTERVAL = null; }
+    // TERMINAL_TID se limpia recien cuando el poll final VUELVE, no antes: si
+    // se limpiara ya, un `cargarTraza()` que cayera en el medio (el refresco
+    // de 2.5s) esconderia la caja antes de que el ultimo pedazo tuviera donde
+    // pintarse.
+    _pollTerminal(tid, grafo.board, true).then(() => {
+      if (TERMINAL_TID === tid) TERMINAL_TID = null;
+    });
+  }
   const detallesLecciones = $("#detallesLecciones");
   if (detallesLecciones) {
     let cargado = false;

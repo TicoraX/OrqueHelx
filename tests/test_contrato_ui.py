@@ -213,6 +213,10 @@ def TABLA(grafo, board, repo, tarea, snap, sucio, plantilla, copia):
         # repositorio.md): misma card sin workspace, `workspace` sale false.
         (f"/api/nodo/lecciones?board={board}&task={tarea}", None,
          ["ok", "workspace", "texto"]),
+        # Terminal en vivo (docs/PLAN-2026-09-01-terminal-en-vivo.md): la card
+        # de prueba nunca corrio, no hay archivo -- texto vacio, mismas claves.
+        (f"/api/nodo/terminal?board={board}&task={tarea}&offset=0", None,
+         ["texto", "offset_nuevo"]),
 
         # --- Guardar, abrir, copiar y borrar ----------------------------------
         # `abrirGrafo(datos, nombre)`: el grafo llega en la raiz de la respuesta,

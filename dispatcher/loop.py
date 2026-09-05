@@ -256,6 +256,25 @@ def _archivo_de(conn) -> str:
     return conn.execute("PRAGMA database_list").fetchone()[2]
 
 
+def _ruta_terminal(db: str, task_id: str) -> Path:
+    """Carpeta para el log de terminal en vivo de esta tarea (T1.2, docs/
+    PLAN-2026-09-01-terminal-en-vivo.md).
+
+    Sibling del `kanban.db` de la conexion y no `k.workspaces_root(board=
+    ...)`: esa funcion pide el SLUG del board, y `_archivo_de` solo da el
+    archivo -- recuperar el slug desde ahi implicaria iterar `k.list_boards()`
+    buscando cual coincide, por un archivo que en un test puede ser un
+    `tempfile` sin board real detras. Coincide EXACTO con `workspaces_root()`
+    para cualquier board que no sea 'default' (mismo padre que su
+    `kanban.db`); para 'default' el barrido de `ui/server.py:
+    _limpiar_workspaces` no llega hasta aca -- hueco conocido y aceptado, no
+    una corrida rota, solo un log que ese boton no barre solo.
+    """
+    ruta = Path(db).parent / "workspaces" / task_id
+    ruta.mkdir(parents=True, exist_ok=True)
+    return ruta / "terminal.log"
+
+
 def ejecutar_una(conn, task_id: str, *, timeout: int = 600,
                  presupuesto: float = None, validador: str = None) -> dict:
     """Reclamar, ejecutar y cerrar una card. Devuelve el contrato.
@@ -371,7 +390,8 @@ def ejecutar_una(conn, task_id: str, *, timeout: int = 600,
                              presupuesto=pres_efectivo,
                              # `model_override` ya existe en la card y significa
                              # exactamente esto. No hace falta inventar campo.
-                             modelo=task.model_override or None)
+                             modelo=task.model_override or None,
+                             archivo_terminal=_ruta_terminal(db, task_id))
     except BackendError as e:
         # Un nodo que falla NO se cierra: se bloquea. Si se cerrara con
         # `complete_task`, el kanban lo veria 'done' y **promoveria a sus
