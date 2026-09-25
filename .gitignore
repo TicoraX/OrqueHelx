@@ -5,6 +5,3 @@ __pycache__/
 .env
 node_modules/
 dist/
-contexto/checkpoints.sqlite*
-.orquester-token
-.logs/
