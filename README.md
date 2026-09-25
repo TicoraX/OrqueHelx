@@ -1,11 +1,58 @@
-# ORQUESTER (nombre provisional)
+# OrqueHelx
 
-Chat agéntico local sobre [Hermes Agent](https://github.com/NousResearch/hermes-agent). Cada modelo puede
-delegar en otro, y cada uno corre con **tu propia suscripción**: Claude, Codex, Antigravity, OpenCode o
+Plugin para [Hermes Agent](https://github.com/NousResearch/hermes-agent) que permite que un modelo delegue
+trabajo a otro, y que cada uno corra con **tu propia suscripción**: Claude, Codex, Antigravity, OpenCode o
 cualquier CLI que hable ACP.
 
-Cuando se agota la cuota de alguno, el turno queda en pausa hasta que la cuota se reinicia. Pasar la tarea
-a otro modelo es decisión tuya: el cambio nunca es automático.
+El modelo elige la ruta, y el subagente corre en ese proveedor y gasta su cuota. Si esa cuota se agota, el
+cambio a otro proveedor lo decides tú: OrqueHelx nunca lo hace automático.
 
-**Estado:** en reconstrucción en la rama `overhaul`. La versión anterior (orquestador de grafos DAG)
-sigue en `master`. Todavía no hay nada para instalar.
+**Estado:** en desarrollo, rama `overhaul`. Ya funciona la herramienta `delegar`. La pausa por cuota y la
+interfaz vienen después.
+
+## Requisitos
+
+- Hermes Agent 0.21.5 o posterior.
+- Los CLIs que quieras usar, instalados y con sesión iniciada (`claude`, `agy`, `opencode`, ...).
+  OrqueHelx no guarda credenciales: cada CLI usa la suya.
+
+## Instalación
+
+```bash
+hermes plugins install TicoraX/orquester#orquehelx --enable
+```
+
+## Rutas
+
+Una ruta es el nombre con que el modelo elige dónde corre el subagente. Van en `~/.hermes/config.yaml`:
+
+```yaml
+plugins:
+  entries:
+    orquehelx:
+      settings:
+        rutas:
+          claude:   {provider: claude-subscription-directsdk-experimental, model: claude-haiku-4-5}
+          agy:      {provider: antigravity-subscription-directsdk, model: flash}
+          opencode: {acp: [opencode, acp]}
+```
+
+- `provider`: un proveedor que Hermes ya conoce, incluidos los plugins de suscripción del catálogo
+  (`hermes plugins install claude-subscription-directsdk`).
+- `acp`: el comando de cualquier CLI que hable ACP. OrqueHelx lo registra como proveedor, sin plugin aparte.
+
+Si una ruta está mal escrita, Hermes muestra el error nombrando la ruta al cargar el plugin.
+
+## Uso
+
+```bash
+hermes chat -t orquehelx -q "Pídele a agy que revise este diff y a opencode que escriba los tests"
+```
+
+## Tests
+
+```bash
+pytest tests
+```
+
+Corren contra un Hermes real instalado en el mismo entorno.

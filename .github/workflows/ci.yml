@@ -1,0 +1,47 @@
+name: CI
+
+# Suite del plugin contra Hermes real (sin mocks del core).
+# - version minima declarada en orquehelx/plugin.yaml: bloquea el merge.
+# - main de Hermes: aviso temprano de roturas upstream; bloquea solo en la corrida semanal.
+on:
+  push:
+    branches: [master, overhaul]
+  pull_request:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: ${{ matrix.os }} / hermes ${{ matrix.hermes }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    continue-on-error: ${{ matrix.hermes == 'main' && github.event_name != 'schedule' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        hermes: [v2026.9.24, main]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - name: Hermes ${{ matrix.hermes }}
+        run: |
+          git config --global core.longpaths true
+          git clone --quiet --depth 1 --branch "${{ matrix.hermes }}" https://github.com/NousResearch/hermes-agent "$RUNNER_TEMP/hermes"
+          uv venv --python 3.11 .venv
+          uv pip install --python .venv -e "$RUNNER_TEMP/hermes" pytest
+      - name: Tests
+        run: |
+          PY=.venv/bin/python; [ -x "$PY" ] || PY=.venv/Scripts/python.exe
+          "$PY" -m pytest -q -p no:cacheprovider tests
