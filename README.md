@@ -7,8 +7,8 @@ cualquier CLI que hable ACP.
 El modelo elige la ruta, y el subagente corre en ese proveedor y gasta su cuota. Si esa cuota se agota, el
 cambio a otro proveedor lo decides tú: OrqueHelx nunca lo hace automático.
 
-**Estado:** en desarrollo. Ya funciona la herramienta `delegar`. La pausa por cuota y la interfaz vienen
-después.
+**Estado:** en desarrollo. Ya funcionan `delegar` y el aviso de cuota agotada en subagentes. La pausa del
+agente principal hasta el reinicio y la interfaz vienen después.
 
 ## Requisitos
 
@@ -42,6 +42,26 @@ plugins:
 - `acp`: el comando de cualquier CLI que hable ACP. OrqueHelx lo registra como proveedor, sin plugin aparte.
 
 Si una ruta está mal escrita, Hermes muestra el error nombrando la ruta al cargar el plugin.
+
+## Cuando una suscripción se queda sin cuota
+
+Si un subagente falla porque su proveedor agotó la cuota, `delegar` le devuelve al modelo padre
+`estado: sin_cuota`, la hora de reinicio (o `null` si el proveedor no la informa: nunca se estima) y las
+otras rutas disponibles. Lo que hace el padre lo decide `politica`:
+
+```yaml
+    orquehelx:
+      settings:
+        politica: preguntar     # preguntar (por defecto) | padre_decide | esperar
+```
+
+- `preguntar`: el padre te avisa y te pregunta si pasar la tarea a otra ruta, nombrando el modelo de cada una.
+- `padre_decide`: el padre puede elegir otra ruta si su modelo sirve para la tarea, y te dice cuál eligió.
+- `esperar`: el padre te avisa y no hace nada más hasta tu próxima indicación.
+
+La cuota se da por agotada solo si el error lo dice sin ambigüedad (por ejemplo `RESOURCE_EXHAUSTED` de
+Antigravity) o si está medida (una ventana de Claude o Codex al 100 %). Un fallo cualquiera no se reporta
+como falta de cuota.
 
 ## Uso
 

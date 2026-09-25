@@ -20,7 +20,11 @@ _NOMBRE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 _CAMPOS = {"provider", "model", "acp"}
 
 
-class ErrorDeRuta(ValueError):
+class ErrorDeConfig(ValueError):
+    """Config del plugin inutilizable; el mensaje nombra la clave y que corregir."""
+
+
+class ErrorDeRuta(ErrorDeConfig):
     """Config de rutas inutilizable; el mensaje nombra la ruta y que corregir."""
 
 
