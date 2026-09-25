@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import time
 
-from . import cuota
+from . import comando, cuota
 from .proveedores import registrar_acp
 from .rutas import ErrorDeConfig, Ruta, cargar, credenciales
 
@@ -122,6 +122,9 @@ def registrar(ctx) -> None:
     definicion = esquema(rutas)
     ctx.register_tool("delegar", "orquehelx", definicion, handler, description=definicion["description"])
     ctx.register_hook("api_request_error", cuota.al_fallar)
+    ctx.register_command("ohx", lambda argumentos: comando.ejecutar(rutas, argumentos),
+                         description="Rutas de OrqueHelx y consumo medido de cada suscripcion",
+                         args_hint="rutas|cuota")
     # ponytail: la tabla inline recibe el agente en cualquier version de Hermes y el executor la consulta
     # antes que al registry. El handler del registry queda para quien despache sin tabla inline (y
     # recibe parent_agent desde Hermes con el PR #122961). Quitar esto cuando la version minima lo traiga.

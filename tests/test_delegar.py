@@ -97,11 +97,11 @@ def test_regresion_carga_en_frio_dentro_del_limite_de_hermes(hermes_home):
         "from hermes_cli.plugins import PluginManager\n"
         "m = PluginManager(); m.discover_and_load()\n"
         "p = [p for p in m.list_plugins() if p['name'] == 'orquehelx'][0]\n"
-        "print(p['enabled'], p['tools'], p['hooks'], p['error'])\n"
+        "print(p['enabled'], p['tools'], p['hooks'], p['commands'], p['error'])\n"
     )
     salida = subprocess.run([sys.executable, "-c", codigo], capture_output=True, text=True, timeout=120,
                             env={**__import__("os").environ, "HERMES_HOME": str(hermes_home)})
-    assert salida.stdout.strip().splitlines()[-1] == "True 1 1 None", salida.stdout + salida.stderr
+    assert salida.stdout.strip().splitlines()[-1] == "True 1 1 1 None", salida.stdout + salida.stderr
 
 
 def test_plugin_carga_en_el_plugin_manager_real(hermes_home):
@@ -133,6 +133,7 @@ def _ctx_falso(rutas_config):
         herramientas=herramientas,
         get_config=lambda clave, defecto=None: rutas_config if clave == "rutas" else defecto,
         register_hook=lambda nombre, fn: herramientas.update({"hook:" + nombre: fn}),
+        register_command=lambda nombre, fn, **_: herramientas.update({"comando:" + nombre: fn}),
         register_tool=lambda name, toolset, schema, handler, **_: herramientas.update(
             {name: {"toolset": toolset, "schema": schema, "handler": handler}}),
     )

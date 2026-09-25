@@ -64,15 +64,20 @@ def _aplica(etiqueta: str, modelo: str) -> bool:
     return not familias or any(f in modelo.lower() for f in familias)
 
 
+def medir(proveedor: str) -> list[Ventana] | None:
+    """Ventanas medidas del proveedor; None si no hay medidor. Los errores de medicion se propagan."""
+    medidor = next((m for prefijo, m in MEDIDORES.items() if proveedor.startswith(prefijo)), None)
+    return None if medidor is None else medidor()
+
+
 def _ventana_agotada(proveedor: str, modelo: str) -> tuple[bool | None, datetime | None]:
     """(agotada, reinicio) segun la medicion; (None, None) si no hay medidor o la medicion fallo."""
-    medir = next((m for prefijo, m in MEDIDORES.items() if proveedor.startswith(prefijo)), None)
-    if medir is None:
-        return None, None
     try:
-        ventanas = medir()
+        ventanas = medir(proveedor)
     except Exception as exc:  # red, token vencido, API cambiada: sin medicion no se afirma nada
         log.warning("orquehelx: no se pudo medir la cuota de %s: %s", proveedor, exc)
+        return None, None
+    if ventanas is None:
         return None, None
     agotadas = [r for etiqueta, usado, r in ventanas if usado is not None and usado >= 100 and _aplica(etiqueta, modelo)]
     if not agotadas:
