@@ -29,6 +29,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         hermes: [v2026.9.24, main]
+        include:
+          # main declara sus dependencias solo para Python >= 3.14 (runtime gestionado por su bootstrap).
+          - hermes: v2026.9.24
+            python: "3.11"
+          - hermes: main
+            python: "3.14"
     defaults:
       run:
         shell: bash
@@ -39,7 +45,7 @@ jobs:
         run: |
           git config --global core.longpaths true
           git clone --quiet --depth 1 --branch "${{ matrix.hermes }}" https://github.com/NousResearch/hermes-agent "$RUNNER_TEMP/hermes"
-          uv venv --python 3.11 .venv
+          uv venv --python "${{ matrix.python }}" .venv
           uv pip install --python .venv -e "$RUNNER_TEMP/hermes" pytest
       - name: Tests
         run: |
