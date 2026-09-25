@@ -63,6 +63,18 @@ La cuota se da por agotada solo si el error lo dice sin ambigüedad (por ejemplo
 Antigravity) o si está medida (una ventana de Claude o Codex al 100 %). Un fallo cualquiera no se reporta
 como falta de cuota.
 
+## Ver el consumo
+
+En una sesión de Hermes:
+
+```text
+/ohx rutas     rutas configuradas, con su proveedor y modelo
+/ohx cuota     consumo medido de cada ruta: ventanas, porcentaje y hora de reinicio
+```
+
+`/ohx cuota` mide al momento de pedirlo. Si un proveedor no informa consumo (hoy Antigravity y
+OpenCode), muestra "sin dato" en vez de un número estimado.
+
 ## Uso
 
 ```bash
