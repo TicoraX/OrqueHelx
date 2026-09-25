@@ -7,8 +7,8 @@ cualquier CLI que hable ACP.
 El modelo elige la ruta, y el subagente corre en ese proveedor y gasta su cuota. Si esa cuota se agota, el
 cambio a otro proveedor lo decides tú: OrqueHelx nunca lo hace automático.
 
-**Estado:** en desarrollo, rama `overhaul`. Ya funciona la herramienta `delegar`. La pausa por cuota y la
-interfaz vienen después.
+**Estado:** en desarrollo. Ya funciona la herramienta `delegar`. La pausa por cuota y la interfaz vienen
+después.
 
 ## Requisitos
 
@@ -19,7 +19,7 @@ interfaz vienen después.
 ## Instalación
 
 ```bash
-hermes plugins install TicoraX/orquester#orquehelx --enable
+hermes plugins install TicoraX/OrqueHelx#orquehelx --enable
 ```
 
 ## Rutas
