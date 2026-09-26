@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Chat, inicial, reducir } from "../src/chat";
+import { type Chat, inicial, principalDe, reducir } from "../src/chat";
 
 const pasos = (...acciones: Parameters<typeof reducir>[1][]): Chat =>
 	acciones.reduce(reducir, inicial);
@@ -170,5 +170,100 @@ describe("chat", () => {
 		]);
 		expect(c.actividad).toBe("delegando en opencode");
 		expect(reducir(c, { tipo: "nueva" })).toEqual(inicial);
+	});
+
+	const PAUSA = {
+		id: 7,
+		sesion: "20260926_190000_ab12",
+		proveedor: "claude-subscription-directsdk-experimental",
+		modelo: "claude-haiku-4-5",
+		reinicio: "2026-09-26T19:00:00+00:00",
+		estado: "pausado",
+		creado: 1790000000,
+	};
+
+	it("una pausa deja el chat estatico con la pausa a la vista", () => {
+		const c = pasos(
+			{ tipo: "enviado", texto: "hola" },
+			{
+				tipo: "evento",
+				evento: "message.complete",
+				payload: { text: "Usage limit reached", status: "error" },
+			},
+			{ tipo: "pausado", pausa: PAUSA },
+		);
+		expect(c.turno).toBe("pausado");
+		expect(c.pausa).toEqual(PAUSA);
+		expect(c.actividad).toBeNull();
+	});
+
+	it("reanudar o reenviar quita la pausa y espera la respuesta; cancelar libera el turno", () => {
+		const pausado = pasos(
+			{ tipo: "enviado", texto: "hola" },
+			{ tipo: "pausado", pausa: PAUSA },
+		);
+		expect(reducir(pausado, { tipo: "reanudando" })).toMatchObject({
+			turno: "esperando",
+			pausa: null,
+		});
+		expect(reducir(pausado, { tipo: "cancelada" })).toMatchObject({
+			turno: "libre",
+			pausa: null,
+		});
+	});
+
+	it("si otra pestania ya resolvio la pausa, se informa y el turno queda libre", () => {
+		const c = reducir(
+			pasos(
+				{ tipo: "enviado", texto: "hola" },
+				{
+					tipo: "evento",
+					evento: "message.complete",
+					payload: { text: "Usage limit", status: "error" },
+				},
+				{ tipo: "pausado", pausa: PAUSA },
+			),
+			{
+				tipo: "fallo",
+				mensaje: "ya se resolvió",
+			},
+		);
+		expect(c).toMatchObject({ turno: "libre", pausa: null });
+		expect(c.error?.mensaje).toBe("ya se resolvió");
+	});
+
+	it("retomar una sesion guardada carga su historial visible", () => {
+		const c = reducir(inicial, {
+			tipo: "historial",
+			mensajes: [
+				{ role: "user", text: "hola" },
+				{ role: "tool", text: "{}" },
+				{ role: "assistant", text: "" },
+				{ role: "assistant", text: "Usage limit reached" },
+			],
+		});
+		expect(c.mensajes).toEqual([
+			{ id: 1, rol: "usuario", texto: "hola", estado: "listo" },
+			{ id: 2, rol: "agente", texto: "Usage limit reached", estado: "listo" },
+		]);
+	});
+});
+
+describe("principal de la sesion", () => {
+	it("session.create perezoso no trae proveedor; session.info si (marcos reales del gateway)", () => {
+		expect(
+			principalDe({ model: "modelo-que-no-existe", lazy: true }),
+		).toBeNull();
+		expect(
+			principalDe({
+				model: "modelo-que-no-existe",
+				provider: "antigravity-subscription-directsdk",
+			}),
+		).toEqual({
+			proveedor: "antigravity-subscription-directsdk",
+			modelo: "modelo-que-no-existe",
+		});
+		expect(principalDe(null)).toBeNull();
+		expect(principalDe({ provider: "" })).toBeNull();
 	});
 });

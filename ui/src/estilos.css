@@ -450,6 +450,77 @@
 	overflow-wrap: anywhere;
 }
 
+/* Lamina de pausa (estiri): cabecera rotulada, asientos clave-valor y cierre de regla doble. */
+.ohx .lamina {
+	margin-block: 1rem;
+	border: 1px solid var(--rule-strong);
+	border-block-end: 3px double var(--rule-strong);
+	border-radius: var(--radius) var(--radius) 0 0;
+	background: var(--surface);
+}
+.ohx .lamina-k {
+	margin: 0;
+	padding: 0.5rem 1rem;
+	border-block-end: 1px solid var(--rule);
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+	font-weight: 500;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--fail);
+}
+.ohx .asientos {
+	margin: 0;
+	padding: 0 1rem;
+}
+.ohx .asientos > div {
+	display: grid;
+	grid-template-columns: 7rem minmax(0, 1fr);
+	gap: 1rem;
+	padding-block: 0.375rem;
+	border-block-end: 1px solid var(--rule);
+}
+.ohx .asientos dt {
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+	color: var(--ink-2);
+}
+.ohx .asientos dd {
+	margin: 0;
+	font-family: var(--font-mono);
+	font-size: 0.8125rem;
+	font-variant-numeric: tabular-nums;
+	color: var(--cifra);
+	overflow-wrap: anywhere;
+}
+.ohx .lamina-v {
+	margin: 0;
+	padding: 0.75rem 1rem 0;
+	font-size: 0.875rem;
+}
+.ohx .lamina-acciones {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.75rem 1rem 1rem;
+}
+.ohx .lamina-reenvio {
+	display: inline-flex;
+	gap: 0.25rem;
+}
+.ohx .lamina select {
+	min-height: 36px;
+	max-width: 14rem;
+	padding: 0 0.5rem;
+	border: 1px solid var(--rule-strong);
+	border-radius: var(--radius);
+	background: var(--ground);
+	color: var(--ink);
+	font: inherit;
+	font-size: 0.875rem;
+}
+
 .ohx-redactor {
 	display: grid;
 	gap: 0.5rem;

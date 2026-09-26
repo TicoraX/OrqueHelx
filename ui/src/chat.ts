@@ -16,9 +16,24 @@ export interface Mensaje {
 	estado: EstadoMensaje;
 }
 
+/** Pausa del agente principal por cuota, tal como la devuelve /api/plugins/orquehelx/pausas. */
+export interface Pausa {
+	id: number;
+	/** stored_session_id de Hermes: sobrevive a recargar la pagina. */
+	sesion: string;
+	proveedor: string;
+	modelo: string | null;
+	/** ISO del reinicio medido, o null si el proveedor no lo informa. */
+	reinicio: string | null;
+	estado: string;
+	creado: number;
+}
+
 export interface Chat {
 	mensajes: Mensaje[];
-	turno: "libre" | "esperando" | "respondiendo";
+	/** "pausado": sin cuota; el redactor queda quieto hasta reanudar, reenviar o cancelar (D2). */
+	turno: "libre" | "esperando" | "respondiendo" | "pausado";
+	pausa: Pausa | null;
 	/** Lo que el agente hace ahora ("pensando", "delegando en opencode"); null si nada. */
 	actividad: string | null;
 	/** Fallo: el mensaje y, si fue al enviar, el texto para reintentar sin volver a escribirlo. */
@@ -30,11 +45,16 @@ type Accion =
 	| { tipo: "enviado"; texto: string }
 	| { tipo: "evento"; evento: string; payload: unknown }
 	| { tipo: "fallo"; mensaje: string }
+	| { tipo: "pausado"; pausa: Pausa }
+	| { tipo: "reanudando" }
+	| { tipo: "cancelada" }
+	| { tipo: "historial"; mensajes: { role?: unknown; text?: unknown }[] }
 	| { tipo: "nueva" };
 
 export const inicial: Chat = {
 	mensajes: [],
 	turno: "libre",
+	pausa: null,
 	actividad: null,
 	error: null,
 	subagentes: vacio,
@@ -148,6 +168,7 @@ export function reducir(c: Chat, a: Accion): Chat {
 				return {
 					...c,
 					turno: "libre",
+					pausa: null,
 					actividad: null,
 					error: { mensaje: a.mensaje, texto: null },
 				};
@@ -155,12 +176,59 @@ export function reducir(c: Chat, a: Accion): Chat {
 			return {
 				...c,
 				turno: "libre",
+				pausa: null,
 				actividad: null,
 				mensajes: [...c.mensajes.slice(0, -1), { ...ultimo, estado: "error" }],
 				error: { mensaje: a.mensaje, texto: ultimo.texto },
 			};
 		}
+		case "pausado":
+			return { ...c, turno: "pausado", pausa: a.pausa, actividad: null };
+		case "reanudando":
+			return { ...c, turno: "esperando", pausa: null, error: null };
+		case "cancelada":
+			return { ...c, turno: "libre", pausa: null };
+		case "historial":
+			return { ...inicial, mensajes: desdeHistorial(a.mensajes) };
 		case "nueva":
 			return inicial;
 	}
+}
+
+const ROL: Record<string, Rol> = { user: "usuario", assistant: "agente" };
+
+/** Transcript de Hermes (session.resume) -> mensajes visibles: solo usuario y agente con texto. */
+function desdeHistorial(
+	filas: { role?: unknown; text?: unknown }[],
+): Mensaje[] {
+	const mensajes: Mensaje[] = [];
+	for (const f of filas) {
+		const rol = ROL[String(f.role)];
+		if (rol && typeof f.text === "string" && f.text) {
+			mensajes.push({
+				id: mensajes.length + 1,
+				rol,
+				texto: f.text,
+				estado: "listo",
+			});
+		}
+	}
+	return mensajes;
+}
+
+/** Proveedor y modelo del agente principal de la sesion. */
+export interface Principal {
+	proveedor: string;
+	modelo: string | null;
+}
+
+/** session.create perezoso (lazy) no trae provider hasta armar el agente; llega en session.info. */
+export function principalDe(
+	info: Record<string, unknown> | null | undefined,
+): Principal | null {
+	if (typeof info?.provider !== "string" || !info.provider) return null;
+	return {
+		proveedor: info.provider,
+		modelo: typeof info.model === "string" ? info.model : null,
+	};
 }
