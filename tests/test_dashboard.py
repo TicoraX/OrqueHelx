@@ -1,6 +1,6 @@
 import json
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -81,3 +81,42 @@ def test_estado_con_config_invalida_devuelve_el_error_sin_rutas(cliente, hermes_
     _config(hermes_home, "        rutas:\n          Mal: {provider: p}\n")
     datos = cliente.get("/api/plugins/orquehelx/estado").json()
     assert datos["rutas"] == [] and "Mal" in datos["error"]
+
+
+def _agotar(proveedor, reinicio):
+    cuota._vistos[proveedor] = cuota.Agotamiento(proveedor, "usage limit", reinicio, time.time())
+
+
+def test_pausar_solo_con_agotamiento_registrado(cliente, hermes_home):
+    cuerpo = {"sesion": "s1", "proveedor": "claude-subscription-directsdk-experimental", "modelo": "claude-haiku-4-5"}
+    assert cliente.post("/api/plugins/orquehelx/pausas", json=cuerpo).json() == {"pausa": None}
+    reinicio = datetime.now(timezone.utc) + timedelta(hours=2)
+    _agotar(cuerpo["proveedor"], reinicio)
+    pausa = cliente.post("/api/plugins/orquehelx/pausas", json=cuerpo).json()["pausa"]
+    assert pausa["estado"] == "pausado" and pausa["reinicio"] == reinicio.isoformat()
+    assert pausa["sesion"] == "s1" and pausa["modelo"] == "claude-haiku-4-5"
+    assert cliente.get("/api/plugins/orquehelx/pausas").json() == {"pausas": [pausa]}
+    assert (hermes_home / "orquehelx" / "pausas.db").is_file()
+
+
+def test_un_agotamiento_ya_vencido_no_pausa(cliente, hermes_home):
+    _agotar("claude", datetime.now(timezone.utc) - timedelta(minutes=1))
+    respuesta = cliente.post("/api/plugins/orquehelx/pausas", json={"sesion": "s1", "proveedor": "claude"})
+    assert respuesta.json() == {"pausa": None}
+
+
+def test_resolver_una_pausa_es_atomico(cliente, hermes_home):
+    _agotar("claude", None)
+    pausa = cliente.post("/api/plugins/orquehelx/pausas", json={"sesion": "s1", "proveedor": "claude"}).json()["pausa"]
+    assert pausa["reinicio"] is None
+    url = f"/api/plugins/orquehelx/pausas/{pausa['id']}"
+    assert cliente.post(f"{url}/reenviar", json={"destino": "agy"}).json() == {"ok": True}
+    perdedor = cliente.post(f"{url}/reanudar", json={})
+    assert perdedor.status_code == 409 and perdedor.json()["detail"] == "ya se resolvió"
+    assert cliente.get("/api/plugins/orquehelx/pausas").json() == {"pausas": []}
+
+
+def test_pausas_valida_la_entrada(cliente, hermes_home):
+    assert cliente.post("/api/plugins/orquehelx/pausas", json={"sesion": "", "proveedor": "x"}).status_code == 422
+    assert cliente.post("/api/plugins/orquehelx/pausas", json={"sesion": "s" * 300, "proveedor": "x"}).status_code == 422
+    assert cliente.post("/api/plugins/orquehelx/pausas/1/borrar", json={}).status_code == 422
