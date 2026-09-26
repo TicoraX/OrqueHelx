@@ -75,6 +75,21 @@ La cuota se da por agotada solo si el error lo dice sin ambigüedad (por ejemplo
 Antigravity) o si está medida (una ventana de Claude o Codex al 100 %). Un fallo cualquiera no se reporta
 como falta de cuota.
 
+### Si se agota el agente principal
+
+En la pestaña OrqueHelx, la conversación queda en pausa: el turno no se pierde y no se cambia de modelo por
+tu cuenta. La tarjeta de pausa muestra el proveedor, el modelo y la hora de reinicio, con tres salidas:
+
+- **Reanudar**: el mismo turno otra vez con el mismo modelo. Si el proveedor informa la hora de reinicio,
+  se reanuda solo a esa hora mientras la pestaña esté abierta.
+- **Reenviar**: el mismo turno en otra ruta que elijas (solo rutas con `model`, de otro proveedor). La
+  conversación sigue con ese modelo.
+- **Cancelar**: deja el turno sin responder y libera el chat.
+
+La pausa se guarda en `~/.hermes/orquehelx/pausas.db`: si cierras la pestaña o apagas el equipo, vuelve
+con su conversación al abrir OrqueHelx. Cada pausa se resuelve una sola vez, aunque tengas dos pestañas
+abiertas.
+
 ## Ver el consumo
 
 En una sesión de Hermes:
