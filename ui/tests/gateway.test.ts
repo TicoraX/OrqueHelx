@@ -13,8 +13,9 @@ class SocketFalso {
 	send(dato: string) {
 		this.enviados.push(JSON.parse(dato));
 	}
+	/** Como el real: onclose llega despues, no dentro de close(). */
 	close() {
-		this.onclose?.();
+		queueMicrotask(() => this.onclose?.());
 	}
 	servidor(marco: unknown) {
 		this.onmessage?.({ data: JSON.stringify(marco) });
@@ -97,5 +98,14 @@ describe("gateway", () => {
 		await expect(nuevo().rpc("session.create", {})).rejects.toThrow(
 			"sin conexión",
 		);
+	});
+
+	it("reconectar rechaza los pedidos del socket viejo", async () => {
+		const g = nuevo();
+		await g.conectar();
+		const pendiente = g.rpc("prompt.submit", {});
+		const rechazo = expect(pendiente).rejects.toThrow("conexión");
+		g.reconectar();
+		await rechazo;
 	});
 });

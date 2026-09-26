@@ -19,8 +19,8 @@ export interface Chat {
 	turno: "libre" | "esperando" | "respondiendo";
 	/** Lo que el agente hace ahora ("pensando", "delegando en opencode"); null si nada. */
 	actividad: string | null;
-	/** Fallo al enviar: el mensaje y el texto, para reintentar sin volver a escribirlo. */
-	error: { mensaje: string; texto: string } | null;
+	/** Fallo: el mensaje y, si fue al enviar, el texto para reintentar sin volver a escribirlo. */
+	error: { mensaje: string; texto: string | null } | null;
 }
 
 export type Accion =
@@ -65,6 +65,11 @@ function actividadDeHerramienta(p: Payload): string {
 		: `usando ${nombre}`;
 }
 
+const FINAL: Record<string, EstadoMensaje> = {
+	interrupted: "interrumpido",
+	error: "error",
+};
+
 function alEvento(c: Chat, evento: string, p: Payload): Chat {
 	switch (evento) {
 		case "message.start":
@@ -91,12 +96,7 @@ function alEvento(c: Chat, evento: string, p: Payload): Chat {
 		case "tool.complete":
 			return { ...c, actividad: null };
 		case "message.complete": {
-			const estado: EstadoMensaje =
-				p?.status === "interrupted"
-					? "interrumpido"
-					: p?.status === "error"
-						? "error"
-						: "listo";
+			const estado = FINAL[String(p?.status)] ?? "listo";
 			const final = typeof p?.text === "string" ? p.text : "";
 			return {
 				...c,
@@ -134,20 +134,23 @@ export function reducir(c: Chat, a: Accion): Chat {
 		case "evento":
 			return alEvento(c, a.evento, a.payload as Payload);
 		case "fallo": {
+			// Solo un envio fallido deja el ultimo mensaje del usuario; si ya habia respuesta (fallo al detener
+			// o conexion caida), no hay nada que reenviar.
 			const ultimo = c.mensajes.at(-1);
-			const mensajes =
-				ultimo?.rol === "usuario"
-					? [
-							...c.mensajes.slice(0, -1),
-							{ ...ultimo, estado: "error" as const },
-						]
-					: c.mensajes;
+			if (ultimo?.rol !== "usuario") {
+				return {
+					...c,
+					turno: "libre",
+					actividad: null,
+					error: { mensaje: a.mensaje, texto: null },
+				};
+			}
 			return {
 				...c,
 				turno: "libre",
 				actividad: null,
-				mensajes,
-				error: { mensaje: a.mensaje, texto: ultimo?.texto ?? "" },
+				mensajes: [...c.mensajes.slice(0, -1), { ...ultimo, estado: "error" }],
+				error: { mensaje: a.mensaje, texto: ultimo.texto },
 			};
 		}
 		case "nueva":

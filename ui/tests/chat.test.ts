@@ -136,4 +136,14 @@ describe("chat", () => {
 			inicial,
 		);
 	});
+
+	it("un fallo con la respuesta a medias no ofrece reenviar el texto del agente", () => {
+		const c = pasos(
+			{ tipo: "enviado", texto: "hola" },
+			{ tipo: "evento", evento: "message.delta", payload: { text: "Ho" } },
+			{ tipo: "fallo", mensaje: "gateway sin conexión" },
+		);
+		expect(c.error).toEqual({ mensaje: "gateway sin conexión", texto: null });
+		expect(c.mensajes[0].estado).toBe("listo");
+	});
 });

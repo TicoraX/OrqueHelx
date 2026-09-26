@@ -55,18 +55,22 @@ export class Gateway {
 		this.socket = socket;
 		socket.onmessage = (ev) => this.recibir(String(ev.data));
 		socket.onclose = () => {
-			if (this.socket !== socket) return;
-			this.socket = null;
-			for (const p of this.pendientes.values())
-				p.rechazar(new Error("se perdió la conexión con el gateway"));
-			this.pendientes.clear();
-			this.cambiar("sin_conexion");
+			if (this.socket === socket) this.soltar();
 		};
+	}
+
+	/** Olvida el socket actual y rechaza sus pedidos: sus respuestas ya no van a llegar. */
+	private soltar(): void {
+		this.socket = null;
+		for (const p of this.pendientes.values())
+			p.rechazar(new Error("se perdió la conexión con el gateway"));
+		this.pendientes.clear();
+		this.cambiar("sin_conexion");
 	}
 
 	reconectar(): void {
 		this.socket?.close();
-		this.socket = null;
+		this.soltar();
 		void this.conectar();
 	}
 

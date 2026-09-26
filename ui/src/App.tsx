@@ -250,15 +250,22 @@ function Conversacion({ conectado }: { conectado: boolean }) {
 					)}
 					{error ? (
 						<div className="aviso" data-tono="error" role="alert">
-							<p>No se pudo enviar: {error.mensaje}</p>
-							<button
-								type="button"
-								className="btn"
-								onClick={() => vivo.enviar(error.texto)}
-								disabled={!conectado}
-							>
-								Reintentar
-							</button>
+							<p>
+								{error.texto === null
+									? "Falló la conexión"
+									: "No se pudo enviar"}
+								: {error.mensaje}
+							</p>
+							{error.texto === null ? null : (
+								<button
+									type="button"
+									className="btn"
+									onClick={() => vivo.enviar(error.texto ?? "")}
+									disabled={!conectado}
+								>
+									Reintentar
+								</button>
+							)}
 						</div>
 					) : null}
 					<div ref={fin} />
