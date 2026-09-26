@@ -1,6 +1,6 @@
 // Pantalla principal: rutas y cuotas | conversacion | subagentes (contrato de direccion, forma "tres columnas").
 import React, { useEffect, useRef, useState } from "react";
-import type { Mensaje } from "./chat";
+import type { Mensaje, Pausa } from "./chat";
 import {
 	type ChatVivo,
 	type EstadoCarga,
@@ -8,7 +8,7 @@ import {
 	useConexion,
 	useEstado,
 } from "./datos";
-import { type Resumen, resumen } from "./estado";
+import { hora, type Resumen, type RutaEstado, resumen } from "./estado";
 import type { EstadoConexion } from "./gateway";
 import { type Arbol, enOrden, ficha } from "./subagentes";
 
@@ -175,9 +175,18 @@ function Entrada({ m }: { m: Mensaje }) {
 
 function Redactor({ vivo, conectado }: { vivo: ChatVivo; conectado: boolean }) {
 	const [texto, setTexto] = useState("");
-	const ocupado = vivo.chat.turno !== "libre";
+	const pausado = vivo.chat.turno === "pausado";
+	const ocupado =
+		vivo.chat.turno === "esperando" || vivo.chat.turno === "respondiendo";
+	const quieto = pausado || !conectado;
+	let indicacion =
+		"Escribe al agente. Enter envía, Shift+Enter hace un salto de línea.";
+	if (pausado)
+		indicacion =
+			"En pausa por cuota: reanuda, reenvía o cancela arriba para seguir.";
+	if (!conectado) indicacion = "Sin conexión con Hermes.";
 	const enviar = () => {
-		if (!texto.trim() || ocupado || !conectado) return;
+		if (!texto.trim() || ocupado || quieto) return;
 		vivo.enviar(texto);
 		setTexto("");
 	};
@@ -196,12 +205,8 @@ function Redactor({ vivo, conectado }: { vivo: ChatVivo; conectado: boolean }) {
 				id="ohx-mensaje"
 				rows={3}
 				value={texto}
-				placeholder={
-					conectado
-						? "Escribe al agente. Enter envía, Shift+Enter hace un salto de línea."
-						: "Sin conexión con Hermes."
-				}
-				disabled={!conectado}
+				placeholder={indicacion}
+				disabled={quieto}
 				onChange={(e) => setTexto(e.target.value)}
 				onKeyDown={(e) => {
 					if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -222,7 +227,7 @@ function Redactor({ vivo, conectado }: { vivo: ChatVivo; conectado: boolean }) {
 					<button
 						type="submit"
 						className="btn btn-accion"
-						disabled={!texto.trim() || !conectado}
+						disabled={!texto.trim() || quieto}
 					>
 						Enviar
 					</button>
@@ -232,20 +237,109 @@ function Redactor({ vivo, conectado }: { vivo: ChatVivo; conectado: boolean }) {
 	);
 }
 
-function Conversacion({
+/** Rutas a las que el principal puede pasar: con modelo (config.set lo exige) y de otro proveedor. */
+const destinos = (rutas: RutaEstado[], pausa: Pausa) =>
+	rutas.filter((r) => r.modelo && r.proveedor !== pausa.proveedor);
+
+/** Lamina de pausa (estiri): que se agoto, cuando vuelve y las tres salidas. Nunca cambia sola de ruta. */
+function TarjetaPausa({
+	pausa,
+	rutas,
 	vivo,
 	conectado,
 }: {
+	pausa: Pausa;
+	rutas: RutaEstado[];
 	vivo: ChatVivo;
 	conectado: boolean;
 }) {
-	const { mensajes, error } = vivo.chat;
+	const opciones = destinos(rutas, pausa);
+	const [destino, setDestino] = useState("");
+	const elegida = opciones.find((r) => r.nombre === destino) ?? opciones[0];
+	const vuelve = hora(pausa.reinicio);
+	return (
+		<section className="lamina" aria-labelledby="ohx-pausa">
+			<h3 className="lamina-k" id="ohx-pausa">
+				En pausa · sin cuota
+			</h3>
+			<dl className="asientos">
+				<div>
+					<dt>proveedor</dt>
+					<dd>{pausa.proveedor}</dd>
+				</div>
+				<div>
+					<dt>modelo</dt>
+					<dd>{pausa.modelo ?? "sin dato"}</dd>
+				</div>
+				<div>
+					<dt>reinicia</dt>
+					<dd>{vuelve}</dd>
+				</div>
+			</dl>
+			<p className="lamina-v">
+				{pausa.reinicio
+					? `El turno se reanuda solo a las ${vuelve}, con el mismo modelo.`
+					: "El proveedor no informa cuándo vuelve la cuota. Reanuda cuando quieras o pasa el turno a otra ruta."}
+			</p>
+			<div className="lamina-acciones">
+				<button
+					type="button"
+					className="btn btn-accion"
+					onClick={vivo.reanudar}
+					disabled={!conectado}
+				>
+					Reanudar ahora
+				</button>
+				{elegida ? (
+					<div className="lamina-reenvio">
+						<label className="sr" htmlFor="ohx-destino">
+							Ruta para reenviar el turno
+						</label>
+						<select
+							id="ohx-destino"
+							value={elegida.nombre}
+							onChange={(e) => setDestino(e.target.value)}
+						>
+							{opciones.map((r) => (
+								<option key={r.nombre} value={r.nombre}>
+									{r.nombre} · {r.modelo}
+								</option>
+							))}
+						</select>
+						<button
+							type="button"
+							className="btn"
+							onClick={() => vivo.reenviar(elegida)}
+							disabled={!conectado}
+						>
+							Reenviar
+						</button>
+					</div>
+				) : null}
+				<button type="button" className="btn" onClick={vivo.cancelar}>
+					Cancelar
+				</button>
+			</div>
+		</section>
+	);
+}
+
+function Conversacion({
+	vivo,
+	rutas,
+	conectado,
+}: {
+	vivo: ChatVivo;
+	rutas: RutaEstado[];
+	conectado: boolean;
+}) {
+	const { mensajes, error, pausa } = vivo.chat;
 	const fin = useRef<HTMLDivElement>(null);
 	const ultimo = mensajes.at(-1);
-	// Sigue la respuesta mientras llega; el texto de la ultima es la dependencia que cambia con cada delta.
+	// Sigue la respuesta mientras llega (el texto de la ultima cambia con cada delta) y la pausa al aparecer.
 	useEffect(() => {
 		fin.current?.scrollIntoView({ block: "end" });
-	}, [mensajes.length, ultimo?.texto]);
+	}, [mensajes.length, ultimo?.texto, pausa]);
 	return (
 		<main className="ohx-columna ohx-chat">
 			<div className="ohx-rotulo">
@@ -275,13 +369,20 @@ function Conversacion({
 					) : (
 						mensajes.map((m) => <Entrada key={m.id} m={m} />)
 					)}
+					{vivo.chat.pausa ? (
+						<TarjetaPausa
+							pausa={vivo.chat.pausa}
+							rutas={rutas}
+							vivo={vivo}
+							conectado={conectado}
+						/>
+					) : null}
 					{error ? (
 						<div className="aviso" data-tono="error" role="alert">
 							<p>
 								{error.texto === null
-									? "Falló la conexión"
-									: "No se pudo enviar"}
-								: {error.mensaje}
+									? error.mensaje
+									: `No se pudo enviar: ${error.mensaje}`}
 							</p>
 							{error.texto === null ? null : (
 								<button
@@ -340,7 +441,11 @@ export function App() {
 			<Cabecera conexion={conexion} reintentar={reintentar} />
 			<div className="ohx-cuerpo">
 				<Rutas estado={estado} />
-				<Conversacion vivo={vivo} conectado={conexion === "conectado"} />
+				<Conversacion
+					vivo={vivo}
+					rutas={estado.datos?.rutas ?? []}
+					conectado={conexion === "conectado"}
+				/>
 				<Subagentes arbol={vivo.chat.subagentes} />
 			</div>
 		</div>
