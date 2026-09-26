@@ -15,7 +15,8 @@ from datetime import datetime
 from pathlib import Path
 
 ACCIONES = {"reanudar": "reanudado", "reenviar": "reenviado", "cancelar": "cancelado"}
-_COLUMNAS = "id, sesion, proveedor, modelo, reinicio, estado, creado"
+_CAMPOS = ("id", "sesion", "proveedor", "modelo", "reinicio", "estado", "creado")
+_COLUMNAS = ", ".join(_CAMPOS)
 
 _ESQUEMA = """
 CREATE TABLE IF NOT EXISTS pausas (
@@ -42,7 +43,7 @@ def abrir(ruta: Path) -> sqlite3.Connection:
 
 
 def _dict(fila) -> dict:
-    return dict(zip(("id", "sesion", "proveedor", "modelo", "reinicio", "estado", "creado"), fila))
+    return dict(zip(_CAMPOS, fila))
 
 
 def crear(con: sqlite3.Connection, sesion: str, proveedor: str, modelo: str | None,
@@ -53,10 +54,17 @@ def crear(con: sqlite3.Connection, sesion: str, proveedor: str, modelo: str | No
             con.execute("INSERT INTO pausas (sesion, proveedor, modelo, reinicio, creado) VALUES (?, ?, ?, ?, ?)",
                         (sesion, proveedor, modelo, reinicio.isoformat() if reinicio else None, time.time()))
     except sqlite3.IntegrityError:
-        pass
+        # Duplicado del indice "una pendiente por sesion": vale la existente. Cualquier otro conflicto sube.
+        if (existente := _pendiente(con, sesion)) is None:
+            raise
+        return existente
+    return _pendiente(con, sesion)
+
+
+def _pendiente(con: sqlite3.Connection, sesion: str) -> dict | None:
     fila = con.execute(f"SELECT {_COLUMNAS} FROM pausas WHERE sesion = ? AND estado = 'pausado'",
                        (sesion,)).fetchone()
-    return _dict(fila)
+    return _dict(fila) if fila else None
 
 
 def pendientes(con: sqlite3.Connection) -> list[dict]:

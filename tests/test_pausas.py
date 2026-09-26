@@ -77,3 +77,8 @@ def test_una_sesion_resuelta_puede_volver_a_pausarse(con):
     pausas.resolver(con, p["id"], "reanudar")
     q = pausas.crear(con, "sesion-1", "claude", None, None)
     assert q["id"] != p["id"] and q["estado"] == "pausado"
+
+
+def test_un_error_de_integridad_que_no_es_duplicado_no_se_traga(con):
+    with pytest.raises(pausas.sqlite3.IntegrityError):
+        pausas.crear(con, "sesion-1", None, None, None)
