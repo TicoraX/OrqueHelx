@@ -59,6 +59,7 @@ def test_registrar_agrega_el_comando_ohx():
     ctx = SimpleNamespace(
         get_config=lambda clave, defecto=None: {"rutas": {"claude": {"provider": "p"}}}.get(clave, defecto),
         register_tool=lambda *_, **__: None, register_hook=lambda *_, **__: None,
+        register_system_prompt_section=lambda *_, **__: None,
         register_command=lambda nombre, fn, **_: comandos.update({nombre: fn}),
     )
     delegar.registrar(ctx)

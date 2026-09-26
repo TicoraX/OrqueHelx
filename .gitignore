@@ -6,3 +6,7 @@ __pycache__/
 node_modules/
 dist/
 .venv/
+PRODUCT.md
+DESIGN.md
+.impeccable/
+design-system/

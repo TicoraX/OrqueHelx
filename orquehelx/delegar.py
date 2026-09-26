@@ -30,7 +30,7 @@ _BLOQUEO = "_orquehelx_turno_sin_cuota"
 
 
 def esquema(rutas: dict[str, Ruta]) -> dict:
-    opciones = "; ".join(f"{r.nombre} ({r.modelo or r.proveedor})" for r in rutas.values())
+    opciones = _opciones(rutas)
     return {
         "name": "delegar",
         "description": (
@@ -104,6 +104,35 @@ def manejar(rutas: dict[str, Ruta], args: dict, parent_agent, politica: str = "p
     return _sin_cuota(rutas, ruta, ag, politica)
 
 
+# Acciones de control de delegate_task: operan sobre subagentes ya lanzados (tambien los de delegar).
+_CONTROL = {"list", "steer", "stop"}
+
+
+def _opciones(rutas: dict[str, Ruta]) -> str:
+    return ", ".join(f"{r.nombre} ({r.modelo or r.proveedor})" for r in rutas.values())
+
+
+def redirigir(rutas: dict[str, Ruta], tool_name: str = "", args: dict | None = None, **_) -> dict | None:
+    """Hook ``pre_tool_call``: el delegate_task nativo corre el hijo en el proveedor del padre, sin rutas
+    ni politica de cuota. Lanzar subagentes pasa por ``delegar``; las acciones de control siguen."""
+    if tool_name != "delegate_task":
+        return None
+    accion = str((args or {}).get("action") or "spawn").strip().lower()
+    if accion in _CONTROL:
+        return None
+    return {"action": "block", "message": (
+        "Con OrqueHelx los subagentes se lanzan con la herramienta delegar(ruta, objetivo, contexto), que "
+        f"elige la suscripcion donde corre cada uno. Rutas: {_opciones(rutas)}. Vuelve a pedirlo con delegar.")}
+
+
+def seccion_prompt(rutas: dict[str, Ruta]) -> str:
+    return (
+        "Subagentes (OrqueHelx): para delegar trabajo usa la herramienta delegar(ruta, objetivo, contexto), "
+        "no delegate_task. Cada ruta corre en otra suscripcion con su propia cuota; elige la que convenga a "
+        f"la tarea. Rutas: {_opciones(rutas)}. Si una ruta responde sin_cuota, sigue su instruccion."
+    )
+
+
 def registrar(ctx) -> None:
     # No importar model_tools aca: su import descubre plugins y, dentro del loader de plugins,
     # se traba contra su lock hasta el timeout de carga (10 s) y Hermes descarta el plugin.
@@ -122,6 +151,8 @@ def registrar(ctx) -> None:
     definicion = esquema(rutas)
     ctx.register_tool("delegar", "orquehelx", definicion, handler, description=definicion["description"])
     ctx.register_hook("api_request_error", cuota.al_fallar)
+    ctx.register_hook("pre_tool_call", lambda **kw: redirigir(rutas, **kw))
+    ctx.register_system_prompt_section("orquehelx.rutas", seccion_prompt(rutas))
     ctx.register_command("ohx", lambda argumentos: comando.ejecutar(rutas, argumentos),
                          description="Rutas de OrqueHelx y consumo medido de cada suscripcion",
                          args_hint="rutas|cuota")

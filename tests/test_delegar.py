@@ -101,7 +101,7 @@ def test_regresion_carga_en_frio_dentro_del_limite_de_hermes(hermes_home):
     )
     salida = subprocess.run([sys.executable, "-c", codigo], capture_output=True, text=True, timeout=120,
                             env={**__import__("os").environ, "HERMES_HOME": str(hermes_home)})
-    assert salida.stdout.strip().splitlines()[-1] == "True 1 1 1 None", salida.stdout + salida.stderr
+    assert salida.stdout.strip().splitlines()[-1] == "True 1 2 1 None", salida.stdout + salida.stderr
 
 
 def test_plugin_carga_en_el_plugin_manager_real(hermes_home):
@@ -134,6 +134,7 @@ def _ctx_falso(rutas_config):
         get_config=lambda clave, defecto=None: rutas_config if clave == "rutas" else defecto,
         register_hook=lambda nombre, fn: herramientas.update({"hook:" + nombre: fn}),
         register_command=lambda nombre, fn, **_: herramientas.update({"comando:" + nombre: fn}),
+        register_system_prompt_section=lambda id, contenido, **_: herramientas.update({"seccion:" + id: contenido}),
         register_tool=lambda name, toolset, schema, handler, **_: herramientas.update(
             {name: {"toolset": toolset, "schema": schema, "handler": handler}}),
     )
