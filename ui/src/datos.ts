@@ -205,11 +205,17 @@ export function useChat(): ChatVivo {
 				const ultima = pausas.at(-1);
 				if (!vigente || !ultima) return;
 				await conectado();
-				await retomar(ultima.sesion).catch((e: unknown) =>
+				if (!vigente) return;
+				// Sin sesion no hay a donde reanudar: la pausa sigue pendiente en SQLite y vuelve en la proxima
+				// carga, en vez de mostrar una tarjeta cuyo reclamo la gastaria sin reintentar nada.
+				try {
+					await retomar(ultima.sesion);
+				} catch (e) {
 					fallo(
-						`no se pudo retomar la sesión en pausa: ${e instanceof Error ? e.message : String(e)}`,
-					),
-				);
+						`Hay un turno en pausa, pero no se pudo retomar su sesión: ${e instanceof Error ? e.message : String(e)}. Recarga la página para intentarlo de nuevo.`,
+					);
+					return;
+				}
 				if (vigente) despachar({ tipo: "pausado", pausa: ultima });
 			})
 			.catch(fallo);
