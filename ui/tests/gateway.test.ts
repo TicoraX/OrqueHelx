@@ -4,13 +4,17 @@ import { Gateway } from "../src/gateway";
 /** WebSocket falso: guarda lo enviado y deja emitir marcos del servidor. */
 class SocketFalso {
 	static ultimo: SocketFalso;
+	static creados = 0;
+	falla = false;
 	enviados: unknown[] = [];
 	onmessage: ((ev: { data: string }) => void) | null = null;
 	onclose: (() => void) | null = null;
 	constructor(public url: string) {
 		SocketFalso.ultimo = this;
+		SocketFalso.creados += 1;
 	}
 	send(dato: string) {
+		if (this.falla) throw new Error("InvalidStateError");
 		this.enviados.push(JSON.parse(dato));
 	}
 	/** Como el real: onclose llega despues, no dentro de close(). */
@@ -107,5 +111,26 @@ describe("gateway", () => {
 		const rechazo = expect(pendiente).rejects.toThrow("conexión");
 		g.reconectar();
 		await rechazo;
+	});
+
+	it("dos conectar a la vez abren un solo socket", async () => {
+		const g = nuevo();
+		const antes = SocketFalso.creados;
+		await Promise.all([g.conectar(), g.conectar()]);
+		expect(SocketFalso.creados - antes).toBe(1);
+	});
+
+	it("si send falla, rpc rechaza y no deja el pedido colgado", async () => {
+		const g = nuevo();
+		await g.conectar();
+		SocketFalso.ultimo.falla = true;
+		await expect(g.rpc("session.create", {})).rejects.toThrow(
+			"InvalidStateError",
+		);
+		SocketFalso.ultimo.falla = false;
+		const r = g.rpc("session.create", {});
+		const id = (SocketFalso.ultimo.enviados.at(-1) as { id: number }).id;
+		SocketFalso.ultimo.servidor({ jsonrpc: "2.0", id, result: 1 });
+		await expect(r).resolves.toBe(1);
 	});
 });

@@ -16,6 +16,8 @@ export class Gateway {
 	private oyentesEvento = new Set<OyenteEvento>();
 	private oyentesEstado = new Set<() => void>();
 	private estadoActual: EstadoConexion = "sin_conexion";
+	/** Solo el ultimo conectar() en curso abre socket: uno viejo que vuelve del await se descarta. */
+	private intento = 0;
 
 	constructor(
 		private urlDelGateway: () => Promise<string>,
@@ -42,15 +44,18 @@ export class Gateway {
 
 	async conectar(): Promise<void> {
 		if (this.socket) return;
+		this.intento += 1;
+		const intento = this.intento;
 		this.cambiar("conectando");
 		let url: string;
 		try {
 			url = await this.urlDelGateway();
 		} catch (e) {
 			console.warn("orquehelx: no se pudo armar la URL del gateway", e);
-			this.cambiar("sin_conexion");
+			if (intento === this.intento) this.cambiar("sin_conexion");
 			return;
 		}
+		if (intento !== this.intento) return;
 		const socket = this.abrir(url);
 		this.socket = socket;
 		socket.onmessage = (ev) => this.recibir(String(ev.data));
@@ -122,9 +127,14 @@ export class Gateway {
 				resolver: resolver as (r: unknown) => void,
 				rechazar,
 			});
-			socket.send(
-				JSON.stringify({ jsonrpc: "2.0", id, method: metodo, params }),
-			);
+			try {
+				socket.send(
+					JSON.stringify({ jsonrpc: "2.0", id, method: metodo, params }),
+				);
+			} catch (e) {
+				this.pendientes.delete(id);
+				throw e;
+			}
 		});
 	}
 }
