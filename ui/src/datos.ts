@@ -1,9 +1,21 @@
-// Datos de la pantalla: estado de las rutas (backend del plugin) y conexion con el gateway de Hermes.
-import { useCallback, useEffect, useState } from "react";
+// Datos de la pantalla: estado de las rutas (backend del plugin), conexion con el gateway y conversacion.
+import {
+	useCallback,
+	useEffect,
+	useReducer,
+	useRef,
+	useState,
+	useSyncExternalStore,
+} from "react";
+import { type Chat, inicial, reducir } from "./chat";
 import type { EstadoRutas } from "./estado";
+import { type EstadoConexion, Gateway } from "./gateway";
 import { sdk } from "./sdk";
 
 const RUTA_ESTADO = "/api/plugins/orquehelx/estado";
+
+/** Una sola conexion por carga de la pagina; la cabecera y el chat la comparten. */
+const gateway = new Gateway(() => sdk().buildWsUrl("/api/ws"));
 
 export interface EstadoCarga {
 	datos: EstadoRutas | null;
@@ -44,47 +56,90 @@ export function useEstado(): EstadoCarga {
 	return { datos, cargando, error, refrescar };
 }
 
-export type EstadoConexion = "conectando" | "conectado" | "sin_conexion";
-
-/** Conexion con /api/ws. "conectado" solo tras gateway.ready, no al abrir el socket. */
+/** Estado de la conexion con /api/ws. "conectado" solo tras gateway.ready. */
 export function useConexion(): {
 	estado: EstadoConexion;
 	reintentar: () => void;
 } {
-	const [estado, setEstado] = useState<EstadoConexion>("conectando");
-	const [intento, setIntento] = useState(0);
-
+	const estado = useSyncExternalStore(gateway.alEstado, gateway.estado);
 	useEffect(() => {
-		let socket: WebSocket | null = null;
-		let vigente = true;
-		setEstado("conectando");
-		sdk()
-			.buildWsUrl("/api/ws")
-			.then((url) => {
-				if (!vigente) return;
-				socket = new WebSocket(url);
-				socket.onmessage = (ev) => {
-					let tipo: unknown;
-					try {
-						tipo = JSON.parse(String(ev.data))?.params?.type;
-					} catch (e) {
-						console.warn(
-							"orquehelx: el gateway mando un marco que no es JSON",
-							e,
-						);
-						return;
-					}
-					if (tipo === "gateway.ready") setEstado("conectado");
-				};
-				socket.onclose = () => vigente && setEstado("sin_conexion");
-			})
-			.catch(() => vigente && setEstado("sin_conexion"));
-		return () => {
-			vigente = false;
-			socket?.close();
-		};
-	}, [intento]);
-
-	const reintentar = useCallback(() => setIntento((n) => n + 1), []);
+		void gateway.conectar();
+	}, []);
+	const reintentar = useCallback(() => gateway.reconectar(), []);
 	return { estado, reintentar };
+}
+
+export interface ChatVivo {
+	chat: Chat;
+	enviar: (texto: string) => void;
+	detener: () => void;
+	nueva: () => void;
+}
+
+/** La conversacion con el agente principal. La sesion de Hermes se crea con el primer mensaje. */
+export function useChat(): ChatVivo {
+	const [chat, despachar] = useReducer(reducir, inicial);
+	// La sesion como promesa compartida: enviar y detener esperan la misma creacion, y detener pedido
+	// mientras se crea se manda despues del prompt (el socket conserva el orden).
+	const sesion = useRef<Promise<string> | null>(null);
+	const idSesion = useRef<string | null>(null);
+
+	useEffect(
+		() =>
+			gateway.alEvento((tipo, sid, payload) => {
+				if (sid && sid === idSesion.current)
+					despachar({ tipo: "evento", evento: tipo, payload });
+			}),
+		[],
+	);
+
+	const fallo = useCallback(
+		(e: unknown) =>
+			despachar({
+				tipo: "fallo",
+				mensaje: e instanceof Error ? e.message : String(e),
+			}),
+		[],
+	);
+
+	const enviar = useCallback(
+		(texto: string) => {
+			const limpio = texto.trim();
+			if (!limpio) return;
+			despachar({ tipo: "enviado", texto: limpio });
+			if (!sesion.current) {
+				const creando = gateway
+					.rpc<{ session_id: string }>("session.create", {})
+					.then((r) => {
+						idSesion.current = r.session_id;
+						return r.session_id;
+					});
+				sesion.current = creando;
+				// Si la creacion falla, el reintento crea otra.
+				creando.catch(() => {
+					if (sesion.current === creando) sesion.current = null;
+				});
+			}
+			sesion.current
+				.then((id) =>
+					gateway.rpc("prompt.submit", { session_id: id, text: limpio }),
+				)
+				.catch(fallo);
+		},
+		[fallo],
+	);
+
+	const detener = useCallback(() => {
+		sesion.current
+			?.then((id) => gateway.rpc("session.interrupt", { session_id: id }))
+			.catch(fallo);
+	}, [fallo]);
+
+	const nueva = useCallback(() => {
+		sesion.current = null;
+		idSesion.current = null;
+		despachar({ tipo: "nueva" });
+	}, []);
+
+	return { chat, enviar, detener, nueva };
 }

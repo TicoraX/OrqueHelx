@@ -36,7 +36,7 @@ def _cuota_de(ruta: Ruta, ventanas: list | None, error: Exception | None) -> lis
     if ventanas is None:
         return [*lineas, f"{ruta.nombre}: sin dato (el proveedor no informa consumo)"]
     if not ventanas:
-        return [*lineas, f"{ruta.nombre}: sin dato (la medicion no devolvio ventanas)"]
+        return [*lineas, f"{ruta.nombre}: sin dato (la medición no devolvió ventanas)"]
     lineas.append(f"{ruta.nombre}:")
     for etiqueta, usado, reinicio in ventanas:
         # Truncar, no redondear: 99.96 no puede mostrarse como 100 (agotado).
