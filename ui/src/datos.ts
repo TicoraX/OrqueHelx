@@ -79,55 +79,65 @@ export interface ChatVivo {
 /** La conversacion con el agente principal. La sesion de Hermes se crea con el primer mensaje. */
 export function useChat(): ChatVivo {
 	const [chat, despachar] = useReducer(reducir, inicial);
-	const sesion = useRef<string | null>(null);
+	// La sesion como promesa compartida: enviar y detener esperan la misma creacion, y detener pedido
+	// mientras se crea se manda despues del prompt (el socket conserva el orden).
+	const sesion = useRef<Promise<string> | null>(null);
+	const idSesion = useRef<string | null>(null);
 
 	useEffect(
 		() =>
 			gateway.alEvento((tipo, sid, payload) => {
-				if (sid && sid === sesion.current)
+				if (sid && sid === idSesion.current)
 					despachar({ tipo: "evento", evento: tipo, payload });
 			}),
 		[],
 	);
 
-	const enviar = useCallback((texto: string) => {
-		const limpio = texto.trim();
-		if (!limpio) return;
-		despachar({ tipo: "enviado", texto: limpio });
-		(async () => {
-			if (!sesion.current) {
-				const creada = await gateway.rpc<{ session_id: string }>(
-					"session.create",
-					{},
-				);
-				sesion.current = creada.session_id;
-			}
-			await gateway.rpc("prompt.submit", {
-				session_id: sesion.current,
-				text: limpio,
-			});
-		})().catch((e: unknown) =>
+	const fallo = useCallback(
+		(e: unknown) =>
 			despachar({
 				tipo: "fallo",
 				mensaje: e instanceof Error ? e.message : String(e),
 			}),
-		);
-	}, []);
+		[],
+	);
+
+	const enviar = useCallback(
+		(texto: string) => {
+			const limpio = texto.trim();
+			if (!limpio) return;
+			despachar({ tipo: "enviado", texto: limpio });
+			if (!sesion.current) {
+				const creando = gateway
+					.rpc<{ session_id: string }>("session.create", {})
+					.then((r) => {
+						idSesion.current = r.session_id;
+						return r.session_id;
+					});
+				sesion.current = creando;
+				// Si la creacion falla, el reintento crea otra.
+				creando.catch(() => {
+					if (sesion.current === creando) sesion.current = null;
+				});
+			}
+			sesion.current
+				.then((id) =>
+					gateway.rpc("prompt.submit", { session_id: id, text: limpio }),
+				)
+				.catch(fallo);
+		},
+		[fallo],
+	);
 
 	const detener = useCallback(() => {
-		if (!sesion.current) return;
-		gateway
-			.rpc("session.interrupt", { session_id: sesion.current })
-			.catch((e: unknown) =>
-				despachar({
-					tipo: "fallo",
-					mensaje: e instanceof Error ? e.message : String(e),
-				}),
-			);
-	}, []);
+		sesion.current
+			?.then((id) => gateway.rpc("session.interrupt", { session_id: id }))
+			.catch(fallo);
+	}, [fallo]);
 
 	const nueva = useCallback(() => {
 		sesion.current = null;
+		idSesion.current = null;
 		despachar({ tipo: "nueva" });
 	}, []);
 
