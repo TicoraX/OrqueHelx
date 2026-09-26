@@ -57,7 +57,8 @@ export class Gateway {
 		socket.onclose = () => {
 			if (this.socket !== socket) return;
 			this.socket = null;
-			for (const p of this.pendientes.values()) p.rechazar(new Error("se perdio la conexion con el gateway"));
+			for (const p of this.pendientes.values())
+				p.rechazar(new Error("se perdió la conexión con el gateway"));
 			this.pendientes.clear();
 			this.cambiar("sin_conexion");
 		};
@@ -70,7 +71,13 @@ export class Gateway {
 	}
 
 	private recibir(texto: string): void {
-		let marco: { id?: number; method?: string; params?: Record<string, unknown>; result?: unknown; error?: { message?: string } };
+		let marco: {
+			id?: number;
+			method?: string;
+			params?: Record<string, unknown>;
+			result?: unknown;
+			error?: { message?: string };
+		};
 		try {
 			marco = JSON.parse(texto);
 		} catch (e) {
@@ -80,24 +87,40 @@ export class Gateway {
 		if (typeof marco.id === "number" && this.pendientes.has(marco.id)) {
 			const p = this.pendientes.get(marco.id) as Pendiente;
 			this.pendientes.delete(marco.id);
-			if (marco.error) p.rechazar(new Error(marco.error.message ?? "el gateway respondio con error"));
+			if (marco.error)
+				p.rechazar(
+					new Error(marco.error.message ?? "el gateway respondió con error"),
+				);
 			else p.resolver(marco.result);
 			return;
 		}
 		if (marco.method !== "event" || !marco.params) return;
 		const tipo = String(marco.params.type ?? "");
 		if (tipo === "gateway.ready") this.cambiar("conectado");
-		for (const o of this.oyentesEvento) o(tipo, String(marco.params.session_id ?? ""), marco.params.payload ?? null);
+		for (const o of this.oyentesEvento)
+			o(
+				tipo,
+				String(marco.params.session_id ?? ""),
+				marco.params.payload ?? null,
+			);
 	}
 
-	rpc<T = unknown>(metodo: string, params: Record<string, unknown>): Promise<T> {
+	rpc<T = unknown>(
+		metodo: string,
+		params: Record<string, unknown>,
+	): Promise<T> {
 		const socket = this.socket;
-		if (!socket) return Promise.reject(new Error("gateway sin conexion"));
+		if (!socket) return Promise.reject(new Error("gateway sin conexión"));
 		this.siguienteId += 1;
 		const id = this.siguienteId;
 		return new Promise<T>((resolver, rechazar) => {
-			this.pendientes.set(id, { resolver: resolver as (r: unknown) => void, rechazar });
-			socket.send(JSON.stringify({ jsonrpc: "2.0", id, method: metodo, params }));
+			this.pendientes.set(id, {
+				resolver: resolver as (r: unknown) => void,
+				rechazar,
+			});
+			socket.send(
+				JSON.stringify({ jsonrpc: "2.0", id, method: metodo, params }),
+			);
 		});
 	}
 }

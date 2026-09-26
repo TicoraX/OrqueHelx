@@ -174,7 +174,7 @@ def cuota_limpia(monkeypatch):
 
 
 @pytest.mark.parametrize("politica, pedazo", [
-    ("preguntar", "preguntale si quiere"),
+    ("preguntar", "pregúntale si quiere"),
     ("padre_decide", "puedes reenviar"),
     ("esperar", "no hagas nada"),
 ])

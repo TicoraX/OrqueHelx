@@ -29,7 +29,12 @@ export type Accion =
 	| { tipo: "fallo"; mensaje: string }
 	| { tipo: "nueva" };
 
-export const inicial: Chat = { mensajes: [], turno: "libre", actividad: null, error: null };
+export const inicial: Chat = {
+	mensajes: [],
+	turno: "libre",
+	actividad: null,
+	error: null,
+};
 
 type Payload = Record<string, unknown> | null;
 
@@ -41,24 +46,41 @@ function conRespuesta(c: Chat, cambiar: (m: Mensaje) => Mensaje): Mensaje[] {
 	if (ultimo?.rol === "agente" && ultimo.estado === "escribiendo") {
 		return [...c.mensajes.slice(0, -1), cambiar(ultimo)];
 	}
-	return [...c.mensajes, cambiar({ id: siguienteId(c), rol: "agente", texto: "", estado: "escribiendo" })];
+	return [
+		...c.mensajes,
+		cambiar({
+			id: siguienteId(c),
+			rol: "agente",
+			texto: "",
+			estado: "escribiendo",
+		}),
+	];
 }
 
 function actividadDeHerramienta(p: Payload): string {
 	const nombre = String(p?.name ?? "una herramienta");
 	const args = (p?.args ?? {}) as Record<string, unknown>;
-	return nombre === "delegar" && typeof args.ruta === "string" ? `delegando en ${args.ruta}` : `usando ${nombre}`;
+	return nombre === "delegar" && typeof args.ruta === "string"
+		? `delegando en ${args.ruta}`
+		: `usando ${nombre}`;
 }
 
 function alEvento(c: Chat, evento: string, p: Payload): Chat {
 	switch (evento) {
 		case "message.start":
-			return { ...c, turno: "respondiendo", mensajes: conRespuesta(c, (m) => m) };
+			return {
+				...c,
+				turno: "respondiendo",
+				mensajes: conRespuesta(c, (m) => m),
+			};
 		case "message.delta":
 			return {
 				...c,
 				turno: "respondiendo",
-				mensajes: conRespuesta(c, (m) => ({ ...m, texto: m.texto + String(p?.text ?? "") })),
+				mensajes: conRespuesta(c, (m) => ({
+					...m,
+					texto: m.texto + String(p?.text ?? ""),
+				})),
 			};
 		case "thinking.delta":
 		case "reasoning.delta":
@@ -70,13 +92,21 @@ function alEvento(c: Chat, evento: string, p: Payload): Chat {
 			return { ...c, actividad: null };
 		case "message.complete": {
 			const estado: EstadoMensaje =
-				p?.status === "interrupted" ? "interrumpido" : p?.status === "error" ? "error" : "listo";
+				p?.status === "interrupted"
+					? "interrumpido"
+					: p?.status === "error"
+						? "error"
+						: "listo";
 			const final = typeof p?.text === "string" ? p.text : "";
 			return {
 				...c,
 				turno: "libre",
 				actividad: null,
-				mensajes: conRespuesta(c, (m) => ({ ...m, texto: final || m.texto, estado })),
+				mensajes: conRespuesta(c, (m) => ({
+					...m,
+					texto: final || m.texto,
+					estado,
+				})),
 			};
 		}
 		default:
@@ -91,15 +121,34 @@ export function reducir(c: Chat, a: Accion): Chat {
 				...c,
 				turno: "esperando",
 				error: null,
-				mensajes: [...c.mensajes, { id: siguienteId(c), rol: "usuario", texto: a.texto, estado: "listo" }],
+				mensajes: [
+					...c.mensajes,
+					{
+						id: siguienteId(c),
+						rol: "usuario",
+						texto: a.texto,
+						estado: "listo",
+					},
+				],
 			};
 		case "evento":
 			return alEvento(c, a.evento, a.payload as Payload);
 		case "fallo": {
 			const ultimo = c.mensajes.at(-1);
 			const mensajes =
-				ultimo?.rol === "usuario" ? [...c.mensajes.slice(0, -1), { ...ultimo, estado: "error" as const }] : c.mensajes;
-			return { ...c, turno: "libre", actividad: null, mensajes, error: { mensaje: a.mensaje, texto: ultimo?.texto ?? "" } };
+				ultimo?.rol === "usuario"
+					? [
+							...c.mensajes.slice(0, -1),
+							{ ...ultimo, estado: "error" as const },
+						]
+					: c.mensajes;
+			return {
+				...c,
+				turno: "libre",
+				actividad: null,
+				mensajes,
+				error: { mensaje: a.mensaje, texto: ultimo?.texto ?? "" },
+			};
 		}
 		case "nueva":
 			return inicial;

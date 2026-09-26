@@ -1,4 +1,9 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
-  "javascript": { "jsxRuntime": "reactClassic" }
+  "javascript": {
+    "jsxRuntime": "reactClassic"
+  },
+  "formatter": {
+    "lineEnding": "auto"
+  }
 }

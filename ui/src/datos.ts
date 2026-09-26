@@ -1,5 +1,12 @@
 // Datos de la pantalla: estado de las rutas (backend del plugin), conexion con el gateway y conversacion.
-import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
+import {
+	useCallback,
+	useEffect,
+	useReducer,
+	useRef,
+	useState,
+	useSyncExternalStore,
+} from "react";
 import { type Chat, inicial, reducir } from "./chat";
 import type { EstadoRutas } from "./estado";
 import { type EstadoConexion, Gateway } from "./gateway";
@@ -50,7 +57,10 @@ export function useEstado(): EstadoCarga {
 }
 
 /** Estado de la conexion con /api/ws. "conectado" solo tras gateway.ready. */
-export function useConexion(): { estado: EstadoConexion; reintentar: () => void } {
+export function useConexion(): {
+	estado: EstadoConexion;
+	reintentar: () => void;
+} {
 	const estado = useSyncExternalStore(gateway.alEstado, gateway.estado);
 	useEffect(() => {
 		void gateway.conectar();
@@ -74,7 +84,8 @@ export function useChat(): ChatVivo {
 	useEffect(
 		() =>
 			gateway.alEvento((tipo, sid, payload) => {
-				if (sid && sid === sesion.current) despachar({ tipo: "evento", evento: tipo, payload });
+				if (sid && sid === sesion.current)
+					despachar({ tipo: "evento", evento: tipo, payload });
 			}),
 		[],
 	);
@@ -85,18 +96,34 @@ export function useChat(): ChatVivo {
 		despachar({ tipo: "enviado", texto: limpio });
 		(async () => {
 			if (!sesion.current) {
-				const creada = await gateway.rpc<{ session_id: string }>("session.create", {});
+				const creada = await gateway.rpc<{ session_id: string }>(
+					"session.create",
+					{},
+				);
 				sesion.current = creada.session_id;
 			}
-			await gateway.rpc("prompt.submit", { session_id: sesion.current, text: limpio });
-		})().catch((e: unknown) => despachar({ tipo: "fallo", mensaje: e instanceof Error ? e.message : String(e) }));
+			await gateway.rpc("prompt.submit", {
+				session_id: sesion.current,
+				text: limpio,
+			});
+		})().catch((e: unknown) =>
+			despachar({
+				tipo: "fallo",
+				mensaje: e instanceof Error ? e.message : String(e),
+			}),
+		);
 	}, []);
 
 	const detener = useCallback(() => {
 		if (!sesion.current) return;
 		gateway
 			.rpc("session.interrupt", { session_id: sesion.current })
-			.catch((e: unknown) => despachar({ tipo: "fallo", mensaje: e instanceof Error ? e.message : String(e) }));
+			.catch((e: unknown) =>
+				despachar({
+					tipo: "fallo",
+					mensaje: e instanceof Error ? e.message : String(e),
+				}),
+			);
 	}, []);
 
 	const nueva = useCallback(() => {

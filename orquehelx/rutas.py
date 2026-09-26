@@ -38,7 +38,7 @@ class Ruta:
 
 def _ruta(nombre: str, valor: object) -> Ruta:
     if not _NOMBRE.match(nombre):
-        raise ErrorDeRuta(f"ruta {nombre!r}: el nombre debe ser minusculas, digitos o '-' (max 32)")
+        raise ErrorDeRuta(f"ruta {nombre!r}: el nombre debe ser minúsculas, dígitos o '-' (máx. 32)")
     if not isinstance(valor, dict):
         raise ErrorDeRuta(f"ruta {nombre!r}: se esperaba un mapa con 'provider' o 'acp'")
     sobrantes = set(valor) - _CAMPOS
@@ -46,16 +46,16 @@ def _ruta(nombre: str, valor: object) -> Ruta:
         raise ErrorDeRuta(f"ruta {nombre!r}: campos desconocidos {sorted(sobrantes)}")
     modelo = valor.get("model")
     if modelo is not None and (not isinstance(modelo, str) or not modelo.strip()):
-        raise ErrorDeRuta(f"ruta {nombre!r}: 'model' debe ser texto no vacio")
+        raise ErrorDeRuta(f"ruta {nombre!r}: 'model' debe ser texto no vacío")
     proveedor, acp = valor.get("provider"), valor.get("acp")
     if (proveedor is None) == (acp is None):
         raise ErrorDeRuta(f"ruta {nombre!r}: define exactamente uno de 'provider' o 'acp'")
     if acp is not None:
         if not isinstance(acp, list) or not acp or not all(isinstance(p, str) and p.strip() for p in acp):
-            raise ErrorDeRuta(f"ruta {nombre!r}: 'acp' debe ser una lista no vacia de textos, p. ej. [opencode, acp]")
+            raise ErrorDeRuta(f"ruta {nombre!r}: 'acp' debe ser una lista no vacía de textos, p. ej. [opencode, acp]")
         return Ruta(nombre, f"ohx-{nombre}", modelo, tuple(acp))
     if not isinstance(proveedor, str) or not proveedor.strip():
-        raise ErrorDeRuta(f"ruta {nombre!r}: 'provider' debe ser texto no vacio")
+        raise ErrorDeRuta(f"ruta {nombre!r}: 'provider' debe ser texto no vacío")
     return Ruta(nombre, proveedor.strip(), modelo)
 
 

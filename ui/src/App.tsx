@@ -1,7 +1,13 @@
 // Pantalla principal: rutas y cuotas | conversacion | subagentes (contrato de direccion, forma "tres columnas").
 import React, { useEffect, useRef, useState } from "react";
 import type { Mensaje } from "./chat";
-import { type ChatVivo, type EstadoCarga, useChat, useConexion, useEstado } from "./datos";
+import {
+	type ChatVivo,
+	type EstadoCarga,
+	useChat,
+	useConexion,
+	useEstado,
+} from "./datos";
 import { type RutaEstado, resumen } from "./estado";
 import type { EstadoConexion } from "./gateway";
 
@@ -121,7 +127,10 @@ function Rutas({ estado }: { estado: EstadoCarga }) {
 	);
 }
 
-const ROTULO: Record<Mensaje["rol"], string> = { usuario: "tú", agente: "agente" };
+const ROTULO: Record<Mensaje["rol"], string> = {
+	usuario: "tú",
+	agente: "agente",
+};
 const NOTA: Partial<Record<Mensaje["estado"], string>> = {
 	escribiendo: "escribiendo",
 	interrumpido: "detenido",
@@ -129,7 +138,8 @@ const NOTA: Partial<Record<Mensaje["estado"], string>> = {
 };
 
 function Entrada({ m }: { m: Mensaje }) {
-	const nota = m.rol === "usuario" && m.estado === "error" ? "no enviado" : NOTA[m.estado];
+	const nota =
+		m.rol === "usuario" && m.estado === "error" ? "no enviado" : NOTA[m.estado];
 	return (
 		<article className="ohx-mensaje" data-rol={m.rol} data-estado={m.estado}>
 			<header className="ohx-mensaje-k">
@@ -164,7 +174,11 @@ function Redactor({ vivo, conectado }: { vivo: ChatVivo; conectado: boolean }) {
 				id="ohx-mensaje"
 				rows={3}
 				value={texto}
-				placeholder={conectado ? "Escribe al agente. Enter envía, Shift+Enter hace un salto de línea." : "Sin conexión con Hermes."}
+				placeholder={
+					conectado
+						? "Escribe al agente. Enter envía, Shift+Enter hace un salto de línea."
+						: "Sin conexión con Hermes."
+				}
 				disabled={!conectado}
 				onChange={(e) => setTexto(e.target.value)}
 				onKeyDown={(e) => {
@@ -183,7 +197,11 @@ function Redactor({ vivo, conectado }: { vivo: ChatVivo; conectado: boolean }) {
 						Detener
 					</button>
 				) : (
-					<button type="submit" className="btn btn-accion" disabled={!texto.trim() || !conectado}>
+					<button
+						type="submit"
+						className="btn btn-accion"
+						disabled={!texto.trim() || !conectado}
+					>
 						Enviar
 					</button>
 				)}
@@ -206,22 +224,39 @@ function Conversacion({ conectado }: { conectado: boolean }) {
 			<div className="ohx-rotulo">
 				<h2>Conversación</h2>
 				{mensajes.length > 0 ? (
-					<button type="button" className="btn" onClick={vivo.nueva} disabled={vivo.chat.turno !== "libre"}>
+					<button
+						type="button"
+						className="btn"
+						onClick={vivo.nueva}
+						disabled={vivo.chat.turno !== "libre"}
+					>
 						Nueva conversación
 					</button>
 				) : null}
 			</div>
-			<div className="ohx-hilo" role="log" aria-live="polite" aria-relevant="additions text">
+			<div
+				className="ohx-hilo"
+				role="log"
+				aria-live="polite"
+				aria-relevant="additions text"
+			>
 				<div className="ohx-lectura">
 					{mensajes.length === 0 ? (
-						<p className="vacio">Todavía no hay mensajes. Escribe abajo para empezar.</p>
+						<p className="vacio">
+							Todavía no hay mensajes. Escribe abajo para empezar.
+						</p>
 					) : (
 						mensajes.map((m) => <Entrada key={m.id} m={m} />)
 					)}
 					{error ? (
 						<div className="aviso" data-tono="error" role="alert">
 							<p>No se pudo enviar: {error.mensaje}</p>
-							<button type="button" className="btn" onClick={() => vivo.enviar(error.texto)} disabled={!conectado}>
+							<button
+								type="button"
+								className="btn"
+								onClick={() => vivo.enviar(error.texto)}
+								disabled={!conectado}
+							>
 								Reintentar
 							</button>
 						</div>

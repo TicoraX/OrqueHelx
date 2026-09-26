@@ -22,16 +22,21 @@ class SocketFalso {
 }
 
 const nuevo = () =>
-	new Gateway(async () => "ws://prueba/api/ws?token=t", (url) => new SocketFalso(url) as unknown as WebSocket);
-
-const esperar = () => new Promise((r) => setTimeout(r, 0));
+	new Gateway(
+		async () => "ws://prueba/api/ws?token=t",
+		(url) => new SocketFalso(url) as unknown as WebSocket,
+	);
 
 describe("gateway", () => {
 	it("queda conectado solo con gateway.ready", async () => {
 		const g = nuevo();
 		await g.conectar();
 		expect(g.estado()).toBe("conectando");
-		SocketFalso.ultimo.servidor({ jsonrpc: "2.0", method: "event", params: { type: "gateway.ready" } });
+		SocketFalso.ultimo.servidor({
+			jsonrpc: "2.0",
+			method: "event",
+			params: { type: "gateway.ready" },
+		});
 		expect(g.estado()).toBe("conectado");
 	});
 
@@ -43,7 +48,11 @@ describe("gateway", () => {
 		const fallida = g.rpc("prompt.submit", { text: "x" });
 		const [p1, p2] = s.enviados as { id: number; method: string }[];
 		expect([p1.method, p2.method]).toEqual(["session.create", "prompt.submit"]);
-		s.servidor({ jsonrpc: "2.0", id: p2.id, error: { message: "sesion inexistente" } });
+		s.servidor({
+			jsonrpc: "2.0",
+			id: p2.id,
+			error: { message: "sesion inexistente" },
+		});
 		s.servidor({ jsonrpc: "2.0", id: p1.id, result: { session_id: "abc" } });
 		await expect(creada).resolves.toEqual({ session_id: "abc" });
 		await expect(fallida).rejects.toThrow("sesion inexistente");
@@ -53,14 +62,24 @@ describe("gateway", () => {
 		const g = nuevo();
 		await g.conectar();
 		const vistos: unknown[] = [];
-		const desuscribir = g.alEvento((tipo, sesion, payload) => vistos.push([tipo, sesion, payload]));
+		const desuscribir = g.alEvento((tipo, sesion, payload) =>
+			vistos.push([tipo, sesion, payload]),
+		);
 		SocketFalso.ultimo.servidor({
 			jsonrpc: "2.0",
 			method: "event",
-			params: { type: "message.delta", session_id: "abc", payload: { text: "ho" } },
+			params: {
+				type: "message.delta",
+				session_id: "abc",
+				payload: { text: "ho" },
+			},
 		});
 		desuscribir();
-		SocketFalso.ultimo.servidor({ jsonrpc: "2.0", method: "event", params: { type: "message.delta", session_id: "abc" } });
+		SocketFalso.ultimo.servidor({
+			jsonrpc: "2.0",
+			method: "event",
+			params: { type: "message.delta", session_id: "abc" },
+		});
 		expect(vistos).toEqual([["message.delta", "abc", { text: "ho" }]]);
 	});
 
@@ -68,13 +87,15 @@ describe("gateway", () => {
 		const g = nuevo();
 		await g.conectar();
 		const pendiente = g.rpc("session.create", {});
+		const rechazo = expect(pendiente).rejects.toThrow("conexión");
 		SocketFalso.ultimo.close();
-		await esperar();
-		await expect(pendiente).rejects.toThrow("conexion");
+		await rechazo;
 		expect(g.estado()).toBe("sin_conexion");
 	});
 
 	it("rpc sin conexion falla en voz alta", async () => {
-		await expect(nuevo().rpc("session.create", {})).rejects.toThrow("sin conexion");
+		await expect(nuevo().rpc("session.create", {})).rejects.toThrow(
+			"sin conexión",
+		);
 	});
 });
