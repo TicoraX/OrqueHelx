@@ -292,6 +292,30 @@
 	color: var(--fail);
 }
 
+/* Subagentes: el objetivo se corta a tres lineas (completo en title); un nieto se sangra bajo su padre. */
+.ohx-arbol .casilla {
+	padding-inline-start: calc(1rem + var(--nivel, 0) * 0.875rem);
+}
+/* El resumen del hijo puede ser largo: la respuesta completa ya la relata el agente en el chat. */
+.ohx-arbol .casilla-n li {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 4;
+	line-clamp: 4;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+}
+.ohx-arbol .casilla-m {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	line-clamp: 3;
+	overflow: hidden;
+	font-family: var(--font-sans);
+	font-size: 0.8125rem;
+	color: var(--ink);
+}
+
 /* ---------------------------------------------------------------------------
    Controles
    --------------------------------------------------------------------------- */

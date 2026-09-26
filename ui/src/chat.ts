@@ -4,6 +4,8 @@
 //   enviado -> turno "esperando" -> message.start -> "respondiendo" -> message.delta* -> message.complete -> "libre"
 //   claude-subscription no manda message.delta: el texto llega entero en message.complete.
 
+import { type Arbol, reducirArbol, vacio } from "./subagentes";
+
 type Rol = "usuario" | "agente";
 type EstadoMensaje = "listo" | "escribiendo" | "interrumpido" | "error";
 
@@ -21,6 +23,7 @@ export interface Chat {
 	actividad: string | null;
 	/** Fallo: el mensaje y, si fue al enviar, el texto para reintentar sin volver a escribirlo. */
 	error: { mensaje: string; texto: string | null } | null;
+	subagentes: Arbol;
 }
 
 type Accion =
@@ -34,6 +37,7 @@ export const inicial: Chat = {
 	turno: "libre",
 	actividad: null,
 	error: null,
+	subagentes: vacio,
 };
 
 type Payload = Record<string, unknown> | null;
@@ -131,8 +135,11 @@ export function reducir(c: Chat, a: Accion): Chat {
 					},
 				],
 			};
-		case "evento":
-			return alEvento(c, a.evento, a.payload as Payload);
+		case "evento": {
+			const arbol = reducirArbol(c.subagentes, a.evento, a.payload);
+			const sigue = alEvento(c, a.evento, a.payload as Payload);
+			return arbol === c.subagentes ? sigue : { ...sigue, subagentes: arbol };
+		}
 		case "fallo": {
 			// Solo un envio fallido deja el ultimo mensaje del usuario; si ya habia respuesta (fallo al detener
 			// o conexion caida), no hay nada que reenviar.
