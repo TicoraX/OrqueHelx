@@ -73,7 +73,9 @@ jobs:
       - run: npm test
       - run: npm run build
       - name: El dist commiteado es el del build
-        # porcelain ve archivos cambiados y tambien nuevos sin commitear (un asset que el build agrego).
+        # ls-files: el dist tiene que estar trackeado (un .gitignore lo escondio una vez y el chequeo paso igual).
+        # porcelain --ignored: ve archivos cambiados, nuevos e ignorados (un asset que el build agrego).
         run: |
-          cambios=$(git status --porcelain -- ../orquehelx/dashboard/dist)
+          git ls-files --error-unmatch ../orquehelx/dashboard/dist/index.js ../orquehelx/dashboard/dist/style.css
+          cambios=$(git status --porcelain --ignored -- ../orquehelx/dashboard/dist)
           if [ -n "$cambios" ]; then echo "$cambios"; echo "::error::dist desactualizado: corre npm run build en ui/ y commitea"; exit 1; fi
