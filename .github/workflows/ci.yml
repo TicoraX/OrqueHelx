@@ -51,3 +51,29 @@ jobs:
         run: |
           PY=.venv/bin/python; [ -x "$PY" ] || PY=.venv/Scripts/python.exe
           "$PY" -m pytest -q -p no:cacheprovider tests
+
+  ui:
+    # La UI del dashboard: checks, tests y build. El dist va commiteado (quien instala no necesita Node),
+    # asi que el build de CI tiene que coincidir con el del repo.
+    name: ui
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - name: El dist commiteado es el del build
+        # porcelain ve archivos cambiados y tambien nuevos sin commitear (un asset que el build agrego).
+        run: |
+          cambios=$(git status --porcelain -- ../orquehelx/dashboard/dist)
+          if [ -n "$cambios" ]; then echo "$cambios"; echo "::error::dist desactualizado: corre npm run build en ui/ y commitea"; exit 1; fi

@@ -1,0 +1,15 @@
+{
+  "name": "orquehelx",
+  "label": "OrqueHelx",
+  "description": "Subagentes entre suscripciones: rutas, cuota medida de cada una y el trabajo de cada subagente.",
+  "icon": "Workflow",
+  "version": "0.1.0",
+  "tab": {
+    "path": "/orquehelx",
+    "position": "end"
+  },
+  "entry": "dist/index.js",
+  "css": "dist/style.css",
+  "api": "plugin_api.py",
+  "slots": ["overlay"]
+}

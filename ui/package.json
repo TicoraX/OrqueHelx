@@ -1,0 +1,23 @@
+{
+  "name": "orquehelx-ui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "test": "vitest run",
+    "check": "tsc --noEmit && biome check src tests && oxlint src tests",
+    "prebuild": "node copiar-fuentes.mjs"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
+    "@fontsource-variable/ibm-plex-sans": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-serif": "^5.3.0",
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "oxlint": "^1.85.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
+  }
+}
