@@ -70,6 +70,14 @@ def medir(proveedor: str) -> list[Ventana] | None:
     return None if medidor is None else medidor()
 
 
+def medir_seguro(proveedor: str) -> tuple[list[Ventana] | None, Exception | None]:
+    """(ventanas, None) medidas, (None, None) sin medidor, o (None, error) si la medicion fallo."""
+    try:
+        return medir(proveedor), None
+    except Exception as exc:  # quien muestra el dato muestra la causa; no se inventa un valor
+        return None, exc
+
+
 def _ventana_agotada(proveedor: str, modelo: str) -> tuple[bool | None, datetime | None]:
     """(agotada, reinicio) segun la medicion; (None, None) si no hay medidor o la medicion fallo."""
     try:

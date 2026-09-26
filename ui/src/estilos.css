@@ -1,0 +1,440 @@
+/* OrqueHelx: estiri v2 (skill estiri-design, tokens.css) acotado a .ohx.
+ * Los valores son los canonicos; el selector cambia de :root a .ohx para no pisar el tema del
+ * dashboard de Hermes, que monta este plugin. La prueba tests/contraste.test.ts los mide. */
+
+/* Fuentes Plex latinas servidas por Hermes desde el dist del plugin (copiar-fuentes.mjs las deja ahi). */
+@font-face {
+	font-family: "IBM Plex Serif";
+	font-weight: 500;
+	font-display: swap;
+	src: url("/dashboard-plugins/orquehelx/dist/fonts/ibm-plex-serif-latin-500-normal.woff2")
+		format("woff2");
+}
+@font-face {
+	font-family: "IBM Plex Sans Variable";
+	font-weight: 100 700;
+	font-display: swap;
+	src: url("/dashboard-plugins/orquehelx/dist/fonts/ibm-plex-sans-latin-wght-normal.woff2")
+		format("woff2-variations");
+}
+@font-face {
+	font-family: "IBM Plex Mono";
+	font-weight: 400;
+	font-display: swap;
+	src: url("/dashboard-plugins/orquehelx/dist/fonts/ibm-plex-mono-latin-400-normal.woff2")
+		format("woff2");
+}
+@font-face {
+	font-family: "IBM Plex Mono";
+	font-weight: 500;
+	font-display: swap;
+	src: url("/dashboard-plugins/orquehelx/dist/fonts/ibm-plex-mono-latin-500-normal.woff2")
+		format("woff2");
+}
+
+.ohx {
+	color-scheme: light dark;
+
+	--ground: oklch(96.5% 0.008 85);
+	--surface: oklch(98.4% 0.005 85);
+	--raised: oklch(93.2% 0.011 85);
+	--ink: oklch(23% 0.012 60);
+	--ink-2: oklch(47% 0.011 60);
+	--rule: oklch(89% 0.009 82);
+	--rule-strong: oklch(62% 0.012 70);
+	--accent: oklch(52% 0.13 42);
+	--accent-ink: oklch(98.4% 0.005 85);
+	--accent-soft: oklch(92% 0.035 42);
+	--cifra: oklch(50% 0.1 75);
+	--pass: oklch(46% 0.095 155);
+	--fail: oklch(48% 0.155 28);
+
+	--font-serif: "IBM Plex Serif", ui-serif, Georgia, serif;
+	--font-sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, sans-serif;
+	--font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+	--radius: 3px;
+	--ease: cubic-bezier(0.22, 1, 0.36, 1);
+	--dur-press: 120ms;
+	--dur-focus: 140ms;
+	--dur-reveal: 220ms;
+}
+
+@media (prefers-color-scheme: dark) {
+	.ohx:not([data-theme="light"]) {
+		--ground: oklch(20% 0.008 70);
+		--surface: oklch(24% 0.009 70);
+		--raised: oklch(28% 0.01 70);
+		--ink: oklch(92% 0.008 85);
+		--ink-2: oklch(74% 0.009 85);
+		--rule: oklch(31% 0.009 70);
+		--rule-strong: oklch(54% 0.01 70);
+		--accent: oklch(72% 0.12 45);
+		--accent-ink: oklch(20% 0.008 70);
+		--accent-soft: oklch(34% 0.05 45);
+		--cifra: oklch(80% 0.11 78);
+		--pass: oklch(70% 0.11 155);
+		--fail: oklch(68% 0.15 28);
+	}
+}
+
+.ohx[data-theme="dark"] {
+	--ground: oklch(20% 0.008 70);
+	--surface: oklch(24% 0.009 70);
+	--raised: oklch(28% 0.01 70);
+	--ink: oklch(92% 0.008 85);
+	--ink-2: oklch(74% 0.009 85);
+	--rule: oklch(31% 0.009 70);
+	--rule-strong: oklch(54% 0.01 70);
+	--accent: oklch(72% 0.12 45);
+	--accent-ink: oklch(20% 0.008 70);
+	--accent-soft: oklch(34% 0.05 45);
+	--cifra: oklch(80% 0.11 78);
+	--pass: oklch(70% 0.11 155);
+	--fail: oklch(68% 0.15 28);
+}
+
+/* ---------------------------------------------------------------------------
+   Marco: pantalla completa sobre el dashboard de Hermes
+   --------------------------------------------------------------------------- */
+
+.ohx {
+	position: fixed;
+	inset: 0;
+	z-index: 1000;
+	display: grid;
+	grid-template-rows: 44px minmax(0, 1fr);
+	background: var(--ground);
+	color: var(--ink);
+	font-family: var(--font-sans);
+	font-size: 15px;
+	line-height: 1.5;
+	caret-color: var(--accent);
+	scrollbar-color: var(--rule-strong) transparent;
+	-webkit-font-smoothing: antialiased;
+}
+.ohx *,
+.ohx *::before,
+.ohx *::after {
+	box-sizing: border-box;
+}
+.ohx ::selection {
+	background: var(--accent-soft);
+	color: var(--ink);
+}
+.ohx :focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+.ohx h1,
+.ohx h2,
+.ohx h3 {
+	margin: 0;
+	font-family: var(--font-serif);
+	font-weight: 500;
+	text-wrap: balance;
+}
+.ohx a {
+	color: var(--ink);
+	text-decoration: underline 1px;
+	text-underline-offset: 3px;
+}
+.ohx a:hover {
+	color: var(--accent);
+}
+.ohx .sr {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+.ohx-cabecera {
+	display: flex;
+	align-items: center;
+	gap: 1.25rem;
+	padding-inline: 1rem;
+	border-block-end: 1px solid var(--rule);
+	background: var(--surface);
+}
+.ohx-marca {
+	font-family: var(--font-serif);
+	font-weight: 500;
+	font-size: 1.125rem;
+	letter-spacing: -0.01em;
+}
+.ohx-conexion {
+	margin-inline-start: auto;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.75rem;
+	font-family: var(--font-mono);
+	font-size: 0.8125rem;
+	color: var(--ink-2);
+}
+.ohx-conexion[data-estado="conectado"] b {
+	color: var(--pass);
+}
+.ohx-conexion[data-estado="sin_conexion"] b {
+	color: var(--fail);
+}
+.ohx .ohx-conexion b {
+	font-weight: 500;
+}
+.ohx-cabecera nav {
+	font-size: 0.875rem;
+}
+
+.ohx-cuerpo {
+	display: grid;
+	grid-template-columns: 240px minmax(0, 1fr) 320px;
+	min-height: 0;
+}
+.ohx-columna {
+	min-height: 0;
+	overflow: auto;
+}
+.ohx-riel {
+	border-inline-end: 1px solid var(--rule);
+	background: var(--surface);
+}
+.ohx-arbol {
+	border-inline-start: 1px solid var(--rule);
+	background: var(--surface);
+}
+
+.ohx-rotulo {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	min-height: 44px;
+	padding-inline: 1rem 0.5rem;
+	border-block-end: 1px solid var(--rule);
+	background: inherit;
+}
+.ohx-rotulo h2 {
+	font-size: 1rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Gramatica de libro mayor (estiri)
+   --------------------------------------------------------------------------- */
+
+.ohx .casillas {
+	display: grid;
+	grid-template-columns: repeat(var(--columnas, 1), minmax(0, 1fr));
+	gap: 1px;
+	margin: 0.75rem;
+	padding: 0;
+	list-style: none;
+	background: var(--rule);
+	border: 1px solid var(--rule);
+	border-radius: var(--radius);
+}
+/* Cada casilla tiene siempre las mismas cuatro lineas: un cambio de estado no mueve la grilla. */
+.ohx .casilla {
+	display: grid;
+	grid-template-rows: auto auto auto minmax(2.6em, auto);
+	gap: 0.125rem;
+	padding: 0.75rem 1rem;
+	background: var(--surface);
+	transition: background-color var(--dur-reveal) var(--ease);
+}
+.ohx .casilla-k {
+	font-family: var(--font-mono);
+	font-size: 0.8125rem;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--ink-2);
+}
+.ohx .casilla-m {
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+	color: var(--ink-2);
+	overflow-wrap: anywhere;
+}
+.ohx .casilla-v {
+	margin: 0.25rem 0 0;
+	font-family: var(--font-mono);
+	font-size: 1.3125rem;
+	font-variant-numeric: tabular-nums;
+	color: var(--cifra);
+}
+.ohx .casilla-n {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+	color: var(--ink-2);
+	font-variant-numeric: tabular-nums;
+}
+.ohx .casilla[data-tono="sin_dato"] .casilla-v,
+.ohx .casilla[data-tono="error"] .casilla-v {
+	color: var(--ink-2);
+}
+/* Sin cuota: la casilla cierra con regla doble y la hora de vuelta pasa a ser la cifra. */
+/* Regla doble dibujada por dentro (linea, hueco, linea de 1px): no cambia la caja, la grilla no se mueve. */
+.ohx .casilla[data-tono="agotada"] {
+	background: var(--raised);
+	box-shadow:
+		inset 0 -1px 0 var(--rule-strong),
+		inset 0 -2px 0 var(--raised),
+		inset 0 -3px 0 var(--rule-strong);
+}
+.ohx .casilla[data-tono="agotada"] .casilla-v {
+	color: var(--fail);
+}
+
+/* ---------------------------------------------------------------------------
+   Controles
+   --------------------------------------------------------------------------- */
+
+.ohx .btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	min-height: 36px;
+	padding: 0.375rem 0.875rem;
+	border: 1px solid var(--rule-strong);
+	border-radius: var(--radius);
+	background: transparent;
+	color: var(--ink);
+	font: inherit;
+	font-size: 0.875rem;
+	font-weight: 500;
+	cursor: pointer;
+	transition:
+		background-color var(--dur-press) var(--ease),
+		border-color var(--dur-press) var(--ease);
+}
+.ohx .btn:hover {
+	background: var(--accent-soft);
+	border-color: var(--accent);
+}
+.ohx .btn:disabled {
+	background: var(--rule);
+	color: var(--ink-2);
+	cursor: not-allowed;
+}
+.ohx .btn-icono {
+	width: 36px;
+	padding: 0;
+}
+.ohx .btn svg {
+	width: 16px;
+	height: 16px;
+	stroke: currentColor;
+	fill: none;
+	stroke-width: 1.75;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+.ohx .btn[aria-busy="true"] svg {
+	animation: ohx-giro 900ms linear infinite;
+}
+@keyframes ohx-giro {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+/* ---------------------------------------------------------------------------
+   Estados honestos
+   --------------------------------------------------------------------------- */
+
+.ohx .vacio {
+	margin: 1rem;
+	color: var(--ink-2);
+	font-size: 0.875rem;
+}
+.ohx .vacio code {
+	font-family: var(--font-mono);
+	font-size: 0.8125rem;
+	color: var(--ink);
+}
+.ohx .aviso {
+	margin: 0.75rem;
+	padding: 0.75rem 1rem;
+	border: 1px solid var(--rule-strong);
+	border-radius: var(--radius);
+	background: var(--raised);
+	font-size: 0.875rem;
+}
+.ohx .aviso p {
+	margin: 0 0 0.5rem;
+}
+.ohx .aviso[data-tono="error"] {
+	border-color: var(--fail);
+}
+
+.ohx-chat {
+	display: grid;
+	grid-template-rows: minmax(0, 1fr);
+}
+.ohx-lectura {
+	width: min(72ch, 100% - 2rem);
+	margin-inline: auto;
+	padding-block: 3rem;
+}
+.ohx-lectura h1 {
+	font-size: 1.5rem;
+	margin-block-end: 0.5rem;
+}
+.ohx .ohx-lectura p {
+	margin: 0;
+	color: var(--ink-2);
+	max-width: 60ch;
+}
+
+/* ---------------------------------------------------------------------------
+   Pantallas angostas: una columna, rutas primero
+   --------------------------------------------------------------------------- */
+
+@media (max-width: 960px) {
+	.ohx {
+		grid-template-rows: 44px auto;
+		overflow: auto;
+	}
+	.ohx-cuerpo {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.ohx-columna {
+		overflow: visible;
+	}
+	.ohx-riel,
+	.ohx-arbol {
+		border: 0;
+		border-block-end: 1px solid var(--rule);
+	}
+	.ohx .casillas {
+		--columnas: 2;
+	}
+	.ohx-lectura {
+		padding-block: 2rem;
+	}
+}
+@media (max-width: 520px) {
+	.ohx .casillas {
+		--columnas: 1;
+	}
+	.ohx-cabecera nav {
+		display: none;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.ohx .btn[aria-busy="true"] svg {
+		animation: none;
+	}
+	.ohx .casilla {
+		transition: none;
+	}
+}

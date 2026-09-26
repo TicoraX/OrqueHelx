@@ -23,13 +23,6 @@ def _rutas(rutas: dict[str, Ruta]) -> str:
     return "\n".join(f"{r.nombre}: {r.proveedor}" + (f" ({r.modelo})" if r.modelo else "") for r in rutas.values())
 
 
-def _medir(proveedor: str) -> tuple[list | None, Exception | None]:
-    try:
-        return cuota.medir(proveedor), None
-    except Exception as exc:  # se muestra la causa; no se inventa un valor
-        return None, exc
-
-
 def _cuota_de(ruta: Ruta, ventanas: list | None, error: Exception | None) -> list[str]:
     lineas = []
     ag = cuota.consultar(ruta.proveedor, desde=time.time() - 24 * 3600)
@@ -58,6 +51,6 @@ def ejecutar(rutas: dict[str, Ruta], argumentos: str) -> str:
         return _rutas(rutas)
     if sub == "cuota":
         # Una medicion por proveedor: varias rutas pueden compartir la misma suscripcion.
-        mediciones = {p: _medir(p) for p in dict.fromkeys(r.proveedor for r in rutas.values())}
+        mediciones = {p: cuota.medir_seguro(p) for p in dict.fromkeys(r.proveedor for r in rutas.values())}
         return "\n".join(linea for ruta in rutas.values() for linea in _cuota_de(ruta, *mediciones[ruta.proveedor]))
     return USO

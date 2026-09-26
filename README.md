@@ -7,8 +7,9 @@ cualquier CLI que hable ACP.
 El modelo elige la ruta, y el subagente corre en ese proveedor y gasta su cuota. Si esa cuota se agota, el
 cambio a otro proveedor lo decides tú: OrqueHelx nunca lo hace automático.
 
-**Estado:** en desarrollo. Ya funcionan `delegar` y el aviso de cuota agotada en subagentes. La pausa del
-agente principal hasta el reinicio y la interfaz vienen después.
+**Estado:** en desarrollo. Ya funcionan `delegar`, el aviso de cuota agotada en subagentes y la primera
+versión de la interfaz (rutas con su cuota medida). El chat en la interfaz, el árbol de subagentes en vivo y
+la pausa del agente principal hasta el reinicio vienen después.
 
 ## Requisitos
 
@@ -21,6 +22,17 @@ agente principal hasta el reinicio y la interfaz vienen después.
 ```bash
 hermes plugins install TicoraX/OrqueHelx#orquehelx --enable
 ```
+
+## Interfaz
+
+OrqueHelx se abre dentro del dashboard de Hermes:
+
+```bash
+hermes dashboard
+```
+
+Entra a la pestaña **OrqueHelx** (`/orquehelx`). Ocupa toda la ventana: a la izquierda cada ruta con su cuota
+medida, al centro la conversación y a la derecha los subagentes.
 
 ## Rutas
 
