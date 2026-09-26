@@ -4,8 +4,8 @@
 //   enviado -> turno "esperando" -> message.start -> "respondiendo" -> message.delta* -> message.complete -> "libre"
 //   claude-subscription no manda message.delta: el texto llega entero en message.complete.
 
-export type Rol = "usuario" | "agente";
-export type EstadoMensaje = "listo" | "escribiendo" | "interrumpido" | "error";
+type Rol = "usuario" | "agente";
+type EstadoMensaje = "listo" | "escribiendo" | "interrumpido" | "error";
 
 export interface Mensaje {
 	id: number;
@@ -23,7 +23,7 @@ export interface Chat {
 	error: { mensaje: string; texto: string | null } | null;
 }
 
-export type Accion =
+type Accion =
 	| { tipo: "enviado"; texto: string }
 	| { tipo: "evento"; evento: string; payload: unknown }
 	| { tipo: "fallo"; mensaje: string }
