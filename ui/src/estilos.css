@@ -499,11 +499,13 @@
 
 @media (max-width: 960px) {
 	.ohx {
-		grid-template-rows: 44px auto;
+		/* max-content: con alto de viewport fijo, un track auto con min-height 0 se encoge y las columnas se montan. */
+		grid-template-rows: 44px max-content;
 		overflow: auto;
 	}
 	.ohx-cuerpo {
 		grid-template-columns: minmax(0, 1fr);
+		grid-auto-rows: max-content;
 	}
 	.ohx-columna {
 		overflow: visible;
