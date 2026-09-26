@@ -4,4 +4,4 @@ import { sdk } from "./sdk";
 
 const React = sdk().React as typeof ReactNS;
 export default React;
-export const { useCallback, useEffect, useState, useSyncExternalStore } = React;
+export const { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } = React;
