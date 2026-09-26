@@ -146,4 +146,29 @@ describe("chat", () => {
 		expect(c.error).toEqual({ mensaje: "gateway sin conexión", texto: null });
 		expect(c.mensajes[0].estado).toBe("listo");
 	});
+
+	it("los eventos de subagentes arman el arbol y nueva conversacion lo vacia", () => {
+		const c = pasos(
+			{ tipo: "enviado", texto: "delega" },
+			{
+				tipo: "evento",
+				evento: "tool.start",
+				payload: {
+					tool_id: "t1",
+					name: "delegar",
+					args: { ruta: "opencode", objetivo: "x" },
+				},
+			},
+			{
+				tipo: "evento",
+				evento: "subagent.start",
+				payload: { subagent_id: "a", goal: "x", depth: 0 },
+			},
+		);
+		expect(c.subagentes.nodos.map((n) => [n.id, n.ruta, n.estado])).toEqual([
+			["a", "opencode", "corriendo"],
+		]);
+		expect(c.actividad).toBe("delegando en opencode");
+		expect(reducir(c, { tipo: "nueva" })).toEqual(inicial);
+	});
 });

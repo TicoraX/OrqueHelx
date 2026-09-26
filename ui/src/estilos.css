@@ -292,6 +292,21 @@
 	color: var(--fail);
 }
 
+/* Subagentes: el objetivo se corta a tres lineas (completo en title); un nieto se sangra bajo su padre. */
+.ohx-arbol .casilla {
+	padding-inline-start: calc(1rem + var(--nivel, 0) * 0.875rem);
+}
+.ohx-arbol .casilla-m {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	line-clamp: 3;
+	overflow: hidden;
+	font-family: var(--font-sans);
+	font-size: 0.8125rem;
+	color: var(--ink);
+}
+
 /* ---------------------------------------------------------------------------
    Controles
    --------------------------------------------------------------------------- */

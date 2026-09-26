@@ -8,8 +8,9 @@ import {
 	useConexion,
 	useEstado,
 } from "./datos";
-import { type RutaEstado, resumen } from "./estado";
+import { type Resumen, resumen } from "./estado";
 import type { EstadoConexion } from "./gateway";
+import { type Arbol, enOrden, ficha } from "./subagentes";
 
 const TEXTO_CONEXION: Record<EstadoConexion, string> = {
 	conectando: "conectando",
@@ -53,12 +54,28 @@ function Cabecera({
 	);
 }
 
-function Casilla({ ruta }: { ruta: RutaEstado }) {
-	const r = resumen(ruta);
+/** Casilla de libro mayor: rotulo, detalle, cifra y notas. Rutas y subagentes comparten el formato. */
+function Casilla({
+	clave,
+	detalle,
+	r,
+	nivel = 0,
+}: {
+	clave: string;
+	detalle: string;
+	r: Resumen;
+	nivel?: number;
+}) {
 	return (
-		<li className="casilla" data-tono={r.tono}>
-			<span className="casilla-k">{ruta.nombre}</span>
-			<span className="casilla-m">{ruta.modelo ?? ruta.proveedor}</span>
+		<li
+			className="casilla"
+			data-tono={r.tono}
+			style={nivel ? ({ "--nivel": nivel } as React.CSSProperties) : undefined}
+		>
+			<span className="casilla-k">{clave}</span>
+			<span className="casilla-m" title={detalle}>
+				{detalle}
+			</span>
 			<p className="casilla-v">{r.cifra}</p>
 			<ul className="casilla-n">
 				{r.lineas.map((l) => (
@@ -101,7 +118,12 @@ function Rutas({ estado }: { estado: EstadoCarga }) {
 		cuerpo = (
 			<ul className="casillas" aria-busy={cargando}>
 				{datos.rutas.map((r) => (
-					<Casilla key={r.nombre} ruta={r} />
+					<Casilla
+						key={r.nombre}
+						clave={r.nombre}
+						detalle={r.modelo ?? r.proveedor}
+						r={resumen(r)}
+					/>
 				))}
 			</ul>
 		);
@@ -210,8 +232,13 @@ function Redactor({ vivo, conectado }: { vivo: ChatVivo; conectado: boolean }) {
 	);
 }
 
-function Conversacion({ conectado }: { conectado: boolean }) {
-	const vivo = useChat();
+function Conversacion({
+	vivo,
+	conectado,
+}: {
+	vivo: ChatVivo;
+	conectado: boolean;
+}) {
 	const { mensajes, error } = vivo.chat;
 	const fin = useRef<HTMLDivElement>(null);
 	const ultimo = mensajes.at(-1);
@@ -276,16 +303,30 @@ function Conversacion({ conectado }: { conectado: boolean }) {
 	);
 }
 
-function Subagentes() {
+function Subagentes({ arbol }: { arbol: Arbol }) {
 	return (
 		<aside className="ohx-columna ohx-arbol" aria-labelledby="ohx-subagentes">
 			<div className="ohx-rotulo">
 				<h2 id="ohx-subagentes">Subagentes</h2>
 			</div>
-			<p className="vacio">
-				Ningún subagente activo. Aparecen aquí cuando el agente delega en una
-				ruta.
-			</p>
+			{arbol.nodos.length === 0 ? (
+				<p className="vacio">
+					Todavía no hay subagentes en esta conversación. Aparecen aquí cuando
+					el agente delega en una ruta.
+				</p>
+			) : (
+				<ul className="casillas">
+					{enOrden(arbol.nodos).map(([n, nivel]) => (
+						<Casilla
+							key={n.id}
+							clave={n.ruta ?? "subagente"}
+							detalle={n.objetivo}
+							r={ficha(n)}
+							nivel={nivel}
+						/>
+					))}
+				</ul>
+			)}
 		</aside>
 	);
 }
@@ -293,13 +334,14 @@ function Subagentes() {
 export function App() {
 	const estado = useEstado();
 	const { estado: conexion, reintentar } = useConexion();
+	const vivo = useChat();
 	return (
 		<div className="ohx">
 			<Cabecera conexion={conexion} reintentar={reintentar} />
 			<div className="ohx-cuerpo">
 				<Rutas estado={estado} />
-				<Conversacion conectado={conexion === "conectado"} />
-				<Subagentes />
+				<Conversacion vivo={vivo} conectado={conexion === "conectado"} />
+				<Subagentes arbol={vivo.chat.subagentes} />
 			</div>
 		</div>
 	);
