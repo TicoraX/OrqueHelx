@@ -15,7 +15,7 @@ import time
 
 from . import comando, cuota
 from .proveedores import registrar_acp
-from .rutas import ErrorDeConfig, Ruta, cargar, credenciales
+from .rutas import SIN_RUTAS, ErrorDeConfig, Ruta, cargar, credenciales
 
 # D18: que hace el padre cuando un hijo se queda sin cuota. Nunca hay cambio automatico sin permiso.
 POLITICAS = {
@@ -40,7 +40,9 @@ def esquema(rutas: dict[str, Ruta]) -> dict:
         "parameters": {
             "type": "object",
             "properties": {
-                "ruta": {"type": "string", "enum": list(rutas), "description": "Suscripción donde corre el subagente."},
+                # Sin rutas no hay enum: un enum vacío es un esquema inválido para varios proveedores.
+                "ruta": {"type": "string", "description": "Suscripción donde corre el subagente.",
+                         **({"enum": list(rutas)} if rutas else {})},
                 "objetivo": {"type": "string", "description": "Tarea completa y autocontenida para el subagente."},
                 "contexto": {"type": "string", "description": "Datos que el subagente necesita y no puede ver."},
             },
@@ -76,6 +78,8 @@ def _fallo(salida: str) -> bool:
 
 def manejar(rutas: dict[str, Ruta], args: dict, parent_agent, politica: str = "preguntar") -> str:
     # Los argumentos vienen del modelo: cualquier tipo es posible y nada debe romper el handler.
+    if not rutas:
+        return _error(SIN_RUTAS)
     nombre, objetivo = args.get("ruta"), args.get("objetivo")
     ruta = rutas.get(nombre) if isinstance(nombre, str) else None
     if ruta is None:
@@ -115,7 +119,7 @@ def _opciones(rutas: dict[str, Ruta]) -> str:
 def redirigir(rutas: dict[str, Ruta], tool_name: str = "", args: dict | None = None, **_) -> dict | None:
     """Hook ``pre_tool_call``: el delegate_task nativo corre el hijo en el proveedor del padre, sin rutas
     ni politica de cuota. Lanzar subagentes pasa por ``delegar``; las acciones de control siguen."""
-    if tool_name != "delegate_task":
+    if tool_name != "delegate_task" or not rutas:  # sin rutas no hay a dónde redirigir: sigue el nativo
         return None
     accion = str((args or {}).get("action") or "spawn").strip().lower()
     if accion in _CONTROL:
@@ -136,7 +140,10 @@ def seccion_prompt(rutas: dict[str, Ruta]) -> str:
 def registrar(ctx) -> None:
     # No importar model_tools aca: su import descubre plugins y, dentro del loader de plugins,
     # se traba contra su lock hasta el timeout de carga (10 s) y Hermes descarta el plugin.
-    rutas = cargar(ctx.get_config("rutas"))
+    # Recién instalado no hay rutas: carga igual y cada entrada dice qué configurar. Una config con
+    # contenido mal escrito sigue fallando al cargar.
+    config_rutas = ctx.get_config("rutas")
+    rutas = {} if config_rutas is None or config_rutas == {} else cargar(config_rutas)
     politica = ctx.get_config("politica", "preguntar")
     if not isinstance(politica, str) or politica not in POLITICAS:
         raise ErrorDeConfig(f"política {politica!r} inválida en plugins.entries.orquehelx.settings.politica; "
@@ -152,7 +159,8 @@ def registrar(ctx) -> None:
     ctx.register_tool("delegar", "orquehelx", definicion, handler, description=definicion["description"])
     ctx.register_hook("api_request_error", cuota.al_fallar)
     ctx.register_hook("pre_tool_call", lambda **kw: redirigir(rutas, **kw))
-    ctx.register_system_prompt_section("orquehelx.rutas", seccion_prompt(rutas))
+    if rutas:
+        ctx.register_system_prompt_section("orquehelx.rutas", seccion_prompt(rutas))
     ctx.register_command("ohx", lambda argumentos: comando.ejecutar(rutas, argumentos),
                          description="Rutas de OrqueHelx y consumo medido de cada suscripción",
                          args_hint="rutas|cuota")

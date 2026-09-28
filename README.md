@@ -24,7 +24,7 @@ cualquier CLI que hable ACP.
 El modelo elige la ruta, y el subagente corre en ese proveedor y gasta su cuota. Si esa cuota se agota, el
 cambio a otro proveedor lo decides tú: OrqueHelx nunca lo hace automático.
 
-**Estado:** v0.1.2. Funcionan `delegar`, `/ohx rutas|cuota` y la pestaña OrqueHelx del dashboard: rutas con
+**Estado:** v0.1.3. Funcionan `delegar`, `/ohx rutas|cuota` y la pestaña OrqueHelx del dashboard: rutas con
 su cuota medida, chat con el agente principal, árbol de subagentes en vivo y pausa por cuota hasta el reinicio.
 Dos casos no se probaron todavía con una suscripción real: un subagente que se queda sin cuota y los subagentes
 anidados. Los cubren tests con errores capturados de proveedores reales y otros armados a mano.
