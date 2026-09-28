@@ -120,3 +120,16 @@ def test_pausas_valida_la_entrada(cliente, hermes_home):
     assert cliente.post("/api/plugins/orquehelx/pausas", json={"sesion": "", "proveedor": "x"}).status_code == 422
     assert cliente.post("/api/plugins/orquehelx/pausas", json={"sesion": "s" * 300, "proveedor": "x"}).status_code == 422
     assert cliente.post("/api/plugins/orquehelx/pausas/1/borrar", json={}).status_code == 422
+
+
+def test_estado_informa_el_modelo_configurado_del_principal(cliente, hermes_home):
+    _config(hermes_home, "        rutas:\n          claude: {provider: claude-subscription-directsdk-experimental}\n")
+    with (hermes_home / "config.yaml").open("a", encoding="utf-8") as f:
+        f.write("model:\n  default: claude-haiku-4-5\n  provider: claude-subscription-directsdk-experimental\n")
+    assert cliente.get("/api/plugins/orquehelx/estado").json()["principal"] == {
+        "proveedor": "claude-subscription-directsdk-experimental", "modelo": "claude-haiku-4-5"}
+
+
+def test_estado_sin_modelo_configurado_no_inventa_principal(cliente, hermes_home):
+    _config(hermes_home, "        rutas:\n          claude: {provider: claude-subscription-directsdk-experimental}\n")
+    assert cliente.get("/api/plugins/orquehelx/estado").json()["principal"] is None

@@ -9,7 +9,15 @@ import {
 	useConexion,
 	useEstado,
 } from "./datos";
-import { hora, type Resumen, type RutaEstado, resumen } from "./estado";
+import {
+	type EstadoRutas,
+	etiquetaPrincipal,
+	hora,
+	nombreModelo,
+	type Resumen,
+	type RutaEstado,
+	resumen,
+} from "./estado";
 import type { EstadoConexion } from "./gateway";
 import { type Arbol, enOrden, ficha } from "./subagentes";
 
@@ -184,7 +192,7 @@ function Entrada({ m }: { m: Mensaje }) {
 		<article className="ohx-mensaje" data-rol={m.rol} data-estado={m.estado}>
 			<header className="ohx-mensaje-k">
 				{ROTULO[m.rol]}
-				{m.modelo ? <span> · {m.modelo}</span> : null}
+				{m.modelo ? <span> · {nombreModelo(m.modelo)}</span> : null}
 				{nota ? <span> · {nota}</span> : null}
 			</header>
 			{cuerpo}
@@ -328,7 +336,15 @@ function TarjetaPausa({
 						<button
 							type="button"
 							className="btn"
-							onClick={() => vivo.reenviar(elegida)}
+							onClick={() =>
+								vivo.reenviar(
+									elegida,
+									etiquetaPrincipal(
+										{ proveedor: pausa.proveedor, modelo: pausa.modelo },
+										rutas,
+									),
+								)
+							}
 							disabled={!conectado}
 						>
 							Reenviar
@@ -346,13 +362,17 @@ function TarjetaPausa({
 function Conversacion({
 	vivo,
 	rutas,
+	principalConfigurado,
 	conectado,
 }: {
 	vivo: ChatVivo;
 	rutas: RutaEstado[];
+	principalConfigurado: EstadoRutas["principal"];
 	conectado: boolean;
 }) {
 	const { mensajes, error, pausa } = vivo.chat;
+	// Quien responde: el de la sesion viva (session.info manda) o, antes del primer turno, el de la config.
+	const quien = vivo.chat.principal ?? principalConfigurado;
 	const fin = useRef<HTMLDivElement>(null);
 	const ultimo = mensajes.at(-1);
 	// Sigue la respuesta mientras llega (el texto de la ultima cambia con cada delta) y la pausa al aparecer.
@@ -363,10 +383,9 @@ function Conversacion({
 		<main className="ohx-columna ohx-chat">
 			<div className="ohx-rotulo">
 				<h2>Conversación</h2>
-				{vivo.chat.principal ? (
-					<span className="ohx-principal" title={vivo.chat.principal.proveedor}>
-						responde{" "}
-						<b>{vivo.chat.principal.modelo ?? vivo.chat.principal.proveedor}</b>
+				{quien ? (
+					<span className="ohx-principal" title={quien.proveedor ?? undefined}>
+						responde <b>{etiquetaPrincipal(quien, rutas)}</b>
 					</span>
 				) : null}
 				{mensajes.length > 0 ? (
@@ -500,6 +519,7 @@ export function App() {
 				<Conversacion
 					vivo={vivo}
 					rutas={estado.datos?.rutas ?? []}
+					principalConfigurado={estado.datos?.principal ?? null}
 					conectado={conexion === "conectado"}
 				/>
 				<Subagentes arbol={vivo.chat.subagentes} />

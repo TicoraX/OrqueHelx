@@ -626,9 +626,6 @@
 	font: inherit;
 	transition: border-color var(--dur-focus) var(--ease);
 }
-.ohx-redactor textarea:focus-visible {
-	border-color: var(--accent);
-}
 .ohx-redactor textarea:disabled {
 	cursor: not-allowed;
 }
@@ -713,6 +710,10 @@
 	}
 	.ohx .ohx-riel .casilla {
 		grid-template-rows: auto auto;
+	}
+	/* La cifra entera en una linea dentro de la tira ("65 % usado" lleva espacios no separables). */
+	.ohx .ohx-riel .casilla-v {
+		font-size: 1.0625rem;
 	}
 	.ohx .ohx-riel .casilla-m,
 	.ohx .ohx-riel .casilla-n {

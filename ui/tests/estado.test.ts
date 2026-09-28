@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { hora, type RutaEstado, resumen, uso, ventana } from "../src/estado";
+import {
+	etiquetaPrincipal,
+	hora,
+	nombreModelo,
+	type RutaEstado,
+	resumen,
+	uso,
+	ventana,
+} from "../src/estado";
 
 const AHORA = new Date("2026-09-25T15:00:00");
 const ruta = (parcial: Partial<RutaEstado>): RutaEstado => ({
@@ -14,10 +22,11 @@ const ruta = (parcial: Partial<RutaEstado>): RutaEstado => ({
 
 describe("uso", () => {
 	it.each([
-		[56, "56 %"],
-		[99.6, "99.6 %"],
-		[99.96, "99.9 %"],
-		[100, "100 %"],
+		// Espacio no separable: el numero nunca queda en otra linea que su %.
+		[56, "56 %"],
+		[99.6, "99.6 %"],
+		[99.96, "99.9 %"],
+		[100, "100 %"],
 		[null, "sin dato"],
 		[Number.NaN, "sin dato"],
 	])("%s -> %s", (v, texto) => expect(uso(v as number | null)).toBe(texto));
@@ -58,10 +67,10 @@ describe("resumen", () => {
 			AHORA,
 		);
 		// La cifra dice que es consumo, no saldo; las ventanas conocidas de Claude salen en espanol.
-		expect(r).toMatchObject({ tono: "normal", cifra: "56 % usado" });
+		expect(r).toMatchObject({ tono: "normal", cifra: "56 % usado" });
 		expect(r.lineas).toEqual([
-			"sesión 56 % · reinicia 17:19",
-			"semana 36 % · reinicia 28/09 18:59",
+			"sesión 56 % · reinicia 17:19",
+			"semana 36 % · reinicia 28/09 18:59",
 		]);
 	});
 
@@ -105,5 +114,42 @@ describe("resumen", () => {
 			cifra: "sin dato",
 			lineas: ["no se pudo medir: sin red"],
 		});
+	});
+});
+
+describe("quien responde", () => {
+	it("un solo nombre por modelo: sin el sufijo de fecha", () => {
+		expect(nombreModelo("claude-haiku-4-5-20251001")).toBe("claude-haiku-4-5");
+		expect(nombreModelo("flash")).toBe("flash");
+		expect(nombreModelo(null)).toBeNull();
+	});
+
+	it("nombra al principal por ruta y modelo; sin ruta que lo cubra, por proveedor", () => {
+		const rutas = [
+			ruta({}),
+			ruta({
+				nombre: "agy",
+				proveedor: "antigravity-subscription-directsdk",
+				modelo: "flash",
+			}),
+		];
+		expect(
+			etiquetaPrincipal(
+				{
+					proveedor: "claude-subscription-directsdk-experimental",
+					modelo: "claude-haiku-4-5-20251001",
+				},
+				rutas,
+			),
+		).toBe("claude · claude-haiku-4-5");
+		expect(
+			etiquetaPrincipal(
+				{ proveedor: "openai-codex", modelo: "gpt-5.5" },
+				rutas,
+			),
+		).toBe("openai-codex · gpt-5.5");
+		expect(etiquetaPrincipal({ proveedor: null, modelo: "x" }, rutas)).toBe(
+			"x",
+		);
 	});
 });

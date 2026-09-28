@@ -82,7 +82,8 @@ export interface ChatVivo {
 	detener: () => void;
 	nueva: () => void;
 	reanudar: () => void;
-	reenviar: (ruta: RutaEstado) => void;
+	/** desde: "ruta · modelo" del principal que se quedo sin cuota, para el asiento del hilo. */
+	reenviar: (ruta: RutaEstado, desde: string) => void;
 	cancelar: () => void;
 }
 
@@ -341,7 +342,7 @@ export function useChat(): ChatVivo {
 	}, [pausa, reclamar, reintentar, salir, fallo]);
 
 	const reenviar = useCallback(
-		(ruta: RutaEstado) => {
+		(ruta: RutaEstado, desde: string) => {
 			if (!pausa || !ruta.modelo) return;
 			const modelo = ruta.modelo;
 			reclamar(pausa, "reenviar", ruta.nombre)
@@ -349,7 +350,7 @@ export function useChat(): ChatVivo {
 					if (!gano) return;
 					despachar({
 						tipo: "nota",
-						texto: `turno reenviado de ${pausa.modelo ?? pausa.proveedor} a ${ruta.nombre} · ${modelo}`,
+						texto: `turno reenviado de ${desde} a ${ruta.nombre} · ${modelo}`,
 					});
 					despachar({ tipo: "reanudando" });
 					salir(async () => {
