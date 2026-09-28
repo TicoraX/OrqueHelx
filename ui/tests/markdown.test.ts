@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { bloques, tramos } from "../src/markdown";
+import { bloques, plano, tramos } from "../src/markdown";
+
+describe("plano", () => {
+	it("quita marcas anidadas dentro de negrita y cursiva", () => {
+		expect(plano("**usa `delegar`** y *ya*\n\n- uno\n- dos")).toBe(
+			"usa delegar y ya uno; dos",
+		);
+	});
+});
 
 describe("tramos", () => {
 	it("texto plano queda igual", () => {
