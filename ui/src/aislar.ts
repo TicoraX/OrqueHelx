@@ -10,7 +10,9 @@ export interface Nodo {
 	inert?: boolean;
 }
 
-/** Vuelve inerte cada hermano de la cadena nodo -> body; devuelve la funcion que lo restaura. */
+/** Vuelve inerte cada hermano de la cadena nodo -> body; devuelve la funcion que lo restaura.
+ * ponytail: marca los nodos que existen al montar; si Hermes agrega o reemplaza hermanos con la pantalla
+ * abierta, esos quedan activos. Si pasa, observar body con un MutationObserver. */
 export function aislar(nodo: Nodo): () => void {
 	const tocados: Nodo[] = [];
 	for (
