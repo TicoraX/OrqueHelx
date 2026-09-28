@@ -97,7 +97,13 @@ export function bloques(texto: string): Bloque[] {
 	return salida;
 }
 
-const linea = (ts: Tramo[]) => ts.map((x) => x.v).join("");
+// Negrita y cursiva pueden traer marcas adentro (`**usa `x`**`): se aplanan de nuevo.
+const linea = (ts: Tramo[]): string =>
+	ts
+		.map((x) =>
+			x.t === "negrita" || x.t === "cursiva" ? linea(tramos(x.v)) : x.v,
+		)
+		.join("");
 
 /** El mismo markdown en una sola linea de texto, sin marcas: para resumenes recortados. */
 export function plano(texto: string): string {
