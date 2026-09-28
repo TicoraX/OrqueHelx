@@ -122,3 +122,7 @@ pytest tests
 ```
 
 Corren contra un Hermes real instalado en el mismo entorno.
+
+## Licencia
+
+MIT. Ver [LICENSE](LICENSE).
