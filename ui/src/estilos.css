@@ -624,7 +624,6 @@
 	background: var(--ground);
 	color: var(--ink);
 	font: inherit;
-	transition: border-color var(--dur-focus) var(--ease);
 }
 .ohx-redactor textarea:disabled {
 	cursor: not-allowed;
