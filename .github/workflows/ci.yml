@@ -3,9 +3,11 @@ name: CI
 # Suite del plugin contra Hermes real (sin mocks del core).
 # - version minima declarada en orquehelx/plugin.yaml: bloquea el merge.
 # - main de Hermes: aviso temprano de roturas upstream; bloquea solo en la corrida semanal.
+# Flujo: rama -> PR a develop -> PR de develop a master -> tag. master es la rama por defecto:
+# `hermes plugins install` clona esa, asi que solo recibe lo que ya paso por develop.
 on:
   push:
-    branches: [master, overhaul]
+    branches: [master, develop]
   pull_request:
   schedule:
     - cron: "0 9 * * 1"
