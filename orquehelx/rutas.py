@@ -16,6 +16,7 @@ import re
 from dataclasses import dataclass
 
 CLAVE_CONFIG = "plugins.entries.orquehelx.settings.rutas"
+SIN_RUTAS = f"no hay rutas configuradas: define {CLAVE_CONFIG} en config.yaml"
 _NOMBRE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 _CAMPOS = {"provider", "model", "acp"}
 
@@ -62,7 +63,7 @@ def _ruta(nombre: str, valor: object) -> Ruta:
 def cargar(config: object) -> dict[str, Ruta]:
     """Valida la config completa; falla en voz alta en la primera ruta inutilizable."""
     if not isinstance(config, dict) or not config:
-        raise ErrorDeRuta(f"no hay rutas configuradas: define {CLAVE_CONFIG} en config.yaml")
+        raise ErrorDeRuta(SIN_RUTAS)
     return {str(nombre): _ruta(str(nombre), valor) for nombre, valor in config.items()}
 
 

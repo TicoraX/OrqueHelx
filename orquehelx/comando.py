@@ -10,7 +10,7 @@ import time
 from datetime import datetime, timezone
 
 from . import cuota
-from .rutas import Ruta
+from .rutas import SIN_RUTAS, Ruta
 
 USO = "uso: /ohx rutas | /ohx cuota"
 
@@ -47,6 +47,8 @@ def _cuota_de(ruta: Ruta, ventanas: list | None, error: Exception | None) -> lis
 
 def ejecutar(rutas: dict[str, Ruta], argumentos: str) -> str:
     sub = (argumentos or "").strip().lower()
+    if sub in ("rutas", "cuota") and not rutas:
+        return SIN_RUTAS
     if sub == "rutas":
         return _rutas(rutas)
     if sub == "cuota":

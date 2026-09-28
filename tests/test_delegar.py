@@ -216,6 +216,28 @@ def test_hijo_completado_ignora_agotamientos_viejos(monkeypatch):
     assert out["results"][0]["status"] == "completed"
 
 
+@pytest.mark.parametrize("config", [None, {}])
+def test_sin_rutas_carga_igual_y_lo_dice_al_usarlo(llamadas, config):
+    # Recién instalado no hay rutas: el plugin carga (el CI del catálogo de Hermes lo prueba así) y cada entrada
+    # explica qué configurar. Una config de rutas mal escrita sigue fallando al cargar (test_rutas).
+    ctx = _ctx_falso(config)
+    delegar.registrar(ctx)
+    assert "enum" not in ctx.herramientas["delegar"]["schema"]["parameters"]["properties"]["ruta"]
+    out = json.loads(ctx.herramientas["delegar"]["handler"]({"ruta": "x", "objetivo": "y"}, parent_agent=object()))
+    assert "plugins.entries.orquehelx.settings.rutas" in out["error"]
+    assert llamadas == []
+    assert ctx.herramientas["hook:pre_tool_call"](tool_name="delegate_task", args={}) is None
+    assert "plugins.entries.orquehelx.settings.rutas" in ctx.herramientas["comando:ohx"]("rutas")
+    assert "seccion:orquehelx.rutas" not in ctx.herramientas
+
+
+@pytest.mark.parametrize("config", [[], 0, False, "claude"])
+def test_rutas_con_tipo_invalido_fallan_al_cargar(config):
+    from orquehelx.rutas import ErrorDeRuta
+    with pytest.raises(ErrorDeRuta, match="plugins.entries.orquehelx.settings.rutas"):
+        delegar.registrar(_ctx_falso(config))
+
+
 def test_politica_invalida_falla_al_cargar():
     from orquehelx.rutas import ErrorDeConfig
     ctx = _ctx_falso({"claude": {"provider": "p"}})
