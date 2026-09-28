@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hora, type RutaEstado, resumen, uso } from "../src/estado";
+import { hora, type RutaEstado, resumen, uso, ventana } from "../src/estado";
 
 const AHORA = new Date("2026-09-25T15:00:00");
 const ruta = (parcial: Partial<RutaEstado>): RutaEstado => ({
@@ -57,8 +57,17 @@ describe("resumen", () => {
 			}),
 			AHORA,
 		);
-		expect(r).toMatchObject({ tono: "normal", cifra: "56 %" });
-		expect(r.lineas[0]).toBe("Current session 56 %, reinicia 17:19");
+		// La cifra dice que es consumo, no saldo; las ventanas conocidas de Claude salen en espanol.
+		expect(r).toMatchObject({ tono: "normal", cifra: "56 % usado" });
+		expect(r.lineas).toEqual([
+			"sesión 56 % · reinicia 17:19",
+			"semana 36 % · reinicia 28/09 18:59",
+		]);
+	});
+
+	it("una ventana de familia conserva la familia y una desconocida sale tal cual", () => {
+		expect(ventana("Current week (Opus)")).toBe("semana (Opus)");
+		expect(ventana("5h")).toBe("5h");
 	});
 
 	it("agotada muestra cuando vuelve como cifra principal", () => {

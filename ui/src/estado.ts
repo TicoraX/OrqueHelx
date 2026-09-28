@@ -85,10 +85,25 @@ export function resumen(ruta: RutaEstado, ahora = new Date()): Resumen {
 	);
 	return {
 		tono: "normal",
-		cifra: uso(principal.usado),
+		// "usado": el porcentaje es consumo, no saldo.
+		cifra: `${uso(principal.usado)} usado`,
 		lineas: m.ventanas.map(
 			(v) =>
-				`${v.etiqueta} ${uso(v.usado)}${v.reinicio ? `, reinicia ${hora(v.reinicio, ahora)}` : ""}`,
+				`${ventana(v.etiqueta)} ${uso(v.usado)}${v.reinicio ? ` · reinicia ${hora(v.reinicio, ahora)}` : ""}`,
 		),
 	};
+}
+
+const VENTANAS: [RegExp, string][] = [
+	[/^current session$/i, "sesión"],
+	[/^current week$/i, "semana"],
+];
+
+/** Etiqueta de ventana en espanol: las conocidas de Claude se traducen, la familia se conserva; el resto, tal cual. */
+export function ventana(etiqueta: string): string {
+	const familia = etiqueta.match(/^(.*?)\s*(\([^)]*\))$/);
+	const base = familia ? familia[1] : etiqueta;
+	const traducida = VENTANAS.find(([re]) => re.test(base))?.[1];
+	if (!traducida) return etiqueta;
+	return familia ? `${traducida} ${familia[2]}` : traducida;
 }

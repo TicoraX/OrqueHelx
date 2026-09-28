@@ -40,7 +40,8 @@ function Cabecera({
 			<h1 className="ohx-marca">OrqueHelx</h1>
 			<div className="ohx-conexion" data-estado={conexion} role="status">
 				<span>
-					gateway <b>{TEXTO_CONEXION[conexion]}</b>
+					<span className="ohx-conexion-k">gateway </span>
+					<b>{TEXTO_CONEXION[conexion]}</b>
 				</span>
 				{conexion === "sin_conexion" ? (
 					<button type="button" className="btn" onClick={reintentar}>
@@ -55,24 +56,18 @@ function Cabecera({
 	);
 }
 
-/** Casilla de libro mayor: rotulo, detalle, cifra y notas. Rutas y subagentes comparten el formato. */
+/** Casilla de libro mayor de una ruta: rotulo, detalle, cifra y notas. */
 function Casilla({
 	clave,
 	detalle,
 	r,
-	nivel = 0,
 }: {
 	clave: string;
 	detalle: string;
 	r: Resumen;
-	nivel?: number;
 }) {
 	return (
-		<li
-			className="casilla"
-			data-tono={r.tono}
-			style={nivel ? ({ "--nivel": nivel } as React.CSSProperties) : undefined}
-		>
+		<li className="casilla" data-tono={r.tono}>
 			<span className="casilla-k">{clave}</span>
 			<span className="casilla-m" title={detalle}>
 				{detalle}
@@ -153,6 +148,7 @@ function Rutas({ estado }: { estado: EstadoCarga }) {
 const ROTULO: Record<Mensaje["rol"], string> = {
 	usuario: "tú",
 	agente: "agente",
+	nota: "nota",
 };
 const NOTA: Partial<Record<Mensaje["estado"], string>> = {
 	escribiendo: "escribiendo",
@@ -161,15 +157,37 @@ const NOTA: Partial<Record<Mensaje["estado"], string>> = {
 };
 
 function Entrada({ m }: { m: Mensaje }) {
+	if (m.rol === "nota") {
+		return (
+			<p className="ohx-asiento" role="note">
+				{m.texto}
+			</p>
+		);
+	}
 	const nota =
 		m.rol === "usuario" && m.estado === "error" ? "no enviado" : NOTA[m.estado];
+	// El texto de un turno fallido es el error crudo de Hermes (en ingles): una linea propia y el original a pedido.
+	let cuerpo: React.ReactNode = null;
+	if (m.rol === "agente" && m.estado === "error" && m.texto) {
+		cuerpo = (
+			<details className="ohx-fallo">
+				<summary>
+					El proveedor no respondió este turno. Ver el detalle de Hermes
+				</summary>
+				<pre>{m.texto}</pre>
+			</details>
+		);
+	} else if (m.texto) {
+		cuerpo = <p className="ohx-mensaje-v">{m.texto}</p>;
+	}
 	return (
 		<article className="ohx-mensaje" data-rol={m.rol} data-estado={m.estado}>
 			<header className="ohx-mensaje-k">
 				{ROTULO[m.rol]}
+				{m.modelo ? <span> · {m.modelo}</span> : null}
 				{nota ? <span> · {nota}</span> : null}
 			</header>
-			{m.texto ? <p className="ohx-mensaje-v">{m.texto}</p> : null}
+			{cuerpo}
 		</article>
 	);
 }
@@ -274,7 +292,7 @@ function TarjetaPausa({
 				</div>
 				<div>
 					<dt>reinicia</dt>
-					<dd>{vuelve}</dd>
+					<dd className="cifra">{vuelve}</dd>
 				</div>
 			</dl>
 			<p className="lamina-v">
@@ -345,6 +363,12 @@ function Conversacion({
 		<main className="ohx-columna ohx-chat">
 			<div className="ohx-rotulo">
 				<h2>Conversación</h2>
+				{vivo.chat.principal ? (
+					<span className="ohx-principal" title={vivo.chat.principal.proveedor}>
+						responde{" "}
+						<b>{vivo.chat.principal.modelo ?? vivo.chat.principal.proveedor}</b>
+					</span>
+				) : null}
 				{mensajes.length > 0 ? (
 					<button
 						type="button"
@@ -417,17 +441,36 @@ function Subagentes({ arbol }: { arbol: Arbol }) {
 					el agente delega en una ruta.
 				</p>
 			) : (
-				<ul className="casillas">
-					{enOrden(arbol.nodos).map(([n, nivel]) => (
-						<Casilla
-							key={n.id}
-							clave={n.ruta ?? "subagente"}
-							detalle={n.objetivo}
-							r={ficha(n)}
-							nivel={nivel}
-						/>
-					))}
-				</ul>
+				// Asientos: una fila por subagente; el estado cambia en su fila sin mover las demas.
+				<dl className="asientos ohx-subagentes">
+					{enOrden(arbol.nodos).map(([n, nivel]) => {
+						const f = ficha(n);
+						return (
+							<div
+								key={n.id}
+								data-estado={n.estado}
+								style={
+									nivel
+										? ({ "--nivel": nivel } as React.CSSProperties)
+										: undefined
+								}
+							>
+								<dt>{n.ruta ?? "subagente"}</dt>
+								<dd>
+									<span className="ohx-sub-estado">{f.cifra}</span>
+									<span className="ohx-sub-objetivo" title={n.objetivo}>
+										{n.objetivo}
+									</span>
+									{f.lineas.map((l) => (
+										<span key={l} className="ohx-sub-nota">
+											{l}
+										</span>
+									))}
+								</dd>
+							</div>
+						);
+					})}
+				</dl>
 			)}
 		</aside>
 	);
@@ -439,6 +482,16 @@ export function App() {
 	const vivo = useChat();
 	const raiz = useRef<HTMLDivElement>(null);
 	useEffect(() => (raiz.current ? aislar(raiz.current) : undefined), []);
+	// D21: el riel se mide de nuevo por evento, cuando una ruta queda sin cuota, para que diga lo mismo que la
+	// tarjeta de pausa y el arbol (sin polling).
+	const { refrescar } = estado;
+	const agotados = vivo.chat.subagentes.nodos.filter(
+		(n) => n.estado === "sin_cuota",
+	).length;
+	const hayPausa = vivo.chat.pausa !== null;
+	useEffect(() => {
+		if (hayPausa || agotados > 0) refrescar();
+	}, [hayPausa, agotados, refrescar]);
 	return (
 		<div className="ohx" ref={raiz}>
 			<Cabecera conexion={conexion} reintentar={reintentar} />

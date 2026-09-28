@@ -6,7 +6,8 @@
 
 import { type Arbol, reducirArbol, vacio } from "./subagentes";
 
-type Rol = "usuario" | "agente";
+/** "nota": asiento del sistema en el hilo (un reenvio), no lo dice nadie. */
+type Rol = "usuario" | "agente" | "nota";
 type EstadoMensaje = "listo" | "escribiendo" | "interrumpido" | "error";
 
 export interface Mensaje {
@@ -14,6 +15,8 @@ export interface Mensaje {
 	rol: Rol;
 	texto: string;
 	estado: EstadoMensaje;
+	/** Solo en respuestas del agente: el modelo del principal que la dio (tras un reenvio, cambia). */
+	modelo?: string | null;
 }
 
 /** Pausa del agente principal por cuota, tal como la devuelve /api/plugins/orquehelx/pausas. */
@@ -39,6 +42,8 @@ export interface Chat {
 	/** Fallo: el mensaje y, si fue al enviar, el texto para reintentar sin volver a escribirlo. */
 	error: { mensaje: string; texto: string | null } | null;
 	subagentes: Arbol;
+	/** Quien responde: proveedor y modelo del agente principal, o null si Hermes aun no lo dijo. */
+	principal: Principal | null;
 }
 
 type Accion =
@@ -49,6 +54,8 @@ type Accion =
 	| { tipo: "reanudando" }
 	| { tipo: "cancelada" }
 	| { tipo: "historial"; mensajes: { role?: unknown; text?: unknown }[] }
+	| { tipo: "principal"; principal: Principal | null }
+	| { tipo: "nota"; texto: string }
 	| { tipo: "nueva" };
 
 export const inicial: Chat = {
@@ -58,6 +65,7 @@ export const inicial: Chat = {
 	actividad: null,
 	error: null,
 	subagentes: vacio,
+	principal: null,
 };
 
 type Payload = Record<string, unknown> | null;
@@ -77,6 +85,7 @@ function conRespuesta(c: Chat, cambiar: (m: Mensaje) => Mensaje): Mensaje[] {
 			rol: "agente",
 			texto: "",
 			estado: "escribiendo",
+			modelo: c.principal?.modelo ?? null,
 		}),
 	];
 }
@@ -182,14 +191,44 @@ export function reducir(c: Chat, a: Accion): Chat {
 				error: { mensaje: a.mensaje, texto: ultimo.texto },
 			};
 		}
-		case "pausado":
-			return { ...c, turno: "pausado", pausa: a.pausa, actividad: null };
+		case "pausado": {
+			// La respuesta que precede a la pausa es el turno que fallo por cuota, aunque llegue del historial.
+			const ultimo = c.mensajes.at(-1);
+			const mensajes =
+				ultimo?.rol === "agente"
+					? [
+							...c.mensajes.slice(0, -1),
+							{ ...ultimo, estado: "error" as const },
+						]
+					: c.mensajes;
+			return {
+				...c,
+				turno: "pausado",
+				pausa: a.pausa,
+				actividad: null,
+				mensajes,
+			};
+		}
+		case "principal":
+			return { ...c, principal: a.principal };
+		case "nota":
+			return {
+				...c,
+				mensajes: [
+					...c.mensajes,
+					{ id: siguienteId(c), rol: "nota", texto: a.texto, estado: "listo" },
+				],
+			};
 		case "reanudando":
 			return { ...c, turno: "esperando", pausa: null, error: null };
 		case "cancelada":
 			return { ...c, turno: "libre", pausa: null };
 		case "historial":
-			return { ...inicial, mensajes: desdeHistorial(a.mensajes) };
+			return {
+				...inicial,
+				principal: c.principal,
+				mensajes: desdeHistorial(a.mensajes),
+			};
 		case "nueva":
 			return inicial;
 	}
