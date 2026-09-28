@@ -1,5 +1,6 @@
 // Pantalla principal: rutas y cuotas | conversacion | subagentes (contrato de direccion, forma "tres columnas").
 import React, { useEffect, useRef, useState } from "react";
+import { aislar } from "./aislar";
 import type { Mensaje, Pausa } from "./chat";
 import {
 	type ChatVivo,
@@ -36,7 +37,7 @@ function Cabecera({
 }) {
 	return (
 		<header className="ohx-cabecera">
-			<span className="ohx-marca">OrqueHelx</span>
+			<h1 className="ohx-marca">OrqueHelx</h1>
 			<div className="ohx-conexion" data-estado={conexion} role="status">
 				<span>
 					gateway <b>{TEXTO_CONEXION[conexion]}</b>
@@ -436,8 +437,10 @@ export function App() {
 	const estado = useEstado();
 	const { estado: conexion, reintentar } = useConexion();
 	const vivo = useChat();
+	const raiz = useRef<HTMLDivElement>(null);
+	useEffect(() => (raiz.current ? aislar(raiz.current) : undefined), []);
 	return (
-		<div className="ohx">
+		<div className="ohx" ref={raiz}>
 			<Cabecera conexion={conexion} reintentar={reintentar} />
 			<div className="ohx-cuerpo">
 				<Rutas estado={estado} />

@@ -541,7 +541,6 @@
 	transition: border-color var(--dur-focus) var(--ease);
 }
 .ohx-redactor textarea:focus-visible {
-	outline: none;
 	border-color: var(--accent);
 }
 .ohx-redactor textarea:disabled {
