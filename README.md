@@ -1,5 +1,22 @@
 # OrqueHelx
 
+## In English
+
+OrqueHelx is a [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin that lets one model delegate
+work to another, each running on your own subscription: Claude, Codex, Antigravity, OpenCode or any ACP CLI.
+When a subscription runs out of quota, you decide where the task goes next. OrqueHelx never switches providers
+on its own.
+
+```bash
+hermes plugins install TicoraX/OrqueHelx#orquehelx --enable
+hermes dashboard    # then open the OrqueHelx tab
+```
+
+Requires Hermes Agent 0.21.5 or later. The rest of this README (routes, quota policy, the dashboard tab) is in
+Spanish; the YAML and the commands are the same in any language.
+
+---
+
 Plugin para [Hermes Agent](https://github.com/NousResearch/hermes-agent) que permite que un modelo delegue
 trabajo a otro, y que cada uno corra con **tu propia suscripción**: Claude, Codex, Antigravity, OpenCode o
 cualquier CLI que hable ACP.
@@ -7,15 +24,20 @@ cualquier CLI que hable ACP.
 El modelo elige la ruta, y el subagente corre en ese proveedor y gasta su cuota. Si esa cuota se agota, el
 cambio a otro proveedor lo decides tú: OrqueHelx nunca lo hace automático.
 
-**Estado:** en desarrollo. Ya funcionan `delegar`, el aviso de cuota agotada en subagentes y la primera
-versión de la interfaz (rutas con su cuota medida). El chat en la interfaz, el árbol de subagentes en vivo y
-la pausa del agente principal hasta el reinicio vienen después.
+**Estado:** v0.1.0. Funcionan `delegar`, `/ohx rutas|cuota` y la pestaña OrqueHelx del dashboard: rutas con
+su cuota medida, chat con el agente principal, árbol de subagentes en vivo y pausa por cuota hasta el reinicio.
+Dos casos no se probaron todavía con una suscripción real: un subagente que se queda sin cuota y los subagentes
+anidados. Los cubren tests con errores capturados de proveedores reales y otros armados a mano.
 
 ## Requisitos
 
 - Hermes Agent 0.21.5 o posterior.
 - Los CLIs que quieras usar, instalados y con sesión iniciada (`claude`, `agy`, `opencode`, ...).
   OrqueHelx no guarda credenciales: cada CLI usa la suya.
+- En Windows, la ruta de Antigravity necesita el arreglo
+  [hermes-antigravity-subscription#2](https://github.com/soyelmismo/hermes-antigravity-subscription/pull/2),
+  todavía sin mergear. Sin él, el plugin de Antigravity no encuentra la sesión que `agy` guarda en el
+  Administrador de credenciales y responde que no hay sesión iniciada, aunque `agy` funcione en la terminal.
 
 ## Instalación
 
