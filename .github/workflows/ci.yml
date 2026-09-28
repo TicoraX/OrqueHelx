@@ -35,6 +35,10 @@ jobs:
             python: "3.11"
           - hermes: main
             python: "3.14"
+          # plugin.yaml declara macos: se prueba solo contra la version minima.
+          - os: macos-latest
+            hermes: v2026.9.24
+            python: "3.11"
     defaults:
       run:
         shell: bash
