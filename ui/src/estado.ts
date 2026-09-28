@@ -64,7 +64,7 @@ export function resumen(ruta: RutaEstado, ahora = new Date()): Resumen {
 		);
 		return {
 			tono: "agotada",
-			cifra: `vuelve ${hora(ruta.agotada.reinicio, ahora)}`,
+			cifra: unido(`vuelve ${hora(ruta.agotada.reinicio, ahora)}`),
 			lineas: [`sin cuota desde ${desde}`],
 		};
 	}
@@ -93,7 +93,7 @@ export function resumen(ruta: RutaEstado, ahora = new Date()): Resumen {
 		lineas: m.ventanas.map(
 			(v) =>
 				// "reinicia" nunca queda en otra linea que su hora: si hace falta cortar, se corta en el "·".
-				`${ventana(v.etiqueta)} ${uso(v.usado)}${v.reinicio ? ` · ${`reinicia ${hora(v.reinicio, ahora)}`.replaceAll(" ", " ")}` : ""}`,
+				`${ventana(v.etiqueta)} ${uso(v.usado)}${v.reinicio ? ` · ${unido(`reinicia ${hora(v.reinicio, ahora)}`)}` : ""}`,
 		),
 	};
 }
@@ -111,6 +111,9 @@ export function ventana(etiqueta: string): string {
 	if (!traducida) return etiqueta;
 	return familia ? `${traducida} ${familia[2]}` : traducida;
 }
+
+/** Una frase que no se parte de linea ("reinicia 19:05", "vuelve 28/09 00:50"): espacios no separables. */
+export const unido = (frase: string) => frase.replaceAll(" ", " ");
 
 /** Un solo nombre por modelo en toda la pantalla: Hermes informa el id con fecha (claude-haiku-4-5-20251001),
  * la config y las rutas el corto. */

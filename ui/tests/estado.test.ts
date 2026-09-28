@@ -89,7 +89,7 @@ describe("resumen", () => {
 			}),
 			AHORA,
 		);
-		expect(r).toMatchObject({ tono: "agotada", cifra: "vuelve 17:19" });
+		expect(r).toMatchObject({ tono: "agotada", cifra: "vuelve 17:19" });
 	});
 
 	it("agotada sin reinicio medido no inventa hora", () => {
@@ -97,7 +97,7 @@ describe("resumen", () => {
 			ruta({ agotada: { desde: AHORA.getTime() / 1000, reinicio: null } }),
 			AHORA,
 		);
-		expect(r.cifra).toBe("vuelve sin dato");
+		expect(r.cifra).toBe("vuelve sin dato");
 	});
 
 	it("sin medidor y con error dicen sin dato y la causa", () => {

@@ -472,9 +472,12 @@
 	text-transform: uppercase;
 	color: var(--ink-2);
 }
-.ohx-mensaje[data-estado="error"] .ohx-mensaje-k,
-.ohx-mensaje[data-estado="interrumpido"] .ohx-mensaje-k {
+.ohx-mensaje[data-estado="error"] .ohx-mensaje-k {
 	color: var(--fail);
+}
+/* Detener es una decision del usuario, no un fallo: tinta secundaria, como el subagente detenido. */
+.ohx-mensaje[data-estado="interrumpido"] .ohx-mensaje-k {
+	color: var(--ink-2);
 }
 .ohx .ohx-mensaje-v {
 	margin: 0.25rem 0 0;
@@ -733,5 +736,9 @@
 	.ohx .casilla,
 	.ohx .btn-accion {
 		transition: none;
+	}
+	/* estiri: con movimiento reducido el sello no se desplaza; queda la sombra. */
+	.ohx .btn-accion:hover {
+		transform: none;
 	}
 }
