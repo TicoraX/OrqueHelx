@@ -70,6 +70,13 @@ const TEXTO: [string, string][] = [
 	["--cifra", "--surface"],
 	["--pass", "--ground"],
 	["--fail", "--ground"],
+	// Chat, arbol y pausa (UI-2 a UI-4).
+	["--ink", "--raised"], // mensaje del usuario
+	["--ink", "--accent-soft"], // boton al apuntar, seleccion
+	["--pass", "--surface"], // "conectado" en la cabecera
+	["--fail", "--surface"], // rotulo de la lamina de pausa
+	["--fail", "--raised"], // cifra de la casilla agotada
+	["--ink-2", "--accent-soft"], // rotulos mono sobre la seleccion
 ];
 const BORDE: [string, string][] = [
 	["--rule-strong", "--ground"],

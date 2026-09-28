@@ -267,3 +267,67 @@ describe("principal de la sesion", () => {
 		expect(principalDe({ provider: "" })).toBeNull();
 	});
 });
+
+describe("quien responde (revision final de F4)", () => {
+	const HAIKU = {
+		proveedor: "claude-subscription-directsdk-experimental",
+		modelo: "claude-haiku-4-5",
+	};
+
+	it("cada respuesta del agente lleva el modelo del principal que la dio", () => {
+		const c = pasos(
+			{ tipo: "principal", principal: HAIKU },
+			{ tipo: "enviado", texto: "hola" },
+			{
+				tipo: "evento",
+				evento: "message.complete",
+				payload: { text: "hola", status: "complete" },
+			},
+		);
+		expect(c.principal).toEqual(HAIKU);
+		expect(c.mensajes[1]).toMatchObject({
+			rol: "agente",
+			modelo: "claude-haiku-4-5",
+		});
+	});
+
+	it("un reenvio deja un asiento en el hilo", () => {
+		const c = pasos({
+			tipo: "nota",
+			texto: "turno reenviado de agy a claude · claude-haiku-4-5",
+		});
+		expect(c.mensajes).toEqual([
+			{
+				id: 1,
+				rol: "nota",
+				texto: "turno reenviado de agy a claude · claude-haiku-4-5",
+				estado: "listo",
+			},
+		]);
+	});
+
+	it("al pausar, la respuesta que fallo por cuota queda marcada como error aunque venga del historial", () => {
+		const c = pasos(
+			{
+				tipo: "historial",
+				mensajes: [
+					{ role: "user", text: "hola" },
+					{ role: "assistant", text: "Your request was not processed." },
+				],
+			},
+			{
+				tipo: "pausado",
+				pausa: {
+					id: 1,
+					sesion: "s",
+					proveedor: "p",
+					modelo: null,
+					reinicio: null,
+					estado: "pausado",
+					creado: 0,
+				},
+			},
+		);
+		expect(c.mensajes[1].estado).toBe("error");
+	});
+});

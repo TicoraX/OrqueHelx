@@ -6,7 +6,7 @@
 //   subagent.complete         -> estado final en el sitio
 //   tool.complete delegar     -> si no arranco subagente: sin_cuota o rechazo, nodo con ese estado
 
-import { hora, type Resumen, type Tono } from "./estado";
+import { hora, type Resumen, type Tono, unido } from "./estado";
 
 type EstadoSubagente =
 	| "corriendo"
@@ -172,7 +172,11 @@ const CIFRA: Record<EstadoSubagente, [Tono, string]> = {
 export function ficha(n: Subagente, ahora = new Date()): Resumen {
 	const [tono, cifra] = CIFRA[n.estado];
 	if (n.estado === "sin_cuota")
-		return { tono, cifra, lineas: [`reinicia ${hora(n.reinicio, ahora)}`] };
+		return {
+			tono,
+			cifra,
+			lineas: [unido(`reinicia ${hora(n.reinicio, ahora)}`)],
+		};
 	const lineas = n.estado === "corriendo" ? [n.actividad] : [n.resumen];
 	if (n.duracion !== null)
 		lineas.push(

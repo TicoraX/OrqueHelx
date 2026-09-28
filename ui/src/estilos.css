@@ -292,28 +292,60 @@
 	color: var(--fail);
 }
 
-/* Subagentes: el objetivo se corta a tres lineas (completo en title); un nieto se sangra bajo su padre. */
-.ohx-arbol .casilla {
-	padding-inline-start: calc(1rem + var(--nivel, 0) * 0.875rem);
+/* Subagentes en asientos (contrato OWN-WORLD): una fila por subagente, ruta en mono, objetivo en Sans y el
+   estado a tamano de texto con su propio tono; el laton queda para lo medido. Un nieto se sangra bajo su padre. */
+.ohx .ohx-subagentes {
+	padding-block: 0.25rem;
 }
-/* El resumen del hijo puede ser largo: la respuesta completa ya la relata el agente en el chat. */
-.ohx-arbol .casilla-n li {
+.ohx .ohx-subagentes > div {
+	grid-template-columns: 5.5rem minmax(0, 1fr);
+	gap: 0.75rem;
+	padding-block: 0.625rem;
+	padding-inline-start: calc(var(--nivel, 0) * 0.875rem);
+}
+.ohx .ohx-subagentes dt {
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	overflow-wrap: anywhere;
+}
+.ohx .ohx-subagentes dd {
+	display: grid;
+	gap: 0.125rem;
+	color: var(--ink);
+}
+.ohx .ohx-sub-estado {
+	font-weight: 500;
+}
+.ohx-subagentes [data-estado="completado"] .ohx-sub-estado {
+	color: var(--pass);
+}
+.ohx-subagentes [data-estado="fallido"] .ohx-sub-estado,
+.ohx-subagentes [data-estado="sin_cuota"] .ohx-sub-estado {
+	color: var(--fail);
+}
+.ohx-subagentes [data-estado="interrumpido"] .ohx-sub-estado {
+	color: var(--ink-2);
+}
+/* Objetivo a tres lineas (completo en title); el resumen del hijo a cuatro: la respuesta entera ya la relata
+   el agente en el chat. */
+.ohx .ohx-sub-objetivo,
+.ohx .ohx-sub-nota {
 	display: -webkit-box;
 	-webkit-box-orient: vertical;
-	-webkit-line-clamp: 4;
-	line-clamp: 4;
 	overflow: hidden;
 	overflow-wrap: anywhere;
 }
-.ohx-arbol .casilla-m {
-	display: -webkit-box;
-	-webkit-box-orient: vertical;
+.ohx .ohx-sub-objetivo {
 	-webkit-line-clamp: 3;
 	line-clamp: 3;
-	overflow: hidden;
 	font-family: var(--font-sans);
 	font-size: 0.8125rem;
-	color: var(--ink);
+}
+.ohx .ohx-sub-nota {
+	-webkit-line-clamp: 4;
+	line-clamp: 4;
+	font-size: 0.75rem;
+	color: var(--ink-2);
 }
 
 /* ---------------------------------------------------------------------------
@@ -440,9 +472,12 @@
 	text-transform: uppercase;
 	color: var(--ink-2);
 }
-.ohx-mensaje[data-estado="error"] .ohx-mensaje-k,
-.ohx-mensaje[data-estado="interrumpido"] .ohx-mensaje-k {
+.ohx-mensaje[data-estado="error"] .ohx-mensaje-k {
 	color: var(--fail);
+}
+/* Detener es una decision del usuario, no un fallo: tinta secundaria, como el subagente detenido. */
+.ohx-mensaje[data-estado="interrumpido"] .ohx-mensaje-k {
+	color: var(--ink-2);
 }
 .ohx .ohx-mensaje-v {
 	margin: 0.25rem 0 0;
@@ -490,8 +525,12 @@
 	font-family: var(--font-mono);
 	font-size: 0.8125rem;
 	font-variant-numeric: tabular-nums;
-	color: var(--cifra);
+	color: var(--ink);
 	overflow-wrap: anywhere;
+}
+/* Solo lo medido va en laton (la hora de reinicio); proveedor y modelo son datos de configuracion. */
+.ohx .asientos dd.cifra {
+	color: var(--cifra);
 }
 .ohx .lamina-v {
 	margin: 0;
@@ -512,13 +551,62 @@
 .ohx .lamina select {
 	min-height: 36px;
 	max-width: 14rem;
-	padding: 0 0.5rem;
+	padding: 0 2rem 0 0.5rem;
 	border: 1px solid var(--rule-strong);
 	border-radius: var(--radius);
-	background: var(--ground);
+	/* Flecha con la paleta (dos trazos de tinta secundaria) en lugar del chevron nativo. */
+	appearance: none;
+	background:
+		linear-gradient(45deg, transparent 50%, var(--ink-2) 50%) right 0.9rem
+		center / 5px 5px no-repeat,
+		linear-gradient(135deg, var(--ink-2) 50%, transparent 50%) right 0.6rem
+		center / 5px 5px no-repeat,
+		var(--ground);
 	color: var(--ink);
 	font: inherit;
 	font-size: 0.875rem;
+	cursor: pointer;
+}
+
+/* Quien responde, en el rotulo de la conversacion. */
+.ohx-principal {
+	margin-inline-end: auto;
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+	color: var(--ink-2);
+	overflow-wrap: anywhere;
+}
+.ohx .ohx-principal b {
+	font-weight: 500;
+	color: var(--ink);
+}
+/* Asiento del sistema en el hilo (un reenvio): una linea mono entre filetes, no la voz de nadie. */
+.ohx .ohx-asiento {
+	margin: 0.75rem 0;
+	padding: 0.375rem 1rem;
+	border-block: 1px solid var(--rule);
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+	color: var(--ink-2);
+}
+/* Turno fallido: una linea propia; el error crudo de Hermes queda a pedido. */
+.ohx .ohx-fallo {
+	margin-block-start: 0.25rem;
+	font-size: 0.875rem;
+}
+.ohx .ohx-fallo summary {
+	cursor: pointer;
+	color: var(--ink-2);
+}
+.ohx .ohx-fallo pre {
+	margin: 0.5rem 0 0;
+	padding: 0.5rem 0.75rem;
+	border-inline-start: 2px solid var(--rule-strong);
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	color: var(--ink-2);
 }
 
 .ohx-redactor {
@@ -531,18 +619,14 @@
 .ohx-redactor textarea {
 	width: 100%;
 	max-height: 40vh;
-	resize: vertical;
+	/* Sin el tirador nativo del navegador: el campo tiene alto fijo de tres lineas. */
+	resize: none;
 	padding: 0.5rem 0.75rem;
 	border: 1px solid var(--rule-strong);
 	border-radius: var(--radius);
 	background: var(--ground);
 	color: var(--ink);
 	font: inherit;
-	transition: border-color var(--dur-focus) var(--ease);
-}
-.ohx-redactor textarea:focus-visible {
-	outline: none;
-	border-color: var(--accent);
 }
 .ohx-redactor textarea:disabled {
 	cursor: not-allowed;
@@ -617,11 +701,30 @@
 		height: 80vh;
 	}
 }
+/* Telefono: siempre visibles (contrato) la cuota de cada ruta y el campo de mensaje en el primer viewport.
+   Las rutas pasan a una tira horizontal de nombre y cifra; el detalle de ventanas queda para pantallas anchas. */
 @media (max-width: 520px) {
-	.ohx .casillas {
-		--columnas: 1;
+	.ohx .ohx-riel .casillas {
+		grid-template-columns: none;
+		grid-auto-flow: column;
+		grid-auto-columns: minmax(8.5rem, 1fr);
+		overflow-x: auto;
 	}
-	.ohx-cabecera nav {
+	.ohx .ohx-riel .casilla {
+		grid-template-rows: auto auto;
+	}
+	/* La cifra entera en una linea dentro de la tira ("65 % usado" lleva espacios no separables). */
+	.ohx .ohx-riel .casilla-v {
+		font-size: 1.0625rem;
+	}
+	.ohx .ohx-riel .casilla-m,
+	.ohx .ohx-riel .casilla-n {
+		display: none;
+	}
+	.ohx-chat {
+		height: 70vh;
+	}
+	.ohx-conexion-k {
 		display: none;
 	}
 }
@@ -633,5 +736,9 @@
 	.ohx .casilla,
 	.ohx .btn-accion {
 		transition: none;
+	}
+	/* estiri: con movimiento reducido el sello no se desplaza; queda la sombra. */
+	.ohx .btn-accion:hover {
+		transform: none;
 	}
 }

@@ -23,6 +23,8 @@ export interface RutaEstado {
 
 export interface EstadoRutas {
 	rutas: RutaEstado[];
+	/** Modelo por defecto del principal en la config de Hermes (antes del primer turno); null si no hay. */
+	principal: { proveedor: string | null; modelo: string | null } | null;
 	error: string | null;
 }
 
@@ -38,7 +40,8 @@ export interface Resumen {
 /** Trunca a un decimal: 99.96 nunca se muestra como 100 (agotado). */
 export function uso(usado: number | null): string {
 	if (usado === null || !Number.isFinite(usado)) return "sin dato";
-	return `${Math.floor(usado * 10) / 10} %`;
+	// Espacio no separable: el numero nunca queda en otra linea que su %.
+	return `${Math.floor(usado * 10) / 10} %`;
 }
 
 /** Hora local; con fecha si no es hoy. Sin hora: "sin dato", nunca una estimacion. */
@@ -61,7 +64,7 @@ export function resumen(ruta: RutaEstado, ahora = new Date()): Resumen {
 		);
 		return {
 			tono: "agotada",
-			cifra: `vuelve ${hora(ruta.agotada.reinicio, ahora)}`,
+			cifra: unido(`vuelve ${hora(ruta.agotada.reinicio, ahora)}`),
 			lineas: [`sin cuota desde ${desde}`],
 		};
 	}
@@ -85,10 +88,46 @@ export function resumen(ruta: RutaEstado, ahora = new Date()): Resumen {
 	);
 	return {
 		tono: "normal",
-		cifra: uso(principal.usado),
+		// "usado": el porcentaje es consumo, no saldo.
+		cifra: `${uso(principal.usado)} usado`,
 		lineas: m.ventanas.map(
 			(v) =>
-				`${v.etiqueta} ${uso(v.usado)}${v.reinicio ? `, reinicia ${hora(v.reinicio, ahora)}` : ""}`,
+				// "reinicia" nunca queda en otra linea que su hora: si hace falta cortar, se corta en el "·".
+				`${ventana(v.etiqueta)} ${uso(v.usado)}${v.reinicio ? ` · ${unido(`reinicia ${hora(v.reinicio, ahora)}`)}` : ""}`,
 		),
 	};
+}
+
+const VENTANAS: [RegExp, string][] = [
+	[/^current session$/i, "sesión"],
+	[/^current week$/i, "semana"],
+];
+
+/** Etiqueta de ventana en espanol: las conocidas de Claude se traducen, la familia se conserva; el resto, tal cual. */
+export function ventana(etiqueta: string): string {
+	const familia = etiqueta.match(/^(.*?)\s*(\([^)]*\))$/);
+	const base = familia ? familia[1] : etiqueta;
+	const traducida = VENTANAS.find(([re]) => re.test(base))?.[1];
+	if (!traducida) return etiqueta;
+	return familia ? `${traducida} ${familia[2]}` : traducida;
+}
+
+/** Una frase que no se parte de linea ("reinicia 19:05", "vuelve 28/09 00:50"): espacios no separables. */
+export const unido = (frase: string) => frase.replaceAll(" ", " ");
+
+/** Un solo nombre por modelo en toda la pantalla: Hermes informa el id con fecha (claude-haiku-4-5-20251001),
+ * la config y las rutas el corto. */
+export function nombreModelo(modelo: string | null | undefined): string | null {
+	return modelo ? modelo.replace(/-\d{8}$/, "") : null;
+}
+
+/** "ruta · modelo" del principal: la ruta que usa su proveedor, o el proveedor si ninguna lo cubre. */
+export function etiquetaPrincipal(
+	p: { proveedor: string | null; modelo: string | null },
+	rutas: RutaEstado[],
+): string {
+	const modelo = nombreModelo(p.modelo);
+	const ruta = rutas.find((r) => r.proveedor === p.proveedor);
+	const donde = ruta?.nombre ?? p.proveedor;
+	return [donde, modelo].filter(Boolean).join(" · ");
 }

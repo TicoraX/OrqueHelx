@@ -82,7 +82,8 @@ export interface ChatVivo {
 	detener: () => void;
 	nueva: () => void;
 	reanudar: () => void;
-	reenviar: (ruta: RutaEstado) => void;
+	/** desde: "ruta · modelo" del principal que se quedo sin cuota, para el asiento del hilo. */
+	reenviar: (ruta: RutaEstado, desde: string) => void;
 	cancelar: () => void;
 }
 
@@ -136,6 +137,11 @@ export function useChat(): ChatVivo {
 	// que en una sesion perezosa llega recien con session.info.
 	const guardada = useRef<string | null>(null);
 	const principal = useRef<Principal | null>(null);
+	/** La ref la leen los efectos; el reductor la muestra (quien responde). */
+	const fijarPrincipal = useCallback((p: Principal | null) => {
+		principal.current = p;
+		despachar({ tipo: "principal", principal: p });
+	}, []);
 
 	const fallo = useCallback(
 		(e: unknown) =>
@@ -169,10 +175,12 @@ export function useChat(): ChatVivo {
 		() =>
 			gateway.alEvento((tipo, sid, payload) => {
 				if (!sid || sid !== idSesion.current) return;
-				if (tipo === "session.info")
-					principal.current =
-						principalDe(payload as Record<string, unknown> | null) ??
-						principal.current;
+				if (tipo === "session.info") {
+					const informado = principalDe(
+						payload as Record<string, unknown> | null,
+					);
+					if (informado) fijarPrincipal(informado);
+				}
 				despachar({ tipo: "evento", evento: tipo, payload });
 				if (
 					tipo === "message.complete" &&
@@ -180,21 +188,24 @@ export function useChat(): ChatVivo {
 				)
 					pausarSiEsCuota();
 			}),
-		[pausarSiEsCuota],
+		[pausarSiEsCuota, fijarPrincipal],
 	);
 
 	/** Engancha el chat a una sesion guardada (pausa de una carga anterior) y muestra su historial. */
-	const retomar = useCallback(async (idGuardado: string) => {
-		const r = await gateway.rpc<SesionHermes>("session.resume", {
-			session_id: idGuardado,
-			lazy: true,
-		});
-		idSesion.current = r.session_id;
-		sesion.current = Promise.resolve(r.session_id);
-		guardada.current = idGuardado;
-		principal.current = principalDe(r.info);
-		despachar({ tipo: "historial", mensajes: r.messages ?? [] });
-	}, []);
+	const retomar = useCallback(
+		async (idGuardado: string) => {
+			const r = await gateway.rpc<SesionHermes>("session.resume", {
+				session_id: idGuardado,
+				lazy: true,
+			});
+			idSesion.current = r.session_id;
+			sesion.current = Promise.resolve(r.session_id);
+			guardada.current = idGuardado;
+			despachar({ tipo: "historial", mensajes: r.messages ?? [] });
+			fijarPrincipal(principalDe(r.info));
+		},
+		[fijarPrincipal],
+	);
 
 	// Al abrir la pestania: una pausa pendiente de antes (recarga, PC apagado) vuelve a la vista.
 	useEffect(() => {
@@ -235,7 +246,7 @@ export function useChat(): ChatVivo {
 					.then((r) => {
 						idSesion.current = r.session_id;
 						guardada.current = r.stored_session_id ?? r.session_id;
-						principal.current = principalDe(r.info);
+						fijarPrincipal(principalDe(r.info));
 						return r.session_id;
 					});
 				sesion.current = creando;
@@ -331,12 +342,16 @@ export function useChat(): ChatVivo {
 	}, [pausa, reclamar, reintentar, salir, fallo]);
 
 	const reenviar = useCallback(
-		(ruta: RutaEstado) => {
+		(ruta: RutaEstado, desde: string) => {
 			if (!pausa || !ruta.modelo) return;
 			const modelo = ruta.modelo;
 			reclamar(pausa, "reenviar", ruta.nombre)
 				.then((gano) => {
 					if (!gano) return;
+					despachar({
+						tipo: "nota",
+						texto: `turno reenviado de ${desde} a ${ruta.nombre} · ${modelo}`,
+					});
 					despachar({ tipo: "reanudando" });
 					salir(async () => {
 						const id = await (sesion.current ??
@@ -347,7 +362,7 @@ export function useChat(): ChatVivo {
 							key: "model",
 							value: `${modelo} --provider ${ruta.proveedor} --session`,
 						});
-						principal.current = { proveedor: ruta.proveedor, modelo };
+						fijarPrincipal({ proveedor: ruta.proveedor, modelo });
 						await reintentar();
 					});
 				})

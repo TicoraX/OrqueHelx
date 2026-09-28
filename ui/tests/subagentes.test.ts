@@ -231,10 +231,10 @@ describe("vista de subagentes", () => {
 		expect(ficha(nodo({ estado: "sin_cuota", reinicio }), ahora)).toEqual({
 			tono: "agotada",
 			cifra: "sin cuota",
-			lineas: ["reinicia 19:05"],
+			lineas: ["reinicia 19:05"],
 		});
 		expect(ficha(nodo({ estado: "sin_cuota" }), ahora).lineas).toEqual([
-			"reinicia sin dato",
+			"reinicia sin dato",
 		]);
 	});
 

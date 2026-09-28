@@ -32,10 +32,29 @@ def _modulo(nombre: str):
     return sys.modules[clave]
 
 
-def _config_rutas():
+def _config():
     from hermes_cli.config import load_config_readonly
-    entrada = ((load_config_readonly() or {}).get("plugins") or {}).get("entries") or {}
+    return load_config_readonly() or {}
+
+
+def _config_rutas(config: dict):
+    entrada = (config.get("plugins") or {}).get("entries") or {}
     return ((entrada.get("orquehelx") or {}).get("settings") or {}).get("rutas")
+
+
+def _principal(config: dict) -> dict | None:
+    """Modelo por defecto del agente principal segun la config de Hermes; None si no hay uno configurado.
+    La sesion viva puede cambiarlo (session.info manda): esto es solo lo que se muestra antes del primer turno."""
+    modelo = config.get("model")
+    if isinstance(modelo, str):
+        return {"proveedor": None, "modelo": modelo} if modelo else None
+    if not isinstance(modelo, dict):
+        return None
+    nombre = modelo.get("default") or modelo.get("model")
+    proveedor = modelo.get("provider")
+    if not nombre and not proveedor:
+        return None
+    return {"proveedor": proveedor or None, "modelo": nombre or None}
 
 
 def _medicion(ventanas, error) -> dict:
@@ -58,10 +77,12 @@ def _vigente(cuota, proveedor: str):
 def estado() -> dict:
     """Rutas configuradas, cuota medida de cada una (una medicion por proveedor) y agotamientos vigentes."""
     rutas_mod, cuota = _modulo("rutas"), _modulo("cuota")
+    config = _config()
+    principal = _principal(config)
     try:
-        rutas = rutas_mod.cargar(_config_rutas())
+        rutas = rutas_mod.cargar(_config_rutas(config))
     except rutas_mod.ErrorDeConfig as exc:
-        return {"rutas": [], "error": str(exc)}
+        return {"rutas": [], "principal": principal, "error": str(exc)}
     mediciones = {p: cuota.medir_seguro(p) for p in dict.fromkeys(r.proveedor for r in rutas.values())}
     salida = []
     for r in rutas.values():
@@ -72,7 +93,7 @@ def estado() -> dict:
             "agotada": {"desde": ag.visto, "reinicio": ag.reinicio.isoformat() if ag.reinicio else None}
             if ag else None,
         })
-    return {"rutas": salida, "error": None}
+    return {"rutas": salida, "principal": principal, "error": None}
 
 
 def _pausas():

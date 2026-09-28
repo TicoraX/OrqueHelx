@@ -108,6 +108,13 @@ OpenCode), muestra "sin dato" en vez de un número estimado.
 hermes chat -t orquehelx -q "Pídele a agy que revise este diff y a opencode que escriba los tests"
 ```
 
+## Privacidad
+
+OrqueHelx no tiene servidor propio ni telemetría y no guarda credenciales. Todo corre en tu máquina dentro de
+Hermes: los modelos y la medición de cuota los llama Hermes con la sesión de cada suscripción, y la UI habla
+solo con el dashboard local. Lo único que OrqueHelx escribe es `~/.hermes/orquehelx/pausas.db` (las pausas por
+cuota).
+
 ## Tests
 
 ```bash
