@@ -10,13 +10,13 @@ export type Tramo =
 export type Bloque =
 	| { t: "parrafo"; lineas: Tramo[][] }
 	| { t: "codigo"; lenguaje: string; v: string }
-	| { t: "lista"; ordenada: boolean; items: Tramo[][] }
+	| { t: "lista"; ordenada: boolean; inicio: number; items: Tramo[][] }
 	| { t: "titulo"; tramos: Tramo[] };
 
 // Orden de alternativas = prioridad: el codigo gana a todo lo demas.
 // Cursiva con _ solo entre limites de palabra, para que snake_case quede como texto.
 const INLINE =
-	/`([^`]+)`|\*\*([^*]+)\*\*|\*(?!\s)([^*]+?)(?<!\s)\*|(?<!\w)_(?!\s)([^_]+?)(?<!\s)_(?!\w)|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
+	/`([^`]+)`|\*\*([^*]+)\*\*|\*(?!\s)([^*]+?)(?<!\s)\*|(?<!\w)_(?!\s)([^_]+?)(?<!\s)_(?!\w)|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gu;
 
 export function tramos(texto: string): Tramo[] {
 	const salida: Tramo[] = [];
@@ -35,19 +35,21 @@ export function tramos(texto: string): Tramo[] {
 	return salida;
 }
 
-const VINETA = /^\s*[-*+]\s+(.*)$/;
-const NUMERO = /^\s*\d+[.)]\s+(.*)$/;
-const TITULO = /^#{1,6}\s+(.*)$/;
+const VINETA = /^\s*[-*+]\s+(.*)$/u;
+const NUMERO = /^\s*\d+[.)]\s+(.*)$/u;
+const TITULO = /^#{1,6}\s+(.*)$/u;
+const VALLA = /^\s*```(\S*)/u;
+const CIERRE = /^\s*```\s*$/u;
 
 export function bloques(texto: string): Bloque[] {
 	const salida: Bloque[] = [];
-	const lineas = texto.replace(/\r\n/g, "\n").split("\n");
+	const lineas = texto.split(/\r?\n/u);
 	for (let i = 0; i < lineas.length; ) {
 		const linea = lineas[i] as string;
-		const valla = linea.match(/^\s*```(\S*)/);
+		const valla = linea.match(VALLA);
 		if (valla) {
 			// Sin valla de cierre (respuesta a medio llegar) el resto es codigo.
-			const fin = lineas.findIndex((l, j) => j > i && /^\s*```\s*$/.test(l));
+			const fin = lineas.findIndex((l, j) => j > i && CIERRE.test(l));
 			const hasta = fin === -1 ? lineas.length : fin;
 			salida.push({
 				t: "codigo",
@@ -69,10 +71,12 @@ export function bloques(texto: string): Bloque[] {
 		}
 		const patron = [VINETA, NUMERO].find((p) => p.test(linea));
 		if (patron) {
+			// Una lista numerada cortada por un parrafo sigue en su numero (<ol start>).
+			const inicio = Number.parseInt(linea, 10) || 1;
 			const items: Tramo[][] = [];
 			for (; i < lineas.length && patron.test(lineas[i] as string); i++)
 				items.push(tramos((lineas[i] as string).match(patron)?.[1] as string));
-			salida.push({ t: "lista", ordenada: patron === NUMERO, items });
+			salida.push({ t: "lista", ordenada: patron === NUMERO, inicio, items });
 			continue;
 		}
 		const parrafo: Tramo[][] = [];
@@ -80,7 +84,7 @@ export function bloques(texto: string): Bloque[] {
 			const l = lineas[i] as string;
 			if (
 				!l.trim() ||
-				/^\s*```/.test(l) ||
+				VALLA.test(l) ||
 				TITULO.test(l) ||
 				VINETA.test(l) ||
 				NUMERO.test(l)

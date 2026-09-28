@@ -205,7 +205,7 @@ function Markdown({ texto }: { texto: string }) {
 				if (b.t === "lista") {
 					const Lista = b.ordenada ? "ol" : "ul";
 					return (
-						<Lista key={i}>
+						<Lista key={i} start={b.ordenada ? b.inicio : undefined}>
 							{b.items.map((it, j) => (
 								<li key={j}>
 									<Linea tramos={it} />

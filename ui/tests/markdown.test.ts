@@ -65,10 +65,25 @@ describe("bloques", () => {
 			{
 				t: "lista",
 				ordenada: false,
+				inicio: 1,
 				items: [tramos("uno"), tramos("**dos**")],
 			},
-			{ t: "lista", ordenada: true, items: [tramos("a"), tramos("b")] },
+			{
+				t: "lista",
+				ordenada: true,
+				inicio: 1,
+				items: [tramos("a"), tramos("b")],
+			},
 		]);
+	});
+
+	it("una lista numerada cortada por un parrafo sigue su numeracion", () => {
+		expect(bloques("1. a\n\nnota\n\n3. c")[2]).toEqual({
+			t: "lista",
+			ordenada: true,
+			inicio: 3,
+			items: [tramos("c")],
+		});
 	});
 
 	it("un titulo se vuelve una linea destacada", () => {
