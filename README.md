@@ -34,10 +34,9 @@ anidados. Los cubren tests con errores capturados de proveedores reales y otros 
 - Hermes Agent 0.21.5 o posterior.
 - Los CLIs que quieras usar, instalados y con sesión iniciada (`claude`, `agy`, `opencode`, ...).
   OrqueHelx no guarda credenciales: cada CLI usa la suya.
-- En Windows, la ruta de Antigravity necesita el arreglo
-  [hermes-antigravity-subscription#2](https://github.com/soyelmismo/hermes-antigravity-subscription/pull/2),
-  todavía sin mergear. Sin él, el plugin de Antigravity no encuentra la sesión que `agy` guarda en el
-  Administrador de credenciales y responde que no hay sesión iniciada, aunque `agy` funcione en la terminal.
+- En Windows, la ruta de Antigravity necesita hermes-antigravity-subscription 1.0.2 o posterior. Las versiones
+  anteriores no encuentran la sesión que `agy` guarda en el Administrador de credenciales. Para actualizar:
+  `hermes plugins update antigravity-subscription-directsdk`.
 
 ## Instalación
 
