@@ -485,6 +485,55 @@
 	overflow-wrap: anywhere;
 }
 
+/* Markdown del agente: los saltos los dan los bloques; el codigo en mono sobre tono elevado, sin sombra. */
+.ohx .ohx-md {
+	white-space: normal;
+}
+.ohx .ohx-md > * {
+	margin: 0 0 0.5rem;
+}
+.ohx .ohx-md > :last-child {
+	margin-block-end: 0;
+}
+/* Hermes resetea list-style y colorea code/pre a su manera: aqui todo explicito. */
+.ohx .ohx-md ul,
+.ohx .ohx-md ol {
+	padding-inline-start: 1.25rem;
+}
+.ohx .ohx-md ul {
+	list-style: disc;
+}
+.ohx .ohx-md ol {
+	list-style: decimal;
+}
+.ohx .ohx-md code,
+.ohx .ohx-md pre {
+	color: var(--ink);
+}
+.ohx .ohx-md code {
+	font-family: var(--font-mono);
+	font-size: 0.875em;
+	background: var(--raised);
+	padding: 0.05em 0.3em;
+	border-radius: var(--radius);
+}
+.ohx .ohx-md pre {
+	padding: 0.5rem 0.75rem;
+	background: var(--raised);
+	border-radius: var(--radius);
+	overflow-x: auto;
+}
+.ohx .ohx-md pre code {
+	background: none;
+	padding: 0;
+	white-space: pre;
+}
+.ohx .ohx-md a {
+	color: inherit;
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
 /* Lamina de pausa (estiri): cabecera rotulada, asientos clave-valor y cierre de regla doble. */
 .ohx .lamina {
 	margin-block: 1rem;

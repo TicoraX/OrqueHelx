@@ -19,6 +19,7 @@ import {
 	resumen,
 } from "./estado";
 import type { EstadoConexion } from "./gateway";
+import { bloques, type Tramo } from "./markdown";
 import { type Arbol, enOrden, ficha } from "./subagentes";
 
 const TEXTO_CONEXION: Record<EstadoConexion, string> = {
@@ -164,6 +165,70 @@ const NOTA: Partial<Record<Mensaje["estado"], string>> = {
 	error: "sin respuesta",
 };
 
+function Linea({ tramos }: { tramos: Tramo[] }) {
+	return (
+		<>
+			{tramos.map((x, i) => {
+				if (x.t === "negrita") return <strong key={i}>{x.v}</strong>;
+				if (x.t === "cursiva") return <em key={i}>{x.v}</em>;
+				if (x.t === "codigo") return <code key={i}>{x.v}</code>;
+				if (x.t === "enlace")
+					return (
+						<a key={i} href={x.href} target="_blank" rel="noopener noreferrer">
+							{x.v}
+						</a>
+					);
+				return x.v;
+			})}
+		</>
+	);
+}
+
+function Markdown({ texto }: { texto: string }) {
+	return (
+		<div className="ohx-mensaje-v ohx-md">
+			{bloques(texto).map((b, i) => {
+				if (b.t === "codigo")
+					return (
+						<pre key={i}>
+							<code>{b.v}</code>
+						</pre>
+					);
+				if (b.t === "titulo")
+					return (
+						<p key={i}>
+							<strong>
+								<Linea tramos={b.tramos} />
+							</strong>
+						</p>
+					);
+				if (b.t === "lista") {
+					const Lista = b.ordenada ? "ol" : "ul";
+					return (
+						<Lista key={i} start={b.ordenada ? b.inicio : undefined}>
+							{b.items.map((it, j) => (
+								<li key={j}>
+									<Linea tramos={it} />
+								</li>
+							))}
+						</Lista>
+					);
+				}
+				return (
+					<p key={i}>
+						{b.lineas.map((l, j) => (
+							<React.Fragment key={j}>
+								{j > 0 && <br />}
+								<Linea tramos={l} />
+							</React.Fragment>
+						))}
+					</p>
+				);
+			})}
+		</div>
+	);
+}
+
 function Entrada({ m }: { m: Mensaje }) {
 	if (m.rol === "nota") {
 		return (
@@ -185,7 +250,10 @@ function Entrada({ m }: { m: Mensaje }) {
 				<pre>{m.texto}</pre>
 			</details>
 		);
+	} else if (m.texto && m.rol === "agente") {
+		cuerpo = <Markdown texto={m.texto} />;
 	} else if (m.texto) {
+		// Lo que escribiste se muestra tal cual.
 		cuerpo = <p className="ohx-mensaje-v">{m.texto}</p>;
 	}
 	return (
