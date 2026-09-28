@@ -7,6 +7,7 @@
 //   tool.complete delegar     -> si no arranco subagente: sin_cuota o rechazo, nodo con ese estado
 
 import { hora, type Resumen, type Tono, unido } from "./estado";
+import { plano } from "./markdown";
 
 type EstadoSubagente =
 	| "corriendo"
@@ -177,7 +178,11 @@ export function ficha(n: Subagente, ahora = new Date()): Resumen {
 			cifra,
 			lineas: [unido(`reinicia ${hora(n.reinicio, ahora)}`)],
 		};
-	const lineas = n.estado === "corriendo" ? [n.actividad] : [n.resumen];
+	// El resumen viene en markdown; la casilla lo recorta a 4 lineas, asi que va sin marcas.
+	const lineas =
+		n.estado === "corriendo"
+			? [n.actividad]
+			: [n.resumen === null ? null : plano(n.resumen)];
 	if (n.duracion !== null)
 		lineas.push(
 			`${String(Math.round(n.duracion * 10) / 10).replace(".", ",")} s`,

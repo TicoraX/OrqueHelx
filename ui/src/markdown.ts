@@ -96,3 +96,19 @@ export function bloques(texto: string): Bloque[] {
 	}
 	return salida;
 }
+
+const linea = (ts: Tramo[]) => ts.map((x) => x.v).join("");
+
+/** El mismo markdown en una sola linea de texto, sin marcas: para resumenes recortados. */
+export function plano(texto: string): string {
+	return bloques(texto)
+		.map((b) => {
+			if (b.t === "codigo") return b.v;
+			if (b.t === "titulo") return linea(b.tramos);
+			if (b.t === "lista") return b.items.map(linea).join("; ");
+			return b.lineas.map(linea).join(" ");
+		})
+		.join(" ")
+		.replaceAll(/\s+/gu, " ")
+		.trim();
+}

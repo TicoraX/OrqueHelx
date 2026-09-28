@@ -225,6 +225,15 @@ describe("vista de subagentes", () => {
 		});
 	});
 
+	it("el resumen de la casilla es texto plano, sin marcas de markdown", () => {
+		// Resultado real de opencode (F5): valla de codigo y codigo en linea.
+		const resumen =
+			"```python\ndef es_bisiesto(año): return año % 4 == 0\n```\nRegla **gregoriana**: `es_bisiesto(2024)` → True";
+		expect(ficha(nodo({ estado: "completado", resumen })).lineas[0]).toBe(
+			"def es_bisiesto(año): return año % 4 == 0 Regla gregoriana: es_bisiesto(2024) → True",
+		);
+	});
+
 	it("sin cuota lleva el tono de ruta agotada y la hora de reinicio, o sin dato", () => {
 		const ahora = new Date(2026, 8, 26, 12, 0);
 		const reinicio = new Date(2026, 8, 26, 19, 5).toISOString();
