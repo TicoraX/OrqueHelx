@@ -3,7 +3,7 @@
   "label": "OrqueHelx",
   "description": "Subagentes entre suscripciones: rutas, cuota medida de cada una y el trabajo de cada subagente.",
   "icon": "Workflow",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "tab": {
     "path": "/orquehelx",
     "position": "end"

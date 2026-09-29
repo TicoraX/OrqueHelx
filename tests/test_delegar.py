@@ -99,7 +99,7 @@ def test_regresion_carga_en_frio_dentro_del_limite_de_hermes(hermes_home):
         "p = [p for p in m.list_plugins() if p['name'] == 'orquehelx'][0]\n"
         "print(p['enabled'], p['tools'], p['hooks'], p['commands'], p['error'])\n"
     )
-    salida = subprocess.run([sys.executable, "-c", codigo], capture_output=True, text=True, timeout=120,
+    salida = subprocess.run([sys.executable, "-c", codigo], capture_output=True, text=True, timeout=120, check=False,
                             env={**__import__("os").environ, "HERMES_HOME": str(hermes_home)})
     assert salida.stdout.strip().splitlines()[-1] == "True 1 2 1 None", salida.stdout + salida.stderr
 
@@ -161,9 +161,10 @@ def _hijo(status):
 
 
 def _agotar(proveedor, reinicio=None):
+    import time as _t
+
     from orquehelx import cuota
     from orquehelx.cuota import Agotamiento
-    import time as _t
     cuota._vistos[proveedor] = Agotamiento(proveedor, "RESOURCE_EXHAUSTED", reinicio, _t.time() + 5)
 
 
