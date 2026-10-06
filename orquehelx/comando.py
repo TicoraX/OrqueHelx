@@ -10,9 +10,11 @@ import time
 from datetime import datetime, timezone
 
 from . import cuota
-from .rutas import SIN_RUTAS, Ruta
+from .rutas import CLAVE_CONFIG, Ruta
+from .textos import t
 
-USO = "uso: /ohx rutas | /ohx cuota"
+# Subcomandos en ingles (v0.2) y sus nombres de v0.1.
+_SUB = {"routes": "routes", "rutas": "routes", "quota": "quota", "cuota": "quota"}
 
 
 def _hora(fecha) -> str:
@@ -28,31 +30,31 @@ def _cuota_de(ruta: Ruta, ventanas: list | None, error: Exception | None) -> lis
     ag = cuota.consultar(ruta.proveedor, desde=time.time() - 24 * 3600)
     vigente = ag is not None and (ag.reinicio is None or ag.reinicio > datetime.now(timezone.utc))
     if vigente:
-        cuando = _hora(ag.reinicio) if ag.reinicio else "sin dato"
-        lineas.append(f"{ruta.nombre}: sin cuota desde {time.strftime('%H:%M', time.localtime(ag.visto))}"
-                      f" (reinicio: {cuando})")
+        cuando = _hora(ag.reinicio) if ag.reinicio else t("no_data")
+        lineas.append(t("out_since", route=ruta.nombre, since=time.strftime("%H:%M", time.localtime(ag.visto)),
+                        reset=cuando))
     if error is not None:
-        return [*lineas, f"{ruta.nombre}: no se pudo medir ({error})"]
+        return [*lineas, t("measure_failed", route=ruta.nombre, error=error)]
     if ventanas is None:
-        return [*lineas, f"{ruta.nombre}: sin dato (el proveedor no informa consumo)"]
+        return [*lineas, t("provider_silent", route=ruta.nombre)]
     if not ventanas:
-        return [*lineas, f"{ruta.nombre}: sin dato (la medición no devolvió ventanas)"]
+        return [*lineas, t("no_windows", route=ruta.nombre)]
     lineas.append(f"{ruta.nombre}:")
     for etiqueta, usado, reinicio in ventanas:
         # Truncar, no redondear: 99.96 no puede mostrarse como 100 (agotado).
-        valor = "sin dato" if usado is None else f"{math.floor(usado * 10) / 10:g} %"
-        lineas.append(f"  {etiqueta}: {valor}" + (f", reinicia {_hora(reinicio)}" if reinicio else ""))
+        valor = t("no_data") if usado is None else f"{math.floor(usado * 10) / 10:g} %"
+        lineas.append(f"  {etiqueta}: {valor}" + (t("resets", when=_hora(reinicio)) if reinicio else ""))
     return lineas
 
 
 def ejecutar(rutas: dict[str, Ruta], argumentos: str) -> str:
-    sub = (argumentos or "").strip().lower()
-    if sub in ("rutas", "cuota") and not rutas:
-        return SIN_RUTAS
-    if sub == "rutas":
+    sub = _SUB.get((argumentos or "").strip().lower())
+    if sub and not rutas:
+        return t("no_routes", key=CLAVE_CONFIG)
+    if sub == "routes":
         return _rutas(rutas)
-    if sub == "cuota":
+    if sub == "quota":
         # Una medicion por proveedor: varias rutas pueden compartir la misma suscripcion.
         mediciones = {p: cuota.medir_seguro(p) for p in dict.fromkeys(r.proveedor for r in rutas.values())}
         return "\n".join(linea for ruta in rutas.values() for linea in _cuota_de(ruta, *mediciones[ruta.proveedor]))
-    return USO
+    return t("ohx_usage")

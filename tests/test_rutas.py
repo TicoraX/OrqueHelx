@@ -1,6 +1,6 @@
 import pytest
 
-from orquehelx.rutas import ErrorDeRuta, cargar, credenciales
+from orquehelx.rutas import ErrorDeConfig, ErrorDeRuta, ajuste, cargar, credenciales
 
 
 def test_ruta_de_proveedor_con_modelo():
@@ -42,7 +42,18 @@ def test_config_invalida_falla_nombrando_la_ruta(config, pedazo):
 
 
 def test_sin_rutas_es_un_error_explicito():
-    with pytest.raises(ErrorDeRuta, match="plugins.entries.orquehelx.settings.rutas"):
+    with pytest.raises(ErrorDeRuta, match="plugins.entries.orquehelx.settings.routes"):
         cargar(None)
-    with pytest.raises(ErrorDeRuta, match="plugins.entries.orquehelx.settings.rutas"):
+    with pytest.raises(ErrorDeRuta, match="plugins.entries.orquehelx.settings.routes"):
         cargar({})
+
+
+def test_las_claves_en_ingles_mandan_y_las_de_v01_siguen_valiendo():
+    assert ajuste({"routes": 1}.get, "routes", "rutas") == 1
+    assert ajuste({"rutas": 2}.get, "routes", "rutas") == 2
+    assert ajuste({}.get, "routes", "rutas") is None
+
+
+def test_las_dos_claves_a_la_vez_es_un_error_que_nombra_ambas():
+    with pytest.raises(ErrorDeConfig, match="routes.*rutas"):
+        ajuste({"routes": {}, "rutas": {}}.get, "routes", "rutas")

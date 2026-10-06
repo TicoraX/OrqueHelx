@@ -20,7 +20,7 @@ def limpio(monkeypatch):
 
 
 def test_rutas_lista_nombre_proveedor_y_modelo():
-    salida = comando.ejecutar(RUTAS, "rutas")
+    salida = comando.ejecutar(RUTAS, "routes")
     assert "claude" in salida and "claude-subscription-directsdk-experimental" in salida
     assert "claude-haiku-4-5" in salida and "agy" in salida
 
@@ -28,42 +28,42 @@ def test_rutas_lista_nombre_proveedor_y_modelo():
 def test_cuota_muestra_ventanas_medidas_y_sin_dato(monkeypatch):
     monkeypatch.setitem(cuota.MEDIDORES, "claude-subscription",
                         lambda: [("Current session", 30.0, RESET), ("Current week", 28.0, None)])
-    salida = comando.ejecutar(RUTAS, "cuota")
+    salida = comando.ejecutar(RUTAS, "quota")
     assert "Current session: 30 %" in salida
     assert RESET.astimezone().strftime("%Y-%m-%d %H:%M") in salida
     assert "Current week: 28 %" in salida
-    assert "agy: sin dato" in salida
+    assert "agy: no data" in salida
 
 
 def test_cuota_con_medicion_fallida_dice_la_causa(monkeypatch):
     def falla():
         raise ConnectionError("sin red")
     monkeypatch.setitem(cuota.MEDIDORES, "claude-subscription", falla)
-    assert "no se pudo medir (sin red)" in comando.ejecutar(RUTAS, "cuota")
+    assert "could not measure (sin red)" in comando.ejecutar(RUTAS, "quota")
 
 
 def test_cuota_informa_un_agotamiento_visto():
     cuota._vistos["antigravity-subscription-directsdk"] = cuota.Agotamiento(
         "antigravity-subscription-directsdk", "RESOURCE_EXHAUSTED", None, time.time())
-    assert "agy: sin cuota desde" in comando.ejecutar(RUTAS, "cuota")
+    assert "agy: out of quota since" in comando.ejecutar(RUTAS, "quota")
 
 
 @pytest.mark.parametrize("args", ["", "otra", "  "])
 def test_subcomando_desconocido_muestra_uso(args):
-    assert "uso: /ohx" in comando.ejecutar(RUTAS, args)
+    assert "usage: /ohx" in comando.ejecutar(RUTAS, args)
 
 
 def test_registrar_agrega_el_comando_ohx():
     from orquehelx import delegar
     comandos = {}
     ctx = SimpleNamespace(
-        get_config=lambda clave, defecto=None: {"rutas": {"claude": {"provider": "p"}}}.get(clave, defecto),
+        get_config=lambda clave, defecto=None: {"routes": {"claude": {"provider": "p"}}}.get(clave, defecto),
         register_tool=lambda *_, **__: None, register_hook=lambda *_, **__: None,
         register_system_prompt_section=lambda *_, **__: None,
         register_command=lambda nombre, fn, **_: comandos.update({nombre: fn}),
     )
     delegar.registrar(ctx)
-    assert comandos["ohx"]("rutas") == "claude: p"
+    assert comandos["ohx"]("routes") == "claude: p"
 
 
 def test_cuota_mide_una_vez_por_proveedor(monkeypatch):
@@ -74,7 +74,7 @@ def test_cuota_mide_una_vez_por_proveedor(monkeypatch):
     llamadas = []
     monkeypatch.setitem(cuota.MEDIDORES, "claude-subscription",
                         lambda: llamadas.append(1) or [("Current session", 10.0, RESET)])
-    salida = comando.ejecutar(rutas, "cuota")
+    salida = comando.ejecutar(rutas, "quota")
     assert len(llamadas) == 1
     assert "haiku:" in salida and "opus:" in salida
 
@@ -84,10 +84,16 @@ def test_agotamiento_con_reinicio_ya_pasado_no_se_muestra_como_actual():
     pasado = datetime.now(timezone.utc) - timedelta(minutes=5)
     cuota._vistos["antigravity-subscription-directsdk"] = cuota.Agotamiento(
         "antigravity-subscription-directsdk", "RESOURCE_EXHAUSTED", pasado, time.time() - 3600)
-    assert "sin cuota desde" not in comando.ejecutar(RUTAS, "cuota")
+    assert "out of quota since" not in comando.ejecutar(RUTAS, "quota")
 
 
 @pytest.mark.parametrize("usado, texto", [(56.0, "56 %"), (99.6, "99.6 %"), (99.96, "99.9 %"), (100.0, "100 %")])
 def test_porcentaje_nunca_redondea_hacia_agotado(monkeypatch, usado, texto):
     monkeypatch.setitem(cuota.MEDIDORES, "claude-subscription", lambda: [("Current session", usado, None)])
-    assert f"Current session: {texto}" in comando.ejecutar(RUTAS, "cuota")
+    assert f"Current session: {texto}" in comando.ejecutar(RUTAS, "quota")
+
+
+def test_en_espanol_y_con_los_subcomandos_de_v01(monkeypatch):
+    monkeypatch.setattr("agent.i18n.get_language", lambda: "es-419")
+    assert "agy: sin dato" in comando.ejecutar(RUTAS, "cuota")
+    assert "uso: /ohx" in comando.ejecutar(RUTAS, "otra")
