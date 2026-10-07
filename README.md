@@ -127,7 +127,8 @@ inside Hermes:
 ## Upgrading from v0.1
 
 - The tool is now `delegate_to(route, goal, context)` (it was `delegar(ruta, objetivo, contexto)`). Prompts or
-  skills that name `delegar` need the new name.
+  skills that name `delegar` need the new name. In a session saved with v0.1, the model may still try
+  `delegar` from its history: Hermes answers that the tool does not exist, and `delegate_to` is in its tool list.
 - Config keys are `routes` and `policy: ask | parent_decides | wait`. The v0.1 names (`rutas`, `politica`,
   `preguntar | padre_decide | esperar`) still load; setting both the old and the new key is an error.
 - `/ohx routes|quota` (the v0.1 `rutas|cuota` still work).

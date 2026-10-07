@@ -241,16 +241,16 @@ describe("subagent view", () => {
 		);
 	});
 
-	it("out of quota carries the exhausted-route tone and the reset time, or no data", () => {
+	it("out of quota carries the exhausted-route tone and the reset time, or says it is unknown", () => {
 		const now = new Date(2026, 8, 26, 12, 0);
 		const resetAt = new Date(2026, 8, 26, 19, 5).toISOString();
 		expect(card(node({ state: "out_of_quota", resetAt }), now)).toEqual({
 			tone: "exhausted",
 			figure: "out of quota",
-			lines: ["resets 19:05"],
+			lines: ["resets at 19:05"],
 		});
 		expect(card(node({ state: "out_of_quota" }), now).lines).toEqual([
-			"resets no data",
+			"reset time unknown",
 		]);
 	});
 

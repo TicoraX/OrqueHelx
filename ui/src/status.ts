@@ -69,9 +69,10 @@ export function summary(route: RouteStatus, now = new Date()): Summary {
 		);
 		return {
 			tone: "exhausted",
-			figure: unbroken(
-				t("back_at", { time: clock(route.exhausted.reset_at, now) }),
-			),
+			// Only the date and time stay together: the figure is large, so "back at" may wrap before them.
+			figure: route.exhausted.reset_at
+				? t("back_at", { time: unbroken(clock(route.exhausted.reset_at, now)) })
+				: t("back_unknown"),
 			lines: [t("out_since", { time: since })],
 		};
 	}

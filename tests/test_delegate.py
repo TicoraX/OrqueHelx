@@ -273,3 +273,8 @@ def test_parent_decides_may_switch_routes_in_the_same_turn(monkeypatch):
     delegate.handle(ROUTES, {"route": "claude", "goal": "x"}, parent, "parent_decides")
     delegate.handle(ROUTES, {"route": "opencode", "goal": "x"}, parent, "parent_decides")
     assert len(calls) == 2
+
+
+def test_an_invalid_v01_policy_names_the_key_the_user_wrote():
+    with pytest.raises(ConfigError, match=r"settings\.politica"):
+        delegate.register(_fake_ctx({"claude": {"provider": "p"}}, politica="auto"))

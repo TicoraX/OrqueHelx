@@ -101,6 +101,30 @@ def test_a_failed_v01_copy_is_retried_on_the_next_open(tmp_path):
     c.close()
 
 
+@pytest.mark.parametrize("content", [b"", None])
+def test_an_empty_v01_file_or_one_without_the_table_has_nothing_to_copy(tmp_path, content):
+    legacy = tmp_path / "pausas.db"
+    if content is None:
+        import sqlite3
+        sqlite3.connect(legacy).close()
+        with sqlite3.connect(legacy) as c:
+            c.execute("CREATE TABLE other (x)")
+        c.close()
+    else:
+        legacy.write_bytes(content)
+    c = pauses.open_db(tmp_path / "pauses.db", legacy=legacy)
+    assert pauses.pending(c) == []
+    assert c.execute("PRAGMA user_version").fetchone()[0] == 1
+    c.close()
+
+
+def test_a_corrupt_v01_file_names_the_file_to_move(tmp_path):
+    legacy = tmp_path / "pausas.db"
+    legacy.write_bytes(b"not a database" * 100)
+    with pytest.raises(pauses.sqlite3.DatabaseError, match="pausas.db"):
+        pauses.open_db(tmp_path / "pauses.db", legacy=legacy)
+
+
 def test_the_v01_copy_happens_once(tmp_path):
     legacy = tmp_path / "pausas.db"
     _v01_db(legacy)

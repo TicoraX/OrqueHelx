@@ -8,7 +8,7 @@ TEXTS: dict[str, dict[str, str]] = {
     "en": {
         "no_routes": "no routes configured: define {key} in config.yaml",
         "both_keys": "set {new} or {old} in plugins.entries.orquehelx.settings, not both",
-        "bad_policy": ("invalid policy {value!r} in plugins.entries.orquehelx.settings.policy; "
+        "bad_policy": ("invalid policy {value!r} in plugins.entries.orquehelx.settings.{key}; "
                        "use one of: {options}"),
         "route_name": "route {route!r}: the name must be lowercase letters, digits or '-' (max. 32)",
         "route_map": "route {route!r}: expected a map with 'provider' or 'acp'",
@@ -29,7 +29,7 @@ TEXTS: dict[str, dict[str, str]] = {
     "es": {
         "no_routes": "no hay rutas configuradas: define {key} en config.yaml",
         "both_keys": "define {new} o {old} en plugins.entries.orquehelx.settings, no las dos",
-        "bad_policy": ("política {value!r} inválida en plugins.entries.orquehelx.settings.policy; "
+        "bad_policy": ("política {value!r} inválida en plugins.entries.orquehelx.settings.{key}; "
                        "usa una de: {options}"),
         "route_name": "ruta {route!r}: el nombre debe ser minúsculas, dígitos o '-' (máx. 32)",
         "route_map": "ruta {route!r}: se esperaba un mapa con 'provider' o 'acp'",

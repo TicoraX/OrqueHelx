@@ -67,8 +67,8 @@ describe("summary", () => {
 		// The figure says it is consumption, not balance; Claude's known windows get short names.
 		expect(s).toMatchObject({ tone: "normal", figure: nb("56 % used") });
 		expect(s.lines).toEqual([
-			`session ${nb("56 %")} · ${nb("resets 17:19")}`,
-			`week ${nb("36 %")} · ${nb("resets Sep 28 18:59")}`,
+			`session ${nb("56 %")} · ${nb("resets at 17:19")}`,
+			`week ${nb("36 %")} · ${nb("resets at Sep 28 18:59")}`,
 		]);
 	});
 
@@ -94,7 +94,7 @@ describe("summary", () => {
 			}),
 			NOW,
 		);
-		expect(s).toMatchObject({ tone: "exhausted", figure: nb("back 17:19") });
+		expect(s).toMatchObject({ tone: "exhausted", figure: "back at 17:19" });
 	});
 
 	it("exhausted with no measured reset does not invent a time", () => {
@@ -102,7 +102,7 @@ describe("summary", () => {
 			route({ exhausted: { since: NOW.getTime() / 1000, reset_at: null } }),
 			NOW,
 		);
-		expect(s.figure).toBe(nb("back no data"));
+		expect(s.figure).toBe("return time unknown");
 	});
 
 	it("no meter and an error say no data and the cause", () => {

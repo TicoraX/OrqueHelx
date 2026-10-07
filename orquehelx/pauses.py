@@ -67,10 +67,19 @@ def _carry_over(con: sqlite3.Connection, legacy: Path | None) -> None:
         with con:
             con.execute("PRAGMA user_version = 1")
         return
-    con.execute("ATTACH DATABASE ? AS legacy", (str(legacy),))
+    try:
+        con.execute("ATTACH DATABASE ? AS legacy", (str(legacy),))
+        has_table = con.execute(
+            "SELECT 1 FROM legacy.sqlite_master WHERE type = 'table' AND name = 'pausas'").fetchone()
+    except sqlite3.DatabaseError as exc:
+        # A corrupt v0.1 file blocks the pauses until the user moves it: say which file.
+        raise sqlite3.DatabaseError(
+            f"cannot read the v0.1 pauses in {legacy} ({exc}); move or delete that file") from exc
     try:
         with con:
-            con.execute(_LEGACY_COPY)
+            # An empty file or one without the table (never used) has nothing to copy.
+            if has_table:
+                con.execute(_LEGACY_COPY)
             con.execute("PRAGMA user_version = 1")
     finally:
         con.execute("DETACH DATABASE legacy")

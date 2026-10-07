@@ -157,7 +157,8 @@ def register(ctx) -> None:
     elif isinstance(policy, str):
         policy = _LEGACY_POLICIES.get(policy, policy)
     if not isinstance(policy, str) or policy not in POLICIES:
-        raise ConfigError(t("bad_policy", value=policy, options=", ".join(POLICIES)))
+        key = "politica" if ctx.get_config("policy") is None else "policy"
+        raise ConfigError(t("bad_policy", value=policy, key=key, options=", ".join(POLICIES)))
     for route in routes.values():
         if route.acp:
             register_acp(route)

@@ -180,7 +180,13 @@ export function card(n: Subagent, now = new Date()): Summary {
 		return {
 			tone,
 			figure,
-			lines: [unbroken(t("resets", { time: clock(n.resetAt, now) }))],
+			lines: [
+				unbroken(
+					n.resetAt
+						? t("resets", { time: clock(n.resetAt, now) })
+						: t("resets_unknown"),
+				),
+			],
 		};
 	// The summary comes in markdown; the cell clips it to 4 lines, so it goes without marks.
 	const lines =
