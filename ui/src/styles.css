@@ -274,6 +274,8 @@
 	font-size: 0.75rem;
 	color: var(--ink-2);
 	font-variant-numeric: tabular-nums;
+	/* A measurement error can carry a long URL: it wraps inside the cell instead of spilling out. */
+	overflow-wrap: anywhere;
 }
 .ohx .cell[data-tone="no_data"] .cell-v,
 .ohx .cell[data-tone="error"] .cell-v {
