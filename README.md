@@ -104,7 +104,8 @@ In a Hermes session:
 /ohx quota     measured usage per route: windows, percentage and reset time
 ```
 
-`/ohx quota` measures when you ask. If a provider does not report usage (Antigravity and OpenCode today), it
+`/ohx quota` measures when you ask; a measurement less than 30 seconds old is reused, and after a 429 from
+the usage endpoint OrqueHelx waits for its `Retry-After` before asking again. If a provider does not report usage (Antigravity and OpenCode today), it
 shows "no data" instead of an estimate. Its output, and config errors, follow Hermes' `display.language`
 (English, or Spanish).
 

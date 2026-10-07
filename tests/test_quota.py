@@ -1,6 +1,7 @@
 import shutil
 import sys
 import time
+from types import SimpleNamespace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -128,3 +129,60 @@ def test_hermes_calls_the_hook_with_its_real_payload(hermes_home, monkeypatch):
     # claimed that name in this process (an earlier test that loaded the plugin).
     loaded = [m for k, m in sys.modules.items() if k.startswith("hermes_plugins.orquehelx") and k.endswith(".quota")]
     assert any(m.lookup(AGY, since=0) is not None for m in loaded)
+
+
+class _HTTP429(Exception):
+    """Same shape as httpx.HTTPStatusError: the response carries the status and the headers."""
+
+    def __init__(self, retry_after=None):
+        super().__init__("429 Too Many Requests")
+        headers = {"retry-after": retry_after} if retry_after is not None else {}
+        self.response = SimpleNamespace(status_code=429, headers=headers)
+
+
+def test_a_measurement_is_reused_for_a_short_while(monkeypatch):
+    calls = []
+    monkeypatch.setitem(quota.METERS, "claude-subscription", lambda: calls.append(1) or [("Current session", 10.0, None)])
+    assert quota.measure(CLAUDE) == quota.measure(CLAUDE) == [("Current session", 10.0, None)]
+    assert len(calls) == 1
+    monkeypatch.setattr(quota.time, "monotonic", lambda real=quota.time.monotonic: real() + quota.FRESH_SECONDS + 1)
+    quota.measure(CLAUDE)
+    assert len(calls) == 2
+
+
+def test_confirming_an_exhaustion_always_measures_again(monkeypatch):
+    windows = [[("Current session", 90.0, None)]]
+    monkeypatch.setitem(quota.METERS, "claude-subscription", lambda: windows[0])
+    quota.measure(CLAUDE)  # cached at 90 %
+    windows[0] = [("Current session", 100.0, RESET_5H)]
+    _fail(CLAUDE, "Native request failed: x", model="claude-haiku-4-5")
+    assert quota.lookup(CLAUDE, since=0).reset_at == RESET_5H
+
+
+@pytest.mark.parametrize("retry_after, wait", [("120", 120), (None, quota.DEFAULT_BACKOFF), ("not-a-number", quota.DEFAULT_BACKOFF)])
+def test_a_429_is_not_retried_until_its_retry_after(monkeypatch, retry_after, wait):
+    calls = []
+
+    def meter():
+        calls.append(1)
+        raise _HTTP429(retry_after)
+    monkeypatch.setitem(quota.METERS, "claude-subscription", meter)
+    first = quota.measure_safe(CLAUDE)
+    second = quota.measure_safe(CLAUDE)
+    assert first[0] is None and isinstance(first[1], _HTTP429)
+    assert second[1] is first[1] and len(calls) == 1  # the same error, honest, without calling again
+    monkeypatch.setattr(quota.time, "monotonic", lambda real=quota.time.monotonic: real() + wait + 1)
+    quota.measure_safe(CLAUDE)
+    assert len(calls) == 2
+
+
+def test_other_errors_are_not_cached(monkeypatch):
+    calls = []
+
+    def meter():
+        calls.append(1)
+        raise ConnectionError("no network")
+    monkeypatch.setitem(quota.METERS, "claude-subscription", meter)
+    quota.measure_safe(CLAUDE)
+    quota.measure_safe(CLAUDE)
+    assert len(calls) == 2
