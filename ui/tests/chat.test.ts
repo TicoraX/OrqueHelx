@@ -1,333 +1,346 @@
-import { describe, expect, it } from "vitest";
-import { type Chat, inicial, principalDe, reducir } from "../src/chat";
+import { beforeEach, describe, expect, it } from "vitest";
+import {
+	type Chat,
+	initial,
+	mainAgentOf,
+	type Pause,
+	reduce,
+} from "../src/chat";
+import { setLanguage } from "../src/texts";
 
-const pasos = (...acciones: Parameters<typeof reducir>[1][]): Chat =>
-	acciones.reduce(reducir, inicial);
+const steps = (...actions: Parameters<typeof reduce>[1][]): Chat =>
+	actions.reduce(reduce, initial);
+
+beforeEach(() => setLanguage("en"));
 
 describe("chat", () => {
-	it("enviar agrega el mensaje del usuario y deja el turno esperando", () => {
-		const c = pasos({ tipo: "enviado", texto: "hola" });
-		expect(c.mensajes).toEqual([
-			{ id: 1, rol: "usuario", texto: "hola", estado: "listo" },
+	it("sending adds the user's message and leaves the turn waiting", () => {
+		const c = steps({ type: "sent", text: "hello" });
+		expect(c.messages).toEqual([
+			{ id: 1, role: "user", text: "hello", state: "done" },
 		]);
-		expect(c.turno).toBe("esperando");
+		expect(c.turn).toBe("waiting");
 	});
 
-	it("la respuesta llega por deltas y se cierra con message.complete", () => {
-		const c = pasos(
-			{ tipo: "enviado", texto: "hola" },
-			{ tipo: "evento", evento: "message.start", payload: null },
-			{ tipo: "evento", evento: "message.delta", payload: { text: "Ho" } },
-			{ tipo: "evento", evento: "message.delta", payload: { text: "la" } },
+	it("the answer arrives in deltas and closes with message.complete", () => {
+		const c = steps(
+			{ type: "sent", text: "hello" },
+			{ type: "event", event: "message.start", payload: null },
+			{ type: "event", event: "message.delta", payload: { text: "He" } },
+			{ type: "event", event: "message.delta", payload: { text: "llo" } },
 		);
-		expect(c.mensajes[1]).toMatchObject({
-			rol: "agente",
-			texto: "Hola",
-			estado: "escribiendo",
+		expect(c.messages[1]).toMatchObject({
+			role: "agent",
+			text: "Hello",
+			state: "writing",
 		});
-		expect(c.turno).toBe("respondiendo");
-		const fin = reducir(c, {
-			tipo: "evento",
-			evento: "message.complete",
-			payload: { text: "Hola.", status: "complete" },
+		expect(c.turn).toBe("responding");
+		const end = reduce(c, {
+			type: "event",
+			event: "message.complete",
+			payload: { text: "Hello.", status: "complete" },
 		});
-		expect(fin.mensajes[1]).toMatchObject({ texto: "Hola.", estado: "listo" });
-		expect(fin.turno).toBe("libre");
+		expect(end.messages[1]).toMatchObject({ text: "Hello.", state: "done" });
+		expect(end.turn).toBe("idle");
 	});
 
-	it("sin deltas (claude-subscription) el texto llega entero en message.complete", () => {
-		const c = pasos(
-			{ tipo: "enviado", texto: "hola" },
-			{ tipo: "evento", evento: "message.start", payload: null },
+	it("without deltas (claude-subscription) the text arrives whole in message.complete", () => {
+		const c = steps(
+			{ type: "sent", text: "hello" },
+			{ type: "event", event: "message.start", payload: null },
 			{
-				tipo: "evento",
-				evento: "message.complete",
-				payload: { text: "Respuesta completa", status: "complete" },
+				type: "event",
+				event: "message.complete",
+				payload: { text: "Full answer", status: "complete" },
 			},
 		);
-		expect(c.mensajes[1]).toMatchObject({
-			texto: "Respuesta completa",
-			estado: "listo",
-		});
+		expect(c.messages[1]).toMatchObject({ text: "Full answer", state: "done" });
 	});
 
-	it("message.complete sin message.start igual crea la respuesta", () => {
-		const c = pasos(
-			{ tipo: "enviado", texto: "hola" },
+	it("message.complete without message.start still creates the answer", () => {
+		const c = steps(
+			{ type: "sent", text: "hello" },
 			{
-				tipo: "evento",
-				evento: "message.complete",
+				type: "event",
+				event: "message.complete",
 				payload: { text: "ok", status: "complete" },
 			},
 		);
-		expect(c.mensajes.map((m) => m.rol)).toEqual(["usuario", "agente"]);
+		expect(c.messages.map((m) => m.role)).toEqual(["user", "agent"]);
 	});
 
-	it("la actividad muestra lo que hace el agente, sin el texto de relleno del pensamiento", () => {
-		let c = pasos(
-			{ tipo: "enviado", texto: "x" },
-			{ tipo: "evento", evento: "message.start", payload: null },
+	it("activity shows what the agent does, without the thinking filler text", () => {
+		let c = steps(
+			{ type: "sent", text: "x" },
+			{ type: "event", event: "message.start", payload: null },
 		);
-		c = reducir(c, {
-			tipo: "evento",
-			evento: "thinking.delta",
+		c = reduce(c, {
+			type: "event",
+			event: "thinking.delta",
 			payload: { text: "( •_•)>⌐■-■ synthesizing..." },
 		});
-		expect(c.actividad).toBe("pensando");
-		c = reducir(c, {
-			tipo: "evento",
-			evento: "tool.start",
-			payload: { name: "delegar", args: { ruta: "opencode" } },
+		expect(c.activity).toBe("thinking");
+		c = reduce(c, {
+			type: "event",
+			event: "tool.start",
+			payload: { name: "delegate_to", args: { route: "opencode" } },
 		});
-		expect(c.actividad).toBe("delegando en opencode");
-		c = reducir(c, {
-			tipo: "evento",
-			evento: "tool.start",
+		expect(c.activity).toBe("delegating to opencode");
+		c = reduce(c, {
+			type: "event",
+			event: "tool.start",
 			payload: { name: "terminal", args: {} },
 		});
-		expect(c.actividad).toBe("usando terminal");
-		c = reducir(c, {
-			tipo: "evento",
-			evento: "tool.complete",
+		expect(c.activity).toBe("using terminal");
+		c = reduce(c, {
+			type: "event",
+			event: "tool.complete",
 			payload: { name: "terminal" },
 		});
-		expect(c.actividad).toBeNull();
+		expect(c.activity).toBeNull();
 	});
 
-	it("un turno interrumpido o con error queda marcado y libera el turno", () => {
-		const base = pasos(
-			{ tipo: "enviado", texto: "x" },
-			{ tipo: "evento", evento: "message.start", payload: null },
+	it("activity follows the dashboard language", () => {
+		setLanguage("es-419");
+		const c = steps({
+			type: "event",
+			event: "tool.start",
+			payload: { name: "delegate_to", args: { route: "agy" } },
+		});
+		expect(c.activity).toBe("delegando en agy");
+	});
+
+	it("an interrupted or failed turn is marked and frees the turn", () => {
+		const base = steps(
+			{ type: "sent", text: "x" },
+			{ type: "event", event: "message.start", payload: null },
 		);
-		const cortado = reducir(base, {
-			tipo: "evento",
-			evento: "message.complete",
+		const cut = reduce(base, {
+			type: "event",
+			event: "message.complete",
 			payload: { text: "", status: "interrupted" },
 		});
-		expect(cortado.mensajes[1].estado).toBe("interrumpido");
-		expect(cortado.turno).toBe("libre");
-		const roto = reducir(base, {
-			tipo: "evento",
-			evento: "message.complete",
+		expect(cut.messages[1].state).toBe("interrupted");
+		expect(cut.turn).toBe("idle");
+		const broken = reduce(base, {
+			type: "event",
+			event: "message.complete",
 			payload: { text: "", status: "error" },
 		});
-		expect(roto.mensajes[1].estado).toBe("error");
+		expect(broken.messages[1].state).toBe("error");
 	});
 
-	it("un fallo al enviar deja el error visible y el texto para reintentar", () => {
-		const c = pasos(
-			{ tipo: "enviado", texto: "hola" },
-			{ tipo: "fallo", mensaje: "gateway sin conexión" },
+	it("a failed send leaves the error visible and the text to retry", () => {
+		const c = steps(
+			{ type: "sent", text: "hello" },
+			{ type: "failure", message: "gateway offline" },
 		);
-		expect(c.error).toEqual({ mensaje: "gateway sin conexión", texto: "hola" });
-		expect(c.turno).toBe("libre");
-		expect(c.mensajes[0].estado).toBe("error");
+		expect(c.error).toEqual({ message: "gateway offline", text: "hello" });
+		expect(c.turn).toBe("idle");
+		expect(c.messages[0].state).toBe("error");
 	});
 
-	it("eventos desconocidos no cambian nada", () => {
-		const c = pasos({ tipo: "enviado", texto: "x" });
+	it("unknown events change nothing", () => {
+		const c = steps({ type: "sent", text: "x" });
 		expect(
-			reducir(c, { tipo: "evento", evento: "session.usage", payload: {} }),
+			reduce(c, { type: "event", event: "session.usage", payload: {} }),
 		).toBe(c);
 	});
 
-	it("nueva conversacion vuelve al estado inicial", () => {
-		expect(pasos({ tipo: "enviado", texto: "x" }, { tipo: "nueva" })).toEqual(
-			inicial,
+	it("a new conversation goes back to the initial state", () => {
+		expect(steps({ type: "sent", text: "x" }, { type: "new" })).toEqual(
+			initial,
 		);
 	});
 
-	it("un fallo con la respuesta a medias no ofrece reenviar el texto del agente", () => {
-		const c = pasos(
-			{ tipo: "enviado", texto: "hola" },
-			{ tipo: "evento", evento: "message.delta", payload: { text: "Ho" } },
-			{ tipo: "fallo", mensaje: "gateway sin conexión" },
+	it("a failure with a half answer does not offer to resend the agent's text", () => {
+		const c = steps(
+			{ type: "sent", text: "hello" },
+			{ type: "event", event: "message.delta", payload: { text: "He" } },
+			{ type: "failure", message: "gateway offline" },
 		);
-		expect(c.error).toEqual({ mensaje: "gateway sin conexión", texto: null });
-		expect(c.mensajes[0].estado).toBe("listo");
+		expect(c.error).toEqual({ message: "gateway offline", text: null });
+		expect(c.messages[0].state).toBe("done");
 	});
 
-	it("los eventos de subagentes arman el arbol y nueva conversacion lo vacia", () => {
-		const c = pasos(
-			{ tipo: "enviado", texto: "delega" },
+	it("subagent events build the tree and a new conversation empties it", () => {
+		const c = steps(
+			{ type: "sent", text: "delegate" },
 			{
-				tipo: "evento",
-				evento: "tool.start",
+				type: "event",
+				event: "tool.start",
 				payload: {
 					tool_id: "t1",
-					name: "delegar",
-					args: { ruta: "opencode", objetivo: "x" },
+					name: "delegate_to",
+					args: { route: "opencode", goal: "x" },
 				},
 			},
 			{
-				tipo: "evento",
-				evento: "subagent.start",
+				type: "event",
+				event: "subagent.start",
 				payload: { subagent_id: "a", goal: "x", depth: 0 },
 			},
 		);
-		expect(c.subagentes.nodos.map((n) => [n.id, n.ruta, n.estado])).toEqual([
-			["a", "opencode", "corriendo"],
+		expect(c.subagents.nodes.map((n) => [n.id, n.route, n.state])).toEqual([
+			["a", "opencode", "running"],
 		]);
-		expect(c.actividad).toBe("delegando en opencode");
-		expect(reducir(c, { tipo: "nueva" })).toEqual(inicial);
+		expect(c.activity).toBe("delegating to opencode");
+		expect(reduce(c, { type: "new" })).toEqual(initial);
 	});
 
-	const PAUSA = {
+	const PAUSE: Pause = {
 		id: 7,
-		sesion: "20260926_190000_ab12",
-		proveedor: "claude-subscription-directsdk-experimental",
-		modelo: "claude-haiku-4-5",
-		reinicio: "2026-09-26T19:00:00+00:00",
-		estado: "pausado",
-		creado: 1790000000,
+		session: "20260926_190000_ab12",
+		provider: "claude-subscription-directsdk-experimental",
+		model: "claude-haiku-4-5",
+		reset_at: "2026-09-26T19:00:00+00:00",
+		state: "paused",
+		created: 1790000000,
 	};
 
-	it("una pausa deja el chat estatico con la pausa a la vista", () => {
-		const c = pasos(
-			{ tipo: "enviado", texto: "hola" },
+	it("a pause leaves the chat still with the pause in view", () => {
+		const c = steps(
+			{ type: "sent", text: "hello" },
 			{
-				tipo: "evento",
-				evento: "message.complete",
+				type: "event",
+				event: "message.complete",
 				payload: { text: "Usage limit reached", status: "error" },
 			},
-			{ tipo: "pausado", pausa: PAUSA },
+			{ type: "paused", pause: PAUSE },
 		);
-		expect(c.turno).toBe("pausado");
-		expect(c.pausa).toEqual(PAUSA);
-		expect(c.actividad).toBeNull();
+		expect(c.turn).toBe("paused");
+		expect(c.pause).toEqual(PAUSE);
+		expect(c.activity).toBeNull();
 	});
 
-	it("reanudar o reenviar quita la pausa y espera la respuesta; cancelar libera el turno", () => {
-		const pausado = pasos(
-			{ tipo: "enviado", texto: "hola" },
-			{ tipo: "pausado", pausa: PAUSA },
+	it("resume or resend clears the pause and waits for the answer; cancel frees the turn", () => {
+		const paused = steps(
+			{ type: "sent", text: "hello" },
+			{ type: "paused", pause: PAUSE },
 		);
-		expect(reducir(pausado, { tipo: "reanudando" })).toMatchObject({
-			turno: "esperando",
-			pausa: null,
+		expect(reduce(paused, { type: "resuming" })).toMatchObject({
+			turn: "waiting",
+			pause: null,
 		});
-		expect(reducir(pausado, { tipo: "cancelada" })).toMatchObject({
-			turno: "libre",
-			pausa: null,
+		expect(reduce(paused, { type: "cancelled" })).toMatchObject({
+			turn: "idle",
+			pause: null,
 		});
 	});
 
-	it("si otra pestania ya resolvio la pausa, se informa y el turno queda libre", () => {
-		const c = reducir(
-			pasos(
-				{ tipo: "enviado", texto: "hola" },
+	it("if another tab already resolved the pause, it says so and frees the turn", () => {
+		const c = reduce(
+			steps(
+				{ type: "sent", text: "hello" },
 				{
-					tipo: "evento",
-					evento: "message.complete",
+					type: "event",
+					event: "message.complete",
 					payload: { text: "Usage limit", status: "error" },
 				},
-				{ tipo: "pausado", pausa: PAUSA },
+				{ type: "paused", pause: PAUSE },
 			),
-			{
-				tipo: "fallo",
-				mensaje: "ya se resolvió",
-			},
+			{ type: "failure", message: "already resolved" },
 		);
-		expect(c).toMatchObject({ turno: "libre", pausa: null });
-		expect(c.error?.mensaje).toBe("ya se resolvió");
+		expect(c).toMatchObject({ turn: "idle", pause: null });
+		expect(c.error?.message).toBe("already resolved");
 	});
 
-	it("retomar una sesion guardada carga su historial visible", () => {
-		const c = reducir(inicial, {
-			tipo: "historial",
-			mensajes: [
-				{ role: "user", text: "hola" },
+	it("reattaching a stored session loads its visible history", () => {
+		const c = reduce(initial, {
+			type: "history",
+			messages: [
+				{ role: "user", text: "hello" },
 				{ role: "tool", text: "{}" },
 				{ role: "assistant", text: "" },
 				{ role: "assistant", text: "Usage limit reached" },
 			],
 		});
-		expect(c.mensajes).toEqual([
-			{ id: 1, rol: "usuario", texto: "hola", estado: "listo" },
-			{ id: 2, rol: "agente", texto: "Usage limit reached", estado: "listo" },
+		expect(c.messages).toEqual([
+			{ id: 1, role: "user", text: "hello", state: "done" },
+			{ id: 2, role: "agent", text: "Usage limit reached", state: "done" },
 		]);
 	});
 });
 
-describe("principal de la sesion", () => {
-	it("session.create perezoso no trae proveedor; session.info si (marcos reales del gateway)", () => {
+describe("the session's main agent", () => {
+	it("a lazy session.create carries no provider; session.info does (real gateway frames)", () => {
 		expect(
-			principalDe({ model: "modelo-que-no-existe", lazy: true }),
+			mainAgentOf({ model: "model-that-does-not-exist", lazy: true }),
 		).toBeNull();
 		expect(
-			principalDe({
-				model: "modelo-que-no-existe",
+			mainAgentOf({
+				model: "model-that-does-not-exist",
 				provider: "antigravity-subscription-directsdk",
 			}),
 		).toEqual({
-			proveedor: "antigravity-subscription-directsdk",
-			modelo: "modelo-que-no-existe",
+			provider: "antigravity-subscription-directsdk",
+			model: "model-that-does-not-exist",
 		});
-		expect(principalDe(null)).toBeNull();
-		expect(principalDe({ provider: "" })).toBeNull();
+		expect(mainAgentOf(null)).toBeNull();
+		expect(mainAgentOf({ provider: "" })).toBeNull();
 	});
 });
 
-describe("quien responde (revision final de F4)", () => {
+describe("who answers", () => {
 	const HAIKU = {
-		proveedor: "claude-subscription-directsdk-experimental",
-		modelo: "claude-haiku-4-5",
+		provider: "claude-subscription-directsdk-experimental",
+		model: "claude-haiku-4-5",
 	};
 
-	it("cada respuesta del agente lleva el modelo del principal que la dio", () => {
-		const c = pasos(
-			{ tipo: "principal", principal: HAIKU },
-			{ tipo: "enviado", texto: "hola" },
+	it("each agent answer carries the model of the main agent that gave it", () => {
+		const c = steps(
+			{ type: "main", main: HAIKU },
+			{ type: "sent", text: "hello" },
 			{
-				tipo: "evento",
-				evento: "message.complete",
-				payload: { text: "hola", status: "complete" },
+				type: "event",
+				event: "message.complete",
+				payload: { text: "hello", status: "complete" },
 			},
 		);
-		expect(c.principal).toEqual(HAIKU);
-		expect(c.mensajes[1]).toMatchObject({
-			rol: "agente",
-			modelo: "claude-haiku-4-5",
+		expect(c.main).toEqual(HAIKU);
+		expect(c.messages[1]).toMatchObject({
+			role: "agent",
+			model: "claude-haiku-4-5",
 		});
 	});
 
-	it("un reenvio deja un asiento en el hilo", () => {
-		const c = pasos({
-			tipo: "nota",
-			texto: "turno reenviado de agy a claude · claude-haiku-4-5",
+	it("a resend leaves a note in the thread", () => {
+		const c = steps({
+			type: "note",
+			text: "turn resent from agy to claude · claude-haiku-4-5",
 		});
-		expect(c.mensajes).toEqual([
+		expect(c.messages).toEqual([
 			{
 				id: 1,
-				rol: "nota",
-				texto: "turno reenviado de agy a claude · claude-haiku-4-5",
-				estado: "listo",
+				role: "note",
+				text: "turn resent from agy to claude · claude-haiku-4-5",
+				state: "done",
 			},
 		]);
 	});
 
-	it("al pausar, la respuesta que fallo por cuota queda marcada como error aunque venga del historial", () => {
-		const c = pasos(
+	it("on pause, the answer that failed for quota is marked as error even if it comes from the history", () => {
+		const c = steps(
 			{
-				tipo: "historial",
-				mensajes: [
-					{ role: "user", text: "hola" },
+				type: "history",
+				messages: [
+					{ role: "user", text: "hello" },
 					{ role: "assistant", text: "Your request was not processed." },
 				],
 			},
 			{
-				tipo: "pausado",
-				pausa: {
+				type: "paused",
+				pause: {
 					id: 1,
-					sesion: "s",
-					proveedor: "p",
-					modelo: null,
-					reinicio: null,
-					estado: "pausado",
-					creado: 0,
+					session: "s",
+					provider: "p",
+					model: null,
+					reset_at: null,
+					state: "paused",
+					created: 0,
 				},
 			},
 		);
-		expect(c.mensajes[1].estado).toBe("error");
+		expect(c.messages[1].state).toBe("error");
 	});
 });

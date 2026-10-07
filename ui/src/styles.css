@@ -1,8 +1,8 @@
-/* OrqueHelx: estiri v2 (skill estiri-design, tokens.css) acotado a .ohx.
- * Los valores son los canonicos; el selector cambia de :root a .ohx para no pisar el tema del
- * dashboard de Hermes, que monta este plugin. La prueba tests/contraste.test.ts los mide. */
+/* OrqueHelx: estiri v2 (estiri-design skill, tokens.css) scoped to .ohx.
+ * The values are the canonical ones; the selector changes from :root to .ohx so it does not override the
+ * theme of Hermes' dashboard, which mounts this plugin. tests/contrast.test.ts measures them. */
 
-/* Fuentes Plex latinas servidas por Hermes desde el dist del plugin (copiar-fuentes.mjs las deja ahi). */
+/* Latin Plex fonts served by Hermes from the plugin's dist (copy-fonts.mjs puts them there). */
 @font-face {
 	font-family: "IBM Plex Serif";
 	font-weight: 500;
@@ -45,7 +45,7 @@
 	--accent: oklch(52% 0.13 42);
 	--accent-ink: oklch(98.4% 0.005 85);
 	--accent-soft: oklch(92% 0.035 42);
-	--cifra: oklch(50% 0.1 75);
+	--figure: oklch(50% 0.1 75);
 	--pass: oklch(46% 0.095 155);
 	--fail: oklch(48% 0.155 28);
 
@@ -72,7 +72,7 @@
 		--accent: oklch(72% 0.12 45);
 		--accent-ink: oklch(20% 0.008 70);
 		--accent-soft: oklch(34% 0.05 45);
-		--cifra: oklch(80% 0.11 78);
+		--figure: oklch(80% 0.11 78);
 		--pass: oklch(70% 0.11 155);
 		--fail: oklch(68% 0.15 28);
 	}
@@ -89,13 +89,13 @@
 	--accent: oklch(72% 0.12 45);
 	--accent-ink: oklch(20% 0.008 70);
 	--accent-soft: oklch(34% 0.05 45);
-	--cifra: oklch(80% 0.11 78);
+	--figure: oklch(80% 0.11 78);
 	--pass: oklch(70% 0.11 155);
 	--fail: oklch(68% 0.15 28);
 }
 
 /* ---------------------------------------------------------------------------
-   Marco: pantalla completa sobre el dashboard de Hermes
+   Frame: full screen over Hermes' dashboard
    --------------------------------------------------------------------------- */
 
 .ohx {
@@ -151,7 +151,7 @@
 	white-space: nowrap;
 }
 
-.ohx-cabecera {
+.ohx-header {
 	display: flex;
 	align-items: center;
 	gap: 1.25rem;
@@ -159,13 +159,13 @@
 	border-block-end: 1px solid var(--rule);
 	background: var(--surface);
 }
-.ohx-marca {
+.ohx-brand {
 	font-family: var(--font-serif);
 	font-weight: 500;
 	font-size: 1.125rem;
 	letter-spacing: -0.01em;
 }
-.ohx-conexion {
+.ohx-connection {
 	margin-inline-start: auto;
 	display: inline-flex;
 	align-items: center;
@@ -174,38 +174,38 @@
 	font-size: 0.8125rem;
 	color: var(--ink-2);
 }
-.ohx-conexion[data-estado="conectado"] b {
+.ohx-connection[data-state="connected"] b {
 	color: var(--pass);
 }
-.ohx-conexion[data-estado="sin_conexion"] b {
+.ohx-connection[data-state="offline"] b {
 	color: var(--fail);
 }
-.ohx .ohx-conexion b {
+.ohx .ohx-connection b {
 	font-weight: 500;
 }
-.ohx-cabecera nav {
+.ohx-header nav {
 	font-size: 0.875rem;
 }
 
-.ohx-cuerpo {
+.ohx-body {
 	display: grid;
 	grid-template-columns: 240px minmax(0, 1fr) 320px;
 	min-height: 0;
 }
-.ohx-columna {
+.ohx-column {
 	min-height: 0;
 	overflow: auto;
 }
-.ohx-riel {
+.ohx-rail {
 	border-inline-end: 1px solid var(--rule);
 	background: var(--surface);
 }
-.ohx-arbol {
+.ohx-tree {
 	border-inline-start: 1px solid var(--rule);
 	background: var(--surface);
 }
 
-.ohx-rotulo {
+.ohx-label {
 	position: sticky;
 	top: 0;
 	z-index: 1;
@@ -218,17 +218,17 @@
 	border-block-end: 1px solid var(--rule);
 	background: inherit;
 }
-.ohx-rotulo h2 {
+.ohx-label h2 {
 	font-size: 1rem;
 }
 
 /* ---------------------------------------------------------------------------
-   Gramatica de libro mayor (estiri)
+   Ledger grammar (estiri)
    --------------------------------------------------------------------------- */
 
-.ohx .casillas {
+.ohx .cells {
 	display: grid;
-	grid-template-columns: repeat(var(--columnas, 1), minmax(0, 1fr));
+	grid-template-columns: repeat(var(--columns, 1), minmax(0, 1fr));
 	gap: 1px;
 	margin: 0.75rem;
 	padding: 0;
@@ -237,8 +237,8 @@
 	border: 1px solid var(--rule);
 	border-radius: var(--radius);
 }
-/* Cada casilla tiene siempre las mismas cuatro lineas: un cambio de estado no mueve la grilla. */
-.ohx .casilla {
+/* Every cell always has the same four lines: a state change does not move the grid. */
+.ohx .cell {
 	display: grid;
 	grid-template-rows: auto auto auto minmax(2.6em, auto);
 	gap: 0.125rem;
@@ -246,27 +246,27 @@
 	background: var(--surface);
 	transition: background-color var(--dur-reveal) var(--ease);
 }
-.ohx .casilla-k {
+.ohx .cell-k {
 	font-family: var(--font-mono);
 	font-size: 0.8125rem;
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
 	color: var(--ink-2);
 }
-.ohx .casilla-m {
+.ohx .cell-m {
 	font-family: var(--font-mono);
 	font-size: 0.75rem;
 	color: var(--ink-2);
 	overflow-wrap: anywhere;
 }
-.ohx .casilla-v {
+.ohx .cell-v {
 	margin: 0.25rem 0 0;
 	font-family: var(--font-mono);
 	font-size: 1.3125rem;
 	font-variant-numeric: tabular-nums;
-	color: var(--cifra);
+	color: var(--figure);
 }
-.ohx .casilla-n {
+.ohx .cell-n {
 	margin: 0;
 	padding: 0;
 	list-style: none;
@@ -274,74 +274,76 @@
 	font-size: 0.75rem;
 	color: var(--ink-2);
 	font-variant-numeric: tabular-nums;
+	/* A measurement error can carry a long URL: it wraps inside the cell instead of spilling out. */
+	overflow-wrap: anywhere;
 }
-.ohx .casilla[data-tono="sin_dato"] .casilla-v,
-.ohx .casilla[data-tono="error"] .casilla-v {
+.ohx .cell[data-tone="no_data"] .cell-v,
+.ohx .cell[data-tone="error"] .cell-v {
 	color: var(--ink-2);
 }
-/* Sin cuota: la casilla cierra con regla doble y la hora de vuelta pasa a ser la cifra. */
-/* Regla doble dibujada por dentro (linea, hueco, linea de 1px): no cambia la caja, la grilla no se mueve. */
-.ohx .casilla[data-tono="agotada"] {
+/* Out of quota: the cell closes with a double rule and the time it comes back becomes the figure. */
+/* Double rule drawn inside (line, gap, 1px line): the box does not change, the grid does not move. */
+.ohx .cell[data-tone="exhausted"] {
 	background: var(--raised);
 	box-shadow:
 		inset 0 -1px 0 var(--rule-strong),
 		inset 0 -2px 0 var(--raised),
 		inset 0 -3px 0 var(--rule-strong);
 }
-.ohx .casilla[data-tono="agotada"] .casilla-v {
+.ohx .cell[data-tone="exhausted"] .cell-v {
 	color: var(--fail);
 }
 
-/* Subagentes en asientos (contrato OWN-WORLD): una fila por subagente, ruta en mono, objetivo en Sans y el
-   estado a tamano de texto con su propio tono; el laton queda para lo medido. Un nieto se sangra bajo su padre. */
-.ohx .ohx-subagentes {
+/* Subagents as ledger entries (OWN-WORLD contract): one row per subagent, route in mono, goal in Sans and the
+   state at text size with its own tone; brass is kept for what is measured. A grandchild is indented under its parent. */
+.ohx .ohx-subagents {
 	padding-block: 0.25rem;
 }
-.ohx .ohx-subagentes > div {
+.ohx .ohx-subagents > div {
 	grid-template-columns: 5.5rem minmax(0, 1fr);
 	gap: 0.75rem;
 	padding-block: 0.625rem;
-	padding-inline-start: calc(var(--nivel, 0) * 0.875rem);
+	padding-inline-start: calc(var(--level, 0) * 0.875rem);
 }
-.ohx .ohx-subagentes dt {
+.ohx .ohx-subagents dt {
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
 	overflow-wrap: anywhere;
 }
-.ohx .ohx-subagentes dd {
+.ohx .ohx-subagents dd {
 	display: grid;
 	gap: 0.125rem;
 	color: var(--ink);
 }
-.ohx .ohx-sub-estado {
+.ohx .ohx-sub-state {
 	font-weight: 500;
 }
-.ohx-subagentes [data-estado="completado"] .ohx-sub-estado {
+.ohx-subagents [data-state="completed"] .ohx-sub-state {
 	color: var(--pass);
 }
-.ohx-subagentes [data-estado="fallido"] .ohx-sub-estado,
-.ohx-subagentes [data-estado="sin_cuota"] .ohx-sub-estado {
+.ohx-subagents [data-state="failed"] .ohx-sub-state,
+.ohx-subagents [data-state="out_of_quota"] .ohx-sub-state {
 	color: var(--fail);
 }
-.ohx-subagentes [data-estado="interrumpido"] .ohx-sub-estado {
+.ohx-subagents [data-state="interrupted"] .ohx-sub-state {
 	color: var(--ink-2);
 }
-/* Objetivo a tres lineas (completo en title); el resumen del hijo a cuatro: la respuesta entera ya la relata
-   el agente en el chat. */
-.ohx .ohx-sub-objetivo,
-.ohx .ohx-sub-nota {
+/* Goal clipped to three lines (full in title); the child's summary to four: the agent already tells the
+   whole answer in the chat. */
+.ohx .ohx-sub-goal,
+.ohx .ohx-sub-note {
 	display: -webkit-box;
 	-webkit-box-orient: vertical;
 	overflow: hidden;
 	overflow-wrap: anywhere;
 }
-.ohx .ohx-sub-objetivo {
+.ohx .ohx-sub-goal {
 	-webkit-line-clamp: 3;
 	line-clamp: 3;
 	font-family: var(--font-sans);
 	font-size: 0.8125rem;
 }
-.ohx .ohx-sub-nota {
+.ohx .ohx-sub-note {
 	-webkit-line-clamp: 4;
 	line-clamp: 4;
 	font-size: 0.75rem;
@@ -349,7 +351,7 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Controles
+   Controls
    --------------------------------------------------------------------------- */
 
 .ohx .btn {
@@ -380,7 +382,7 @@
 	color: var(--ink-2);
 	cursor: not-allowed;
 }
-.ohx .btn-icono {
+.ohx .btn-icon {
 	width: 36px;
 	padding: 0;
 }
@@ -403,20 +405,20 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Estados honestos
+   Honest states
    --------------------------------------------------------------------------- */
 
-.ohx .vacio {
+.ohx .empty {
 	margin: 1rem;
 	color: var(--ink-2);
 	font-size: 0.875rem;
 }
-.ohx .vacio code {
+.ohx .empty code {
 	font-family: var(--font-mono);
 	font-size: 0.8125rem;
 	color: var(--ink);
 }
-.ohx .aviso {
+.ohx .notice {
 	margin: 0.75rem;
 	padding: 0.75rem 1rem;
 	border: 1px solid var(--rule-strong);
@@ -424,15 +426,15 @@
 	background: var(--raised);
 	font-size: 0.875rem;
 }
-.ohx .aviso p {
+.ohx .notice p {
 	margin: 0 0 0.5rem;
 }
-.ohx .aviso[data-tono="error"] {
+.ohx .notice[data-tone="error"] {
 	border-color: var(--fail);
 }
 
 /* ---------------------------------------------------------------------------
-   Conversacion: rotulo / hilo con scroll / redactor
+   Conversation: label / scrolling thread / composer
    --------------------------------------------------------------------------- */
 
 .ohx-chat {
@@ -440,52 +442,52 @@
 	grid-template-rows: auto minmax(0, 1fr) auto;
 	overflow: hidden;
 }
-.ohx-hilo {
+.ohx-thread {
 	min-height: 0;
 	overflow: auto;
 }
-.ohx-lectura {
+.ohx-reading {
 	width: min(72ch, 100% - 2rem);
 	margin-inline: auto;
 	padding-block: 1.5rem;
 }
-.ohx .ohx-lectura .vacio {
+.ohx .ohx-reading .empty {
 	margin: 1.5rem 0;
 }
-.ohx .ohx-lectura .aviso {
+.ohx .ohx-reading .notice {
 	margin-inline: 0;
 }
-.ohx-mensaje {
+.ohx-message {
 	padding: 0.75rem 1rem;
 	border-block-end: 1px solid var(--rule);
 }
-.ohx-mensaje[data-rol="usuario"] {
+.ohx-message[data-role="user"] {
 	margin-block: 0.75rem;
 	border-block-end: 0;
 	border-radius: var(--radius);
 	background: var(--raised);
 }
-.ohx-mensaje-k {
+.ohx-message-k {
 	font-family: var(--font-mono);
 	font-size: 0.75rem;
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
 	color: var(--ink-2);
 }
-.ohx-mensaje[data-estado="error"] .ohx-mensaje-k {
+.ohx-message[data-state="error"] .ohx-message-k {
 	color: var(--fail);
 }
-/* Detener es una decision del usuario, no un fallo: tinta secundaria, como el subagente detenido. */
-.ohx-mensaje[data-estado="interrumpido"] .ohx-mensaje-k {
+/* Stopping is the user's decision, not a failure: secondary ink, like the stopped subagent. */
+.ohx-message[data-state="interrupted"] .ohx-message-k {
 	color: var(--ink-2);
 }
-.ohx .ohx-mensaje-v {
+.ohx .ohx-message-v {
 	margin: 0.25rem 0 0;
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
 }
 
-/* Markdown del agente: los saltos los dan los bloques; el codigo en mono sobre tono elevado, sin sombra. */
+/* The agent's markdown: blocks give the breaks; code in mono on the raised tone, no shadow. */
 .ohx .ohx-md {
 	white-space: normal;
 }
@@ -495,7 +497,7 @@
 .ohx .ohx-md > :last-child {
 	margin-block-end: 0;
 }
-/* Hermes resetea list-style y colorea code/pre a su manera: aqui todo explicito. */
+/* Hermes resets list-style and colors code/pre its own way: everything explicit here. */
 .ohx .ohx-md ul,
 .ohx .ohx-md ol {
 	padding-inline-start: 1.25rem;
@@ -534,15 +536,15 @@
 	text-underline-offset: 2px;
 }
 
-/* Lamina de pausa (estiri): cabecera rotulada, asientos clave-valor y cierre de regla doble. */
-.ohx .lamina {
+/* Pause sheet (estiri): labeled header, key-value entries and a double-rule close. */
+.ohx .sheet {
 	margin-block: 1rem;
 	border: 1px solid var(--rule-strong);
 	border-block-end: 3px double var(--rule-strong);
 	border-radius: var(--radius) var(--radius) 0 0;
 	background: var(--surface);
 }
-.ohx .lamina-k {
+.ohx .sheet-k {
 	margin: 0;
 	padding: 0.5rem 1rem;
 	border-block-end: 1px solid var(--rule);
@@ -553,23 +555,23 @@
 	text-transform: uppercase;
 	color: var(--fail);
 }
-.ohx .asientos {
+.ohx .entries {
 	margin: 0;
 	padding: 0 1rem;
 }
-.ohx .asientos > div {
+.ohx .entries > div {
 	display: grid;
 	grid-template-columns: 7rem minmax(0, 1fr);
 	gap: 1rem;
 	padding-block: 0.375rem;
 	border-block-end: 1px solid var(--rule);
 }
-.ohx .asientos dt {
+.ohx .entries dt {
 	font-family: var(--font-mono);
 	font-size: 0.75rem;
 	color: var(--ink-2);
 }
-.ohx .asientos dd {
+.ohx .entries dd {
 	margin: 0;
 	font-family: var(--font-mono);
 	font-size: 0.8125rem;
@@ -577,33 +579,33 @@
 	color: var(--ink);
 	overflow-wrap: anywhere;
 }
-/* Solo lo medido va en laton (la hora de reinicio); proveedor y modelo son datos de configuracion. */
-.ohx .asientos dd.cifra {
-	color: var(--cifra);
+/* Only what is measured goes in brass (the reset time); provider and model are configuration data. */
+.ohx .entries dd.figure {
+	color: var(--figure);
 }
-.ohx .lamina-v {
+.ohx .sheet-v {
 	margin: 0;
 	padding: 0.75rem 1rem 0;
 	font-size: 0.875rem;
 }
-.ohx .lamina-acciones {
+.ohx .sheet-actions {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
 	gap: 0.5rem;
 	padding: 0.75rem 1rem 1rem;
 }
-.ohx .lamina-reenvio {
+.ohx .sheet-resend {
 	display: inline-flex;
 	gap: 0.25rem;
 }
-.ohx .lamina select {
+.ohx .sheet select {
 	min-height: 36px;
 	max-width: 14rem;
 	padding: 0 2rem 0 0.5rem;
 	border: 1px solid var(--rule-strong);
 	border-radius: var(--radius);
-	/* Flecha con la paleta (dos trazos de tinta secundaria) en lugar del chevron nativo. */
+	/* Arrow from the palette (two strokes of secondary ink) instead of the native chevron. */
 	appearance: none;
 	background:
 		linear-gradient(45deg, transparent 50%, var(--ink-2) 50%) right 0.9rem
@@ -617,20 +619,20 @@
 	cursor: pointer;
 }
 
-/* Quien responde, en el rotulo de la conversacion. */
-.ohx-principal {
+/* Who answers, in the conversation's label. */
+.ohx-main-agent {
 	margin-inline-end: auto;
 	font-family: var(--font-mono);
 	font-size: 0.75rem;
 	color: var(--ink-2);
 	overflow-wrap: anywhere;
 }
-.ohx .ohx-principal b {
+.ohx .ohx-main-agent b {
 	font-weight: 500;
 	color: var(--ink);
 }
-/* Asiento del sistema en el hilo (un reenvio): una linea mono entre filetes, no la voz de nadie. */
-.ohx .ohx-asiento {
+/* A system note in the thread (a resend): one mono line between rules, nobody's voice. */
+.ohx .ohx-note {
 	margin: 0.75rem 0;
 	padding: 0.375rem 1rem;
 	border-block: 1px solid var(--rule);
@@ -638,16 +640,16 @@
 	font-size: 0.75rem;
 	color: var(--ink-2);
 }
-/* Turno fallido: una linea propia; el error crudo de Hermes queda a pedido. */
-.ohx .ohx-fallo {
+/* Failed turn: a line of its own; Hermes' raw error stays on demand. */
+.ohx .ohx-failure {
 	margin-block-start: 0.25rem;
 	font-size: 0.875rem;
 }
-.ohx .ohx-fallo summary {
+.ohx .ohx-failure summary {
 	cursor: pointer;
 	color: var(--ink-2);
 }
-.ohx .ohx-fallo pre {
+.ohx .ohx-failure pre {
 	margin: 0.5rem 0 0;
 	padding: 0.5rem 0.75rem;
 	border-inline-start: 2px solid var(--rule-strong);
@@ -658,17 +660,17 @@
 	color: var(--ink-2);
 }
 
-.ohx-redactor {
+.ohx-composer {
 	display: grid;
 	gap: 0.5rem;
 	padding: 0.75rem 1rem;
 	border-block-start: 1px solid var(--rule);
 	background: var(--surface);
 }
-.ohx-redactor textarea {
+.ohx-composer textarea {
 	width: 100%;
 	max-height: 40vh;
-	/* Sin el tirador nativo del navegador: el campo tiene alto fijo de tres lineas. */
+	/* No native resize handle: the field has a fixed height of three lines. */
 	resize: none;
 	padding: 0.5rem 0.75rem;
 	border: 1px solid var(--rule-strong);
@@ -677,26 +679,26 @@
 	color: var(--ink);
 	font: inherit;
 }
-.ohx-redactor textarea:disabled {
+.ohx-composer textarea:disabled {
 	cursor: not-allowed;
 }
-.ohx-redactor textarea::placeholder {
+.ohx-composer textarea::placeholder {
 	color: var(--ink-2);
 }
-.ohx-redactor-acciones {
+.ohx-composer-actions {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 0.75rem;
 }
-.ohx-actividad {
+.ohx-activity {
 	font-family: var(--font-mono);
 	font-size: 0.75rem;
 	color: var(--ink-2);
 }
 
-/* Boton de sello: el unico terracota de la pantalla; la sombra aparece solo al apuntar. */
-.ohx .btn-accion {
+/* Seal button: the only terracotta on screen; the shadow only shows on hover. */
+.ohx .btn-primary {
 	border-color: var(--accent);
 	background: var(--accent);
 	color: var(--accent-ink);
@@ -704,16 +706,16 @@
 		box-shadow var(--dur-press) var(--ease),
 		transform var(--dur-press) var(--ease);
 }
-.ohx .btn-accion:hover {
+.ohx .btn-primary:hover {
 	background: var(--accent);
 	box-shadow: 3px 3px 0 var(--ink);
 	transform: translate(-1px, -1px);
 }
-.ohx .btn-accion:active {
+.ohx .btn-primary:active {
 	box-shadow: none;
 	transform: none;
 }
-.ohx .btn-accion:disabled {
+.ohx .btn-primary:disabled {
 	border-color: var(--rule-strong);
 	background: var(--rule);
 	color: var(--ink-2);
@@ -722,58 +724,58 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Pantallas angostas: una columna, rutas primero
+   Narrow screens: one column, routes first
    --------------------------------------------------------------------------- */
 
 @media (max-width: 960px) {
 	.ohx {
-		/* max-content: con alto de viewport fijo, un track auto con min-height 0 se encoge y las columnas se montan. */
+		/* max-content: with a fixed viewport height, an auto track with min-height 0 shrinks and the columns overlap. */
 		grid-template-rows: 44px max-content;
 		overflow: auto;
 	}
-	.ohx-cuerpo {
+	.ohx-body {
 		grid-template-columns: minmax(0, 1fr);
 		grid-auto-rows: max-content;
 	}
-	.ohx-columna {
+	.ohx-column {
 		overflow: visible;
 	}
-	.ohx-riel,
-	.ohx-arbol {
+	.ohx-rail,
+	.ohx-tree {
 		border: 0;
 		border-block-end: 1px solid var(--rule);
 	}
-	.ohx .casillas {
-		--columnas: 2;
+	.ohx .cells {
+		--columns: 2;
 	}
 	.ohx-chat {
 		height: 80vh;
 	}
 }
-/* Telefono: siempre visibles (contrato) la cuota de cada ruta y el campo de mensaje en el primer viewport.
-   Las rutas pasan a una tira horizontal de nombre y cifra; el detalle de ventanas queda para pantallas anchas. */
+/* Phone: each route's quota and the message field are always visible (contract) in the first viewport.
+   Routes become a horizontal strip of name and figure; the window detail is left for wide screens. */
 @media (max-width: 520px) {
-	.ohx .ohx-riel .casillas {
+	.ohx .ohx-rail .cells {
 		grid-template-columns: none;
 		grid-auto-flow: column;
 		grid-auto-columns: minmax(8.5rem, 1fr);
 		overflow-x: auto;
 	}
-	.ohx .ohx-riel .casilla {
+	.ohx .ohx-rail .cell {
 		grid-template-rows: auto auto;
 	}
-	/* La cifra entera en una linea dentro de la tira ("65 % usado" lleva espacios no separables). */
-	.ohx .ohx-riel .casilla-v {
+	/* The whole figure on one line inside the strip ("65 % used" carries no-break spaces). */
+	.ohx .ohx-rail .cell-v {
 		font-size: 1.0625rem;
 	}
-	.ohx .ohx-riel .casilla-m,
-	.ohx .ohx-riel .casilla-n {
+	.ohx .ohx-rail .cell-m,
+	.ohx .ohx-rail .cell-n {
 		display: none;
 	}
 	.ohx-chat {
 		height: 70vh;
 	}
-	.ohx-conexion-k {
+	.ohx-connection-k {
 		display: none;
 	}
 }
@@ -782,12 +784,12 @@
 	.ohx .btn[aria-busy="true"] svg {
 		animation: none;
 	}
-	.ohx .casilla,
-	.ohx .btn-accion {
+	.ohx .cell,
+	.ohx .btn-primary {
 		transition: none;
 	}
-	/* estiri: con movimiento reducido el sello no se desplaza; queda la sombra. */
-	.ohx .btn-accion:hover {
+	/* estiri: with reduced motion the seal does not move; the shadow stays. */
+	.ohx .btn-primary:hover {
 		transform: none;
 	}
 }

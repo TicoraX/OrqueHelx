@@ -6,7 +6,7 @@
     "build": "vite build",
     "test": "vitest run",
     "check": "tsc --noEmit && biome check src tests && oxlint src tests",
-    "prebuild": "node copiar-fuentes.mjs"
+    "prebuild": "node copy-fonts.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",

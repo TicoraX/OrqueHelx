@@ -1,135 +1,166 @@
 import json
+import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
-from orquehelx import cuota
+from orquehelx import quota
 
-RAIZ = Path(__file__).resolve().parents[1] / "orquehelx"
+ROOT = Path(__file__).resolve().parents[1] / "orquehelx"
 RESET = datetime(2026, 9, 26, 5, 59, tzinfo=timezone.utc)
+API = "/api/plugins/orquehelx"
 
 
-def _config(hermes_home, rutas_yaml):
+def _config(hermes_home, routes_yaml):
     hermes_home.mkdir(parents=True, exist_ok=True)
     (hermes_home / "config.yaml").write_text(
-        "plugins:\n  enabled: [orquehelx]\n  entries:\n    orquehelx:\n      settings:\n" + rutas_yaml, encoding="utf-8")
+        "plugins:\n  enabled: [orquehelx]\n  entries:\n    orquehelx:\n      settings:\n" + routes_yaml, encoding="utf-8")
+
+
+def _api_module():
+    # The dashboard imports plugin_api.py by path, on its own; same here.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("orquehelx_plugin_api_test", ROOT / "dashboard" / "plugin_api.py")
+    api = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(api)
+    return api
 
 
 @pytest.fixture
-def cliente(monkeypatch):
-    # El dashboard importa plugin_api.py por ruta, suelto; aca igual.
-    import importlib.util
-
+def client(monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    spec = importlib.util.spec_from_file_location("orquehelx_plugin_api_test", RAIZ / "dashboard" / "plugin_api.py")
-    api = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(api)
-    # Reusa el modulo cuota ya importado por los tests: mismo registro de agotamientos.
-    monkeypatch.setattr(api, "_modulo", lambda nombre: __import__(f"orquehelx.{nombre}", fromlist=[nombre]))
-    monkeypatch.setattr(cuota, "_vistos", {})
+    api = _api_module()
+    # Reuse the quota module the tests already imported: same exhaustion registry.
+    monkeypatch.setattr(api, "_module", lambda name: __import__(f"orquehelx.{name}", fromlist=[name]))
+    monkeypatch.setattr(quota, "_seen", {})
     app = FastAPI()
-    app.include_router(api.router, prefix="/api/plugins/orquehelx")
+    app.include_router(api.router, prefix=API)
     return TestClient(app)
 
 
-def test_manifest_declara_la_pestana_y_el_backend():
-    manifest = json.loads((RAIZ / "dashboard" / "manifest.json").read_text(encoding="utf-8"))
+def test_manifest_declares_the_tab_and_the_backend():
+    manifest = json.loads((ROOT / "dashboard" / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["name"] == "orquehelx"
     assert manifest["tab"]["path"] == "/orquehelx"
     assert manifest["entry"] == "dist/index.js" and manifest["css"] == "dist/style.css"
     assert manifest["api"] == "plugin_api.py"
-    assert (RAIZ / "dashboard" / manifest["entry"]).is_file(), "falta el build de la UI (npm run build en ui/)"
+    assert (ROOT / "dashboard" / manifest["entry"]).is_file(), "UI build missing (npm run build in ui/)"
 
 
-def test_estado_devuelve_rutas_con_cuota_medida_y_sin_dato(cliente, hermes_home, monkeypatch):
-    _config(hermes_home, "        rutas:\n"
+def test_loaded_on_its_own_it_finds_the_plugin_modules():
+    # Without the plugin loaded in the process, plugin_api loads it as a package: relative imports resolve.
+    routes = _api_module()._module("routes")
+    assert routes.load({"x": {"provider": "p"}})["x"].provider == "p"
+
+
+def test_status_returns_routes_with_measured_and_missing_quota(client, hermes_home, monkeypatch):
+    _config(hermes_home, "        routes:\n"
             "          claude: {provider: claude-subscription-directsdk-experimental, model: claude-haiku-4-5}\n"
             "          opencode: {acp: [opencode, acp]}\n")
-    monkeypatch.setitem(cuota.MEDIDORES, "claude-subscription", lambda: [("Current session", 56.0, RESET)])
-    datos = cliente.get("/api/plugins/orquehelx/estado").json()
-    assert datos["error"] is None
-    claude, opencode = datos["rutas"]
+    monkeypatch.setitem(quota.METERS, "claude-subscription", lambda: [("Current session", 56.0, RESET)])
+    data = client.get(f"{API}/status").json()
+    assert data["error"] is None
+    claude, opencode = data["routes"]
     assert claude == {
-        "nombre": "claude", "proveedor": "claude-subscription-directsdk-experimental", "modelo": "claude-haiku-4-5",
-        "acp": False, "agotada": None,
-        "medicion": {"estado": "medida", "error": None,
-                     "ventanas": [{"etiqueta": "Current session", "usado": 56.0, "reinicio": RESET.isoformat()}]},
+        "name": "claude", "provider": "claude-subscription-directsdk-experimental", "model": "claude-haiku-4-5",
+        "acp": False, "exhausted": None,
+        "measurement": {"state": "measured", "error": None,
+                        "windows": [{"label": "Current session", "used": 56.0, "reset_at": RESET.isoformat()}]},
     }
-    assert opencode["acp"] is True and opencode["modelo"] is None
-    assert opencode["medicion"] == {"estado": "sin_dato", "error": None, "ventanas": []}
+    assert opencode["acp"] is True and opencode["model"] is None
+    assert opencode["measurement"] == {"state": "no_data", "error": None, "windows": []}
 
 
-def test_estado_informa_medicion_fallida_y_agotamiento_vigente(cliente, hermes_home, monkeypatch):
-    _config(hermes_home, "        rutas:\n          claude: {provider: claude-subscription-directsdk-experimental}\n"
+def test_status_reads_the_v01_spanish_key(client, hermes_home):
+    _config(hermes_home, "        rutas:\n          claude: {provider: claude-subscription-directsdk-experimental}\n")
+    assert [r["name"] for r in client.get(f"{API}/status").json()["routes"]] == ["claude"]
+
+
+def test_status_reports_failed_measurement_and_current_exhaustion(client, hermes_home, monkeypatch):
+    _config(hermes_home, "        routes:\n          claude: {provider: claude-subscription-directsdk-experimental}\n"
             "          agy: {provider: antigravity-subscription-directsdk}\n")
 
-    def falla():
-        raise ConnectionError("sin red")
-    monkeypatch.setitem(cuota.MEDIDORES, "claude-subscription", falla)
-    cuota._vistos["antigravity-subscription-directsdk"] = cuota.Agotamiento(
+    def fails():
+        raise ConnectionError("no network")
+    monkeypatch.setitem(quota.METERS, "claude-subscription", fails)
+    quota._seen["antigravity-subscription-directsdk"] = quota.Exhaustion(
         "antigravity-subscription-directsdk", "RESOURCE_EXHAUSTED", None, time.time())
-    claude, agy = cliente.get("/api/plugins/orquehelx/estado").json()["rutas"]
-    assert claude["medicion"] == {"estado": "error", "error": "sin red", "ventanas": []}
-    assert agy["agotada"]["reinicio"] is None and agy["agotada"]["desde"] > 0
+    claude, agy = client.get(f"{API}/status").json()["routes"]
+    assert claude["measurement"] == {"state": "error", "error": "no network", "windows": []}
+    assert agy["exhausted"]["reset_at"] is None and agy["exhausted"]["since"] > 0
 
 
-def test_estado_con_config_invalida_devuelve_el_error_sin_rutas(cliente, hermes_home):
-    _config(hermes_home, "        rutas:\n          Mal: {provider: p}\n")
-    datos = cliente.get("/api/plugins/orquehelx/estado").json()
-    assert datos["rutas"] == [] and "Mal" in datos["error"]
+def test_status_with_invalid_config_returns_the_error_and_no_routes(client, hermes_home):
+    _config(hermes_home, "        routes:\n          Bad: {provider: p}\n")
+    data = client.get(f"{API}/status").json()
+    assert data["routes"] == [] and "Bad" in data["error"]
 
 
-def _agotar(proveedor, reinicio):
-    cuota._vistos[proveedor] = cuota.Agotamiento(proveedor, "usage limit", reinicio, time.time())
+def _exhaust(provider, reset_at):
+    quota._seen[provider] = quota.Exhaustion(provider, "usage limit", reset_at, time.time())
 
 
-def test_pausar_solo_con_agotamiento_registrado(cliente, hermes_home):
-    cuerpo = {"sesion": "s1", "proveedor": "claude-subscription-directsdk-experimental", "modelo": "claude-haiku-4-5"}
-    assert cliente.post("/api/plugins/orquehelx/pausas", json=cuerpo).json() == {"pausa": None}
-    reinicio = datetime.now(timezone.utc) + timedelta(hours=2)
-    _agotar(cuerpo["proveedor"], reinicio)
-    pausa = cliente.post("/api/plugins/orquehelx/pausas", json=cuerpo).json()["pausa"]
-    assert pausa["estado"] == "pausado" and pausa["reinicio"] == reinicio.isoformat()
-    assert pausa["sesion"] == "s1" and pausa["modelo"] == "claude-haiku-4-5"
-    assert cliente.get("/api/plugins/orquehelx/pausas").json() == {"pausas": [pausa]}
-    assert (hermes_home / "orquehelx" / "pausas.db").is_file()
+def test_pause_only_with_a_recorded_exhaustion(client, hermes_home):
+    body = {"session": "s1", "provider": "claude-subscription-directsdk-experimental", "model": "claude-haiku-4-5"}
+    assert client.post(f"{API}/pauses", json=body).json() == {"pause": None}
+    reset_at = datetime.now(timezone.utc) + timedelta(hours=2)
+    _exhaust(body["provider"], reset_at)
+    pause = client.post(f"{API}/pauses", json=body).json()["pause"]
+    assert pause["state"] == "paused" and pause["reset_at"] == reset_at.isoformat()
+    assert pause["session"] == "s1" and pause["model"] == "claude-haiku-4-5"
+    assert client.get(f"{API}/pauses").json() == {"pauses": [pause]}
+    assert (hermes_home / "plugin-data" / "orquehelx" / "pauses.db").is_file()
 
 
-def test_un_agotamiento_ya_vencido_no_pausa(cliente, hermes_home):
-    _agotar("claude", datetime.now(timezone.utc) - timedelta(minutes=1))
-    respuesta = cliente.post("/api/plugins/orquehelx/pausas", json={"sesion": "s1", "proveedor": "claude"})
-    assert respuesta.json() == {"pausa": None}
+def test_v01_pauses_are_carried_over(client, hermes_home):
+    legacy = hermes_home / "orquehelx" / "pausas.db"
+    legacy.parent.mkdir(parents=True)
+    with sqlite3.connect(legacy) as con:
+        con.executescript(
+            "CREATE TABLE pausas (id INTEGER PRIMARY KEY, sesion TEXT NOT NULL, proveedor TEXT NOT NULL, modelo TEXT,"
+            " reinicio TEXT, estado TEXT NOT NULL DEFAULT 'pausado', destino TEXT, creado REAL NOT NULL, resuelto REAL);"
+            "INSERT INTO pausas (sesion, proveedor, creado) VALUES ('s1', 'claude', 1);"
+            "INSERT INTO pausas (sesion, proveedor, estado, destino, creado) VALUES ('s0', 'claude', 'reenviado', 'agy', 0);")
+    con.close()
+    (pending,) = client.get(f"{API}/pauses").json()["pauses"]
+    assert pending["session"] == "s1" and pending["state"] == "paused"
+    assert legacy.is_file()
 
 
-def test_resolver_una_pausa_es_atomico(cliente, hermes_home):
-    _agotar("claude", None)
-    pausa = cliente.post("/api/plugins/orquehelx/pausas", json={"sesion": "s1", "proveedor": "claude"}).json()["pausa"]
-    assert pausa["reinicio"] is None
-    url = f"/api/plugins/orquehelx/pausas/{pausa['id']}"
-    assert cliente.post(f"{url}/reenviar", json={"destino": "agy"}).json() == {"ok": True}
-    perdedor = cliente.post(f"{url}/reanudar", json={})
-    assert perdedor.status_code == 409 and perdedor.json()["detail"] == "ya se resolvió"
-    assert cliente.get("/api/plugins/orquehelx/pausas").json() == {"pausas": []}
+def test_an_expired_exhaustion_does_not_pause(client, hermes_home):
+    _exhaust("claude", datetime.now(timezone.utc) - timedelta(minutes=1))
+    assert client.post(f"{API}/pauses", json={"session": "s1", "provider": "claude"}).json() == {"pause": None}
 
 
-def test_pausas_valida_la_entrada(cliente, hermes_home):
-    assert cliente.post("/api/plugins/orquehelx/pausas", json={"sesion": "", "proveedor": "x"}).status_code == 422
-    assert cliente.post("/api/plugins/orquehelx/pausas", json={"sesion": "s" * 300, "proveedor": "x"}).status_code == 422
-    assert cliente.post("/api/plugins/orquehelx/pausas/1/borrar", json={}).status_code == 422
+def test_resolving_a_pause_is_atomic(client, hermes_home):
+    _exhaust("claude", None)
+    pause = client.post(f"{API}/pauses", json={"session": "s1", "provider": "claude"}).json()["pause"]
+    assert pause["reset_at"] is None
+    url = f"{API}/pauses/{pause['id']}"
+    assert client.post(f"{url}/resend", json={"target": "agy"}).json() == {"ok": True}
+    loser = client.post(f"{url}/resume", json={})
+    assert loser.status_code == 409 and loser.json()["detail"] == "already resolved"
+    assert client.get(f"{API}/pauses").json() == {"pauses": []}
 
 
-def test_estado_informa_el_modelo_configurado_del_principal(cliente, hermes_home):
-    _config(hermes_home, "        rutas:\n          claude: {provider: claude-subscription-directsdk-experimental}\n")
+def test_pauses_validate_their_input(client, hermes_home):
+    assert client.post(f"{API}/pauses", json={"session": "", "provider": "x"}).status_code == 422
+    assert client.post(f"{API}/pauses", json={"session": "s" * 300, "provider": "x"}).status_code == 422
+    assert client.post(f"{API}/pauses/1/delete", json={}).status_code == 422
+
+
+def test_status_reports_the_configured_main_model(client, hermes_home):
+    _config(hermes_home, "        routes:\n          claude: {provider: claude-subscription-directsdk-experimental}\n")
     with (hermes_home / "config.yaml").open("a", encoding="utf-8") as f:
         f.write("model:\n  default: claude-haiku-4-5\n  provider: claude-subscription-directsdk-experimental\n")
-    assert cliente.get("/api/plugins/orquehelx/estado").json()["principal"] == {
-        "proveedor": "claude-subscription-directsdk-experimental", "modelo": "claude-haiku-4-5"}
+    assert client.get(f"{API}/status").json()["main"] == {
+        "provider": "claude-subscription-directsdk-experimental", "model": "claude-haiku-4-5"}
 
 
-def test_estado_sin_modelo_configurado_no_inventa_principal(cliente, hermes_home):
-    _config(hermes_home, "        rutas:\n          claude: {provider: claude-subscription-directsdk-experimental}\n")
-    assert cliente.get("/api/plugins/orquehelx/estado").json()["principal"] is None
+def test_status_without_a_configured_model_does_not_invent_one(client, hermes_home):
+    _config(hermes_home, "        routes:\n          claude: {provider: claude-subscription-directsdk-experimental}\n")
+    assert client.get(f"{API}/status").json()["main"] is None
