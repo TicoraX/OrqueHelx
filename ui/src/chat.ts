@@ -1,144 +1,147 @@
-// Estado de la conversacion: eventos del gateway de Hermes -> mensajes, turno y actividad visible.
-// Reductor puro: lo mismo entra, lo mismo sale; los efectos (sesion, envio) viven en useChat.
+// Conversation state: Hermes gateway events -> messages, turn and visible activity.
+// Pure reducer: same input, same output; the effects (session, sending) live in useChat.
 //
-//   enviado -> turno "esperando" -> message.start -> "respondiendo" -> message.delta* -> message.complete -> "libre"
-//   claude-subscription no manda message.delta: el texto llega entero en message.complete.
+//   sent -> turn "waiting" -> message.start -> "responding" -> message.delta* -> message.complete -> "idle"
+//   claude-subscription sends no message.delta: the text arrives whole in message.complete.
 
-import { type Arbol, reducirArbol, vacio } from "./subagentes";
+import { empty, reduceTree, TOOL, type Tree } from "./subagents";
+import { t } from "./texts";
 
-/** "nota": asiento del sistema en el hilo (un reenvio), no lo dice nadie. */
-type Rol = "usuario" | "agente" | "nota";
-type EstadoMensaje = "listo" | "escribiendo" | "interrumpido" | "error";
+/** "note": a system entry in the thread (a resend), nobody says it. */
+type Role = "user" | "agent" | "note";
+type MessageState = "done" | "writing" | "interrupted" | "error";
 
-export interface Mensaje {
+export interface Message {
 	id: number;
-	rol: Rol;
-	texto: string;
-	estado: EstadoMensaje;
-	/** Solo en respuestas del agente: el modelo del principal que la dio (tras un reenvio, cambia). */
-	modelo?: string | null;
+	role: Role;
+	text: string;
+	state: MessageState;
+	/** Only on the agent's answers: the main agent's model that gave it (after a resend, it changes). */
+	model?: string | null;
 }
 
-/** Pausa del agente principal por cuota, tal como la devuelve /api/plugins/orquehelx/pausas. */
-export interface Pausa {
+/** A quota pause of the main agent, as /api/plugins/orquehelx/pauses returns it. */
+export interface Pause {
 	id: number;
-	/** stored_session_id de Hermes: sobrevive a recargar la pagina. */
-	sesion: string;
-	proveedor: string;
-	modelo: string | null;
-	/** ISO del reinicio medido, o null si el proveedor no lo informa. */
-	reinicio: string | null;
-	estado: string;
-	creado: number;
+	/** Hermes' stored_session_id: survives a page reload. */
+	session: string;
+	provider: string;
+	model: string | null;
+	/** ISO of the measured reset, or null if the provider does not report it. */
+	reset_at: string | null;
+	state: string;
+	created: number;
+}
+
+/** Provider and model of the session's main agent. */
+export interface MainAgent {
+	provider: string;
+	model: string | null;
 }
 
 export interface Chat {
-	mensajes: Mensaje[];
-	/** "pausado": sin cuota; el redactor queda quieto hasta reanudar, reenviar o cancelar (D2). */
-	turno: "libre" | "esperando" | "respondiendo" | "pausado";
-	pausa: Pausa | null;
-	/** Lo que el agente hace ahora ("pensando", "delegando en opencode"); null si nada. */
-	actividad: string | null;
-	/** Fallo: el mensaje y, si fue al enviar, el texto para reintentar sin volver a escribirlo. */
-	error: { mensaje: string; texto: string | null } | null;
-	subagentes: Arbol;
-	/** Quien responde: proveedor y modelo del agente principal, o null si Hermes aun no lo dijo. */
-	principal: Principal | null;
+	messages: Message[];
+	/** "paused": out of quota; the composer stays still until resume, resend or cancel. */
+	turn: "idle" | "waiting" | "responding" | "paused";
+	pause: Pause | null;
+	/** What the agent is doing now ("thinking", "delegating to opencode"); null if nothing. */
+	activity: string | null;
+	/** A failure: the message and, if it happened while sending, the text to retry without retyping it. */
+	error: { message: string; text: string | null } | null;
+	subagents: Tree;
+	/** Who answers: provider and model of the main agent, or null if Hermes has not said yet. */
+	main: MainAgent | null;
 }
 
-type Accion =
-	| { tipo: "enviado"; texto: string }
-	| { tipo: "evento"; evento: string; payload: unknown }
-	| { tipo: "fallo"; mensaje: string }
-	| { tipo: "pausado"; pausa: Pausa }
-	| { tipo: "reanudando" }
-	| { tipo: "cancelada" }
-	| { tipo: "historial"; mensajes: { role?: unknown; text?: unknown }[] }
-	| { tipo: "principal"; principal: Principal | null }
-	| { tipo: "nota"; texto: string }
-	| { tipo: "nueva" };
+type Action =
+	| { type: "sent"; text: string }
+	| { type: "event"; event: string; payload: unknown }
+	| { type: "failure"; message: string }
+	| { type: "paused"; pause: Pause }
+	| { type: "resuming" }
+	| { type: "cancelled" }
+	| { type: "history"; messages: { role?: unknown; text?: unknown }[] }
+	| { type: "main"; main: MainAgent | null }
+	| { type: "note"; text: string }
+	| { type: "new" };
 
-export const inicial: Chat = {
-	mensajes: [],
-	turno: "libre",
-	pausa: null,
-	actividad: null,
+export const initial: Chat = {
+	messages: [],
+	turn: "idle",
+	pause: null,
+	activity: null,
 	error: null,
-	subagentes: vacio,
-	principal: null,
+	subagents: empty,
+	main: null,
 };
 
 type Payload = Record<string, unknown> | null;
 
-const siguienteId = (c: Chat) => (c.mensajes.at(-1)?.id ?? 0) + 1;
+const nextId = (c: Chat) => (c.messages.at(-1)?.id ?? 0) + 1;
 
-/** La respuesta en curso: el ultimo mensaje si es del agente y sigue escribiendo; si no, una nueva. */
-function conRespuesta(c: Chat, cambiar: (m: Mensaje) => Mensaje): Mensaje[] {
-	const ultimo = c.mensajes.at(-1);
-	if (ultimo?.rol === "agente" && ultimo.estado === "escribiendo") {
-		return [...c.mensajes.slice(0, -1), cambiar(ultimo)];
+/** The answer in progress: the last message if it is the agent's and still writing; otherwise a new one. */
+function withAnswer(c: Chat, change: (m: Message) => Message): Message[] {
+	const last = c.messages.at(-1);
+	if (last?.role === "agent" && last.state === "writing") {
+		return [...c.messages.slice(0, -1), change(last)];
 	}
 	return [
-		...c.mensajes,
-		cambiar({
-			id: siguienteId(c),
-			rol: "agente",
-			texto: "",
-			estado: "escribiendo",
-			modelo: c.principal?.modelo ?? null,
+		...c.messages,
+		change({
+			id: nextId(c),
+			role: "agent",
+			text: "",
+			state: "writing",
+			model: c.main?.model ?? null,
 		}),
 	];
 }
 
-function actividadDeHerramienta(p: Payload): string {
-	const nombre = String(p?.name ?? "una herramienta");
+function toolActivity(p: Payload): string {
+	const name = typeof p?.name === "string" && p.name ? p.name : t("a_tool");
 	const args = (p?.args ?? {}) as Record<string, unknown>;
-	return nombre === "delegar" && typeof args.ruta === "string"
-		? `delegando en ${args.ruta}`
-		: `usando ${nombre}`;
+	return name === TOOL && typeof args.route === "string"
+		? t("delegating_to", { route: args.route })
+		: t("using_tool", { tool: name });
 }
 
-const FINAL: Record<string, EstadoMensaje> = {
-	interrupted: "interrumpido",
+const FINAL: Record<string, MessageState> = {
+	interrupted: "interrupted",
 	error: "error",
 };
 
-function alEvento(c: Chat, evento: string, p: Payload): Chat {
-	switch (evento) {
+function onEvent(c: Chat, event: string, p: Payload): Chat {
+	switch (event) {
 		case "message.start":
-			return {
-				...c,
-				turno: "respondiendo",
-				mensajes: conRespuesta(c, (m) => m),
-			};
+			return { ...c, turn: "responding", messages: withAnswer(c, (m) => m) };
 		case "message.delta":
 			return {
 				...c,
-				turno: "respondiendo",
-				mensajes: conRespuesta(c, (m) => ({
+				turn: "responding",
+				messages: withAnswer(c, (m) => ({
 					...m,
-					texto: m.texto + String(p?.text ?? ""),
+					text: m.text + String(p?.text ?? ""),
 				})),
 			};
 		case "thinking.delta":
 		case "reasoning.delta":
-			// El texto del pensamiento es relleno animado del CLI ("synthesizing..."): solo se muestra que piensa.
-			return { ...c, actividad: "pensando" };
+			// The thinking text is the CLI's animated filler ("synthesizing..."): it only shows that it thinks.
+			return { ...c, activity: t("thinking") };
 		case "tool.start":
-			return { ...c, actividad: actividadDeHerramienta(p) };
+			return { ...c, activity: toolActivity(p) };
 		case "tool.complete":
-			return { ...c, actividad: null };
+			return { ...c, activity: null };
 		case "message.complete": {
-			const estado = FINAL[String(p?.status)] ?? "listo";
+			const state = FINAL[String(p?.status)] ?? "done";
 			const final = typeof p?.text === "string" ? p.text : "";
 			return {
 				...c,
-				turno: "libre",
-				actividad: null,
-				mensajes: conRespuesta(c, (m) => ({
+				turn: "idle",
+				activity: null,
+				messages: withAnswer(c, (m) => ({
 					...m,
-					texto: final || m.texto,
-					estado,
+					text: final || m.text,
+					state,
 				})),
 			};
 		}
@@ -147,127 +150,101 @@ function alEvento(c: Chat, evento: string, p: Payload): Chat {
 	}
 }
 
-export function reducir(c: Chat, a: Accion): Chat {
-	switch (a.tipo) {
-		case "enviado":
+export function reduce(c: Chat, a: Action): Chat {
+	switch (a.type) {
+		case "sent":
 			return {
 				...c,
-				turno: "esperando",
+				turn: "waiting",
 				error: null,
-				mensajes: [
-					...c.mensajes,
-					{
-						id: siguienteId(c),
-						rol: "usuario",
-						texto: a.texto,
-						estado: "listo",
-					},
+				messages: [
+					...c.messages,
+					{ id: nextId(c), role: "user", text: a.text, state: "done" },
 				],
 			};
-		case "evento": {
-			const arbol = reducirArbol(c.subagentes, a.evento, a.payload);
-			const sigue = alEvento(c, a.evento, a.payload as Payload);
-			return arbol === c.subagentes ? sigue : { ...sigue, subagentes: arbol };
+		case "event": {
+			const tree = reduceTree(c.subagents, a.event, a.payload);
+			const next = onEvent(c, a.event, a.payload as Payload);
+			return tree === c.subagents ? next : { ...next, subagents: tree };
 		}
-		case "fallo": {
-			// Solo un envio fallido deja el ultimo mensaje del usuario; si ya habia respuesta (fallo al detener
-			// o conexion caida), no hay nada que reenviar.
-			const ultimo = c.mensajes.at(-1);
-			if (ultimo?.rol !== "usuario") {
+		case "failure": {
+			// Only a failed send leaves the user's last message; if there was already an answer (a failure while
+			// stopping, or a dropped connection), there is nothing to resend.
+			const last = c.messages.at(-1);
+			if (last?.role !== "user") {
 				return {
 					...c,
-					turno: "libre",
-					pausa: null,
-					actividad: null,
-					error: { mensaje: a.mensaje, texto: null },
+					turn: "idle",
+					pause: null,
+					activity: null,
+					error: { message: a.message, text: null },
 				};
 			}
 			return {
 				...c,
-				turno: "libre",
-				pausa: null,
-				actividad: null,
-				mensajes: [...c.mensajes.slice(0, -1), { ...ultimo, estado: "error" }],
-				error: { mensaje: a.mensaje, texto: ultimo.texto },
+				turn: "idle",
+				pause: null,
+				activity: null,
+				messages: [...c.messages.slice(0, -1), { ...last, state: "error" }],
+				error: { message: a.message, text: last.text },
 			};
 		}
-		case "pausado": {
-			// La respuesta que precede a la pausa es el turno que fallo por cuota, aunque llegue del historial.
-			const ultimo = c.mensajes.at(-1);
-			const mensajes =
-				ultimo?.rol === "agente"
-					? [
-							...c.mensajes.slice(0, -1),
-							{ ...ultimo, estado: "error" as const },
-						]
-					: c.mensajes;
-			return {
-				...c,
-				turno: "pausado",
-				pausa: a.pausa,
-				actividad: null,
-				mensajes,
-			};
+		case "paused": {
+			// The answer before the pause is the turn that failed for quota, even if it comes from the history.
+			const last = c.messages.at(-1);
+			const messages =
+				last?.role === "agent"
+					? [...c.messages.slice(0, -1), { ...last, state: "error" as const }]
+					: c.messages;
+			return { ...c, turn: "paused", pause: a.pause, activity: null, messages };
 		}
-		case "principal":
-			return { ...c, principal: a.principal };
-		case "nota":
+		case "main":
+			return { ...c, main: a.main };
+		case "note":
 			return {
 				...c,
-				mensajes: [
-					...c.mensajes,
-					{ id: siguienteId(c), rol: "nota", texto: a.texto, estado: "listo" },
+				messages: [
+					...c.messages,
+					{ id: nextId(c), role: "note", text: a.text, state: "done" },
 				],
 			};
-		case "reanudando":
-			return { ...c, turno: "esperando", pausa: null, error: null };
-		case "cancelada":
-			return { ...c, turno: "libre", pausa: null };
-		case "historial":
-			return {
-				...inicial,
-				principal: c.principal,
-				mensajes: desdeHistorial(a.mensajes),
-			};
-		case "nueva":
-			return inicial;
+		case "resuming":
+			return { ...c, turn: "waiting", pause: null, error: null };
+		case "cancelled":
+			return { ...c, turn: "idle", pause: null };
+		case "history":
+			return { ...initial, main: c.main, messages: fromHistory(a.messages) };
+		case "new":
+			return initial;
 	}
 }
 
-const ROL: Record<string, Rol> = { user: "usuario", assistant: "agente" };
+const ROLE: Record<string, Role> = { user: "user", assistant: "agent" };
 
-/** Transcript de Hermes (session.resume) -> mensajes visibles: solo usuario y agente con texto. */
-function desdeHistorial(
-	filas: { role?: unknown; text?: unknown }[],
-): Mensaje[] {
-	const mensajes: Mensaje[] = [];
-	for (const f of filas) {
-		const rol = ROL[String(f.role)];
-		if (rol && typeof f.text === "string" && f.text) {
-			mensajes.push({
-				id: mensajes.length + 1,
-				rol,
-				texto: f.text,
-				estado: "listo",
+/** Hermes transcript (session.resume) -> visible messages: only user and agent with text. */
+function fromHistory(rows: { role?: unknown; text?: unknown }[]): Message[] {
+	const messages: Message[] = [];
+	for (const r of rows) {
+		const role = ROLE[String(r.role)];
+		if (role && typeof r.text === "string" && r.text) {
+			messages.push({
+				id: messages.length + 1,
+				role,
+				text: r.text,
+				state: "done",
 			});
 		}
 	}
-	return mensajes;
+	return messages;
 }
 
-/** Proveedor y modelo del agente principal de la sesion. */
-export interface Principal {
-	proveedor: string;
-	modelo: string | null;
-}
-
-/** session.create perezoso (lazy) no trae provider hasta armar el agente; llega en session.info. */
-export function principalDe(
+/** A lazy session.create carries no provider until the agent is built; it arrives in session.info. */
+export function mainAgentOf(
 	info: Record<string, unknown> | null | undefined,
-): Principal | null {
+): MainAgent | null {
 	if (typeof info?.provider !== "string" || !info.provider) return null;
 	return {
-		proveedor: info.provider,
-		modelo: typeof info.model === "string" ? info.model : null,
+		provider: info.provider,
+		model: typeof info.model === "string" ? info.model : null,
 	};
 }

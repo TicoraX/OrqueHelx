@@ -1,103 +1,98 @@
 import { describe, expect, it } from "vitest";
-import { bloques, plano, tramos } from "../src/markdown";
+import { blocks, plain, spans } from "../src/markdown";
 
-describe("plano", () => {
-	it("quita marcas anidadas dentro de negrita y cursiva", () => {
-		expect(plano("**usa `delegar`** y *ya*\n\n- uno\n- dos")).toBe(
-			"usa delegar y ya uno; dos",
+describe("plain", () => {
+	it("removes marks nested inside bold and italics", () => {
+		expect(plain("**use `delegate_to`** and *done*\n\n- one\n- two")).toBe(
+			"use delegate_to and done one; two",
 		);
 	});
 });
 
-describe("tramos", () => {
-	it("texto plano queda igual", () => {
-		expect(tramos("hola mundo")).toEqual([{ t: "texto", v: "hola mundo" }]);
+describe("spans", () => {
+	it("plain text stays the same", () => {
+		expect(spans("hello world")).toEqual([{ t: "text", v: "hello world" }]);
 	});
 
-	it("negrita, cursiva y codigo en linea", () => {
-		expect(tramos("**Explicacion**: usa `delegar` y *listo*")).toEqual([
-			{ t: "negrita", v: "Explicacion" },
-			{ t: "texto", v: ": usa " },
-			{ t: "codigo", v: "delegar" },
-			{ t: "texto", v: " y " },
-			{ t: "cursiva", v: "listo" },
+	it("bold, italics and inline code", () => {
+		expect(spans("**Explanation**: use `delegate_to` and *done*")).toEqual([
+			{ t: "bold", v: "Explanation" },
+			{ t: "text", v: ": use " },
+			{ t: "code", v: "delegate_to" },
+			{ t: "text", v: " and " },
+			{ t: "italic", v: "done" },
 		]);
 	});
 
-	it("snake_case y aritmetica no se vuelven cursiva", () => {
-		expect(tramos("es_bisiesto_rapido y 2 * 3 * 4")).toEqual([
-			{ t: "texto", v: "es_bisiesto_rapido y 2 * 3 * 4" },
+	it("snake_case and arithmetic do not become italics", () => {
+		expect(spans("is_leap_year_fast and 2 * 3 * 4")).toEqual([
+			{ t: "text", v: "is_leap_year_fast and 2 * 3 * 4" },
 		]);
 	});
 
-	it("dentro del codigo en linea no se interpreta nada", () => {
-		expect(tramos("`**a**`")).toEqual([{ t: "codigo", v: "**a**" }]);
+	it("nothing is interpreted inside inline code", () => {
+		expect(spans("`**a**`")).toEqual([{ t: "code", v: "**a**" }]);
 	});
 
-	it("solo enlaces http(s); cualquier otro esquema queda como texto", () => {
-		expect(tramos("[repo](https://github.com/TicoraX/OrqueHelx)")).toEqual([
-			{ t: "enlace", v: "repo", href: "https://github.com/TicoraX/OrqueHelx" },
+	it("only http(s) links; any other scheme stays text", () => {
+		expect(spans("[repo](https://github.com/TicoraX/OrqueHelx)")).toEqual([
+			{ t: "link", v: "repo", href: "https://github.com/TicoraX/OrqueHelx" },
 		]);
-		expect(tramos("[x](javascript:alert(1))")).toEqual([
-			{ t: "texto", v: "[x](javascript:alert(1))" },
+		expect(spans("[x](javascript:alert(1))")).toEqual([
+			{ t: "text", v: "[x](javascript:alert(1))" },
 		]);
 	});
 });
 
-describe("bloques", () => {
-	it("parrafos separados por linea en blanco; saltos simples se conservan", () => {
-		expect(bloques("uno\ndos\n\ntres")).toEqual([
-			{ t: "parrafo", lineas: [tramos("uno"), tramos("dos")] },
-			{ t: "parrafo", lineas: [tramos("tres")] },
+describe("blocks", () => {
+	it("paragraphs split by a blank line; single breaks are kept", () => {
+		expect(blocks("one\ntwo\n\nthree")).toEqual([
+			{ t: "paragraph", lines: [spans("one"), spans("two")] },
+			{ t: "paragraph", lines: [spans("three")] },
 		]);
 	});
 
-	it("bloque de codigo con lenguaje, sin interpretar su contenido", () => {
+	it("code block with language, its content not interpreted", () => {
 		expect(
-			bloques("antes\n```python\ndef f(a_b): return **a\n```\ndespues"),
+			blocks("before\n```python\ndef f(a_b): return **a\n```\nafter"),
 		).toEqual([
-			{ t: "parrafo", lineas: [tramos("antes")] },
-			{ t: "codigo", lenguaje: "python", v: "def f(a_b): return **a" },
-			{ t: "parrafo", lineas: [tramos("despues")] },
+			{ t: "paragraph", lines: [spans("before")] },
+			{ t: "code", language: "python", v: "def f(a_b): return **a" },
+			{ t: "paragraph", lines: [spans("after")] },
 		]);
 	});
 
-	it("un bloque de codigo sin cerrar (streaming) se muestra igual", () => {
-		expect(bloques("```\nprint(1)")).toEqual([
-			{ t: "codigo", lenguaje: "", v: "print(1)" },
+	it("an unclosed code block (streaming) shows anyway", () => {
+		expect(blocks("```\nprint(1)")).toEqual([
+			{ t: "code", language: "", v: "print(1)" },
 		]);
 	});
 
-	it("listas con vinetas y numeradas", () => {
-		expect(bloques("- uno\n* **dos**\n\n1. a\n2. b")).toEqual([
+	it("bulleted and numbered lists", () => {
+		expect(blocks("- one\n* **two**\n\n1. a\n2. b")).toEqual([
 			{
-				t: "lista",
-				ordenada: false,
-				inicio: 1,
-				items: [tramos("uno"), tramos("**dos**")],
+				t: "list",
+				ordered: false,
+				start: 1,
+				items: [spans("one"), spans("**two**")],
 			},
-			{
-				t: "lista",
-				ordenada: true,
-				inicio: 1,
-				items: [tramos("a"), tramos("b")],
-			},
+			{ t: "list", ordered: true, start: 1, items: [spans("a"), spans("b")] },
 		]);
 	});
 
-	it("una lista numerada cortada por un parrafo sigue su numeracion", () => {
-		expect(bloques("1. a\n\nnota\n\n3. c")[2]).toEqual({
-			t: "lista",
-			ordenada: true,
-			inicio: 3,
-			items: [tramos("c")],
+	it("a numbered list cut by a paragraph keeps its numbering", () => {
+		expect(blocks("1. a\n\nnote\n\n3. c")[2]).toEqual({
+			t: "list",
+			ordered: true,
+			start: 3,
+			items: [spans("c")],
 		});
 	});
 
-	it("un titulo se vuelve una linea destacada", () => {
-		expect(bloques("## Resumen\ntexto")).toEqual([
-			{ t: "titulo", tramos: tramos("Resumen") },
-			{ t: "parrafo", lineas: [tramos("texto")] },
+	it("a heading becomes a highlighted line", () => {
+		expect(blocks("## Summary\ntext")).toEqual([
+			{ t: "heading", spans: spans("Summary") },
+			{ t: "paragraph", lines: [spans("text")] },
 		]);
 	});
 });

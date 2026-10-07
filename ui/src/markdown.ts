@@ -1,118 +1,117 @@
-// Markdown de las respuestas del agente a una estructura pura; App.tsx la pinta con elementos de React,
-// nunca con innerHTML, asi que el texto del modelo no se interpreta como HTML.
-// ponytail: subconjunto (parrafos, codigo, listas, titulos, negrita, cursiva, enlaces http[s]); tablas y
-// citas salen como texto. Si hace falta mas, un parser real (marked + sanitizado) cuesta ~20 KB gzip.
+// Markdown in the agent's answers to a plain structure; App.tsx draws it with React elements, never with
+// innerHTML, so the model's text is never interpreted as HTML.
+// ponytail: a subset (paragraphs, code, lists, headings, bold, italics, http[s] links); tables and quotes
+// come out as text. If more is needed, a real parser (marked + sanitizing) costs ~20 KB gzip.
 
-export type Tramo =
-	| { t: "texto" | "negrita" | "cursiva" | "codigo"; v: string }
-	| { t: "enlace"; v: string; href: string };
+export type Span =
+	| { t: "text" | "bold" | "italic" | "code"; v: string }
+	| { t: "link"; v: string; href: string };
 
-export type Bloque =
-	| { t: "parrafo"; lineas: Tramo[][] }
-	| { t: "codigo"; lenguaje: string; v: string }
-	| { t: "lista"; ordenada: boolean; inicio: number; items: Tramo[][] }
-	| { t: "titulo"; tramos: Tramo[] };
+export type Block =
+	| { t: "paragraph"; lines: Span[][] }
+	| { t: "code"; language: string; v: string }
+	| { t: "list"; ordered: boolean; start: number; items: Span[][] }
+	| { t: "heading"; spans: Span[] };
 
-// Orden de alternativas = prioridad: el codigo gana a todo lo demas.
-// Cursiva con _ solo entre limites de palabra, para que snake_case quede como texto.
+// Order of alternatives = priority: code wins over everything else.
+// Italics with _ only between word boundaries, so snake_case stays text.
 const INLINE =
 	/`([^`]+)`|\*\*([^*]+)\*\*|\*(?!\s)([^*]+?)(?<!\s)\*|(?<!\w)_(?!\s)([^_]+?)(?<!\s)_(?!\w)|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gu;
 
-export function tramos(texto: string): Tramo[] {
-	const salida: Tramo[] = [];
-	let desde = 0;
-	for (const m of texto.matchAll(INLINE)) {
-		if (m.index > desde)
-			salida.push({ t: "texto", v: texto.slice(desde, m.index) });
-		if (m[1] !== undefined) salida.push({ t: "codigo", v: m[1] });
-		else if (m[2] !== undefined) salida.push({ t: "negrita", v: m[2] });
+export function spans(text: string): Span[] {
+	const out: Span[] = [];
+	let from = 0;
+	for (const m of text.matchAll(INLINE)) {
+		if (m.index > from) out.push({ t: "text", v: text.slice(from, m.index) });
+		if (m[1] !== undefined) out.push({ t: "code", v: m[1] });
+		else if (m[2] !== undefined) out.push({ t: "bold", v: m[2] });
 		else if (m[3] !== undefined || m[4] !== undefined)
-			salida.push({ t: "cursiva", v: (m[3] ?? m[4]) as string });
-		else salida.push({ t: "enlace", v: m[5] as string, href: m[6] as string });
-		desde = m.index + m[0].length;
+			out.push({ t: "italic", v: (m[3] ?? m[4]) as string });
+		else out.push({ t: "link", v: m[5] as string, href: m[6] as string });
+		from = m.index + m[0].length;
 	}
-	if (desde < texto.length) salida.push({ t: "texto", v: texto.slice(desde) });
-	return salida;
+	if (from < text.length) out.push({ t: "text", v: text.slice(from) });
+	return out;
 }
 
-const VINETA = /^\s*[-*+]\s+(.*)$/u;
-const NUMERO = /^\s*\d+[.)]\s+(.*)$/u;
-const TITULO = /^#{1,6}\s+(.*)$/u;
-const VALLA = /^\s*```(\S*)/u;
-const CIERRE = /^\s*```\s*$/u;
+const BULLET = /^\s*[-*+]\s+(.*)$/u;
+const NUMBER = /^\s*\d+[.)]\s+(.*)$/u;
+const HEADING = /^#{1,6}\s+(.*)$/u;
+const FENCE = /^\s*```(\S*)/u;
+const CLOSE = /^\s*```\s*$/u;
 
-export function bloques(texto: string): Bloque[] {
-	const salida: Bloque[] = [];
-	const lineas = texto.split(/\r?\n/u);
-	for (let i = 0; i < lineas.length; ) {
-		const linea = lineas[i] as string;
-		const valla = linea.match(VALLA);
-		if (valla) {
-			// Sin valla de cierre (respuesta a medio llegar) el resto es codigo.
-			const fin = lineas.findIndex((l, j) => j > i && CIERRE.test(l));
-			const hasta = fin === -1 ? lineas.length : fin;
-			salida.push({
-				t: "codigo",
-				lenguaje: valla[1] ?? "",
-				v: lineas.slice(i + 1, hasta).join("\n"),
+export function blocks(text: string): Block[] {
+	const out: Block[] = [];
+	const lines = text.split(/\r?\n/u);
+	for (let i = 0; i < lines.length; ) {
+		const line = lines[i] as string;
+		const fence = line.match(FENCE);
+		if (fence) {
+			// Without a closing fence (an answer still arriving) the rest is code.
+			const end = lines.findIndex((l, j) => j > i && CLOSE.test(l));
+			const until = end === -1 ? lines.length : end;
+			out.push({
+				t: "code",
+				language: fence[1] ?? "",
+				v: lines.slice(i + 1, until).join("\n"),
 			});
-			i = hasta + 1;
+			i = until + 1;
 			continue;
 		}
-		if (!linea.trim()) {
+		if (!line.trim()) {
 			i++;
 			continue;
 		}
-		const titulo = linea.match(TITULO);
-		if (titulo) {
-			salida.push({ t: "titulo", tramos: tramos(titulo[1] as string) });
+		const heading = line.match(HEADING);
+		if (heading) {
+			out.push({ t: "heading", spans: spans(heading[1] as string) });
 			i++;
 			continue;
 		}
-		const patron = [VINETA, NUMERO].find((p) => p.test(linea));
-		if (patron) {
-			// Una lista numerada cortada por un parrafo sigue en su numero (<ol start>).
-			const inicio = Number.parseInt(linea, 10) || 1;
-			const items: Tramo[][] = [];
-			for (; i < lineas.length && patron.test(lineas[i] as string); i++)
-				items.push(tramos((lineas[i] as string).match(patron)?.[1] as string));
-			salida.push({ t: "lista", ordenada: patron === NUMERO, inicio, items });
+		const pattern = [BULLET, NUMBER].find((p) => p.test(line));
+		if (pattern) {
+			// A numbered list cut by a paragraph keeps its number (<ol start>).
+			const start = Number.parseInt(line, 10) || 1;
+			const items: Span[][] = [];
+			for (; i < lines.length && pattern.test(lines[i] as string); i++)
+				items.push(spans((lines[i] as string).match(pattern)?.[1] as string));
+			out.push({ t: "list", ordered: pattern === NUMBER, start, items });
 			continue;
 		}
-		const parrafo: Tramo[][] = [];
-		for (; i < lineas.length; i++) {
-			const l = lineas[i] as string;
+		const paragraph: Span[][] = [];
+		for (; i < lines.length; i++) {
+			const l = lines[i] as string;
 			if (
 				!l.trim() ||
-				VALLA.test(l) ||
-				TITULO.test(l) ||
-				VINETA.test(l) ||
-				NUMERO.test(l)
+				FENCE.test(l) ||
+				HEADING.test(l) ||
+				BULLET.test(l) ||
+				NUMBER.test(l)
 			)
 				break;
-			parrafo.push(tramos(l));
+			paragraph.push(spans(l));
 		}
-		salida.push({ t: "parrafo", lineas: parrafo });
+		out.push({ t: "paragraph", lines: paragraph });
 	}
-	return salida;
+	return out;
 }
 
-// Negrita y cursiva pueden traer marcas adentro (`**usa `x`**`): se aplanan de nuevo.
-const linea = (ts: Tramo[]): string =>
-	ts
+// Bold and italics can carry marks inside (`**use `x`**`): flatten them again.
+const flatLine = (ss: Span[]): string =>
+	ss
 		.map((x) =>
-			x.t === "negrita" || x.t === "cursiva" ? linea(tramos(x.v)) : x.v,
+			x.t === "bold" || x.t === "italic" ? flatLine(spans(x.v)) : x.v,
 		)
 		.join("");
 
-/** El mismo markdown en una sola linea de texto, sin marcas: para resumenes recortados. */
-export function plano(texto: string): string {
-	return bloques(texto)
+/** The same markdown on a single line of text, without marks: for clipped summaries. */
+export function plain(text: string): string {
+	return blocks(text)
 		.map((b) => {
-			if (b.t === "codigo") return b.v;
-			if (b.t === "titulo") return linea(b.tramos);
-			if (b.t === "lista") return b.items.map(linea).join("; ");
-			return b.lineas.map(linea).join(" ");
+			if (b.t === "code") return b.v;
+			if (b.t === "heading") return flatLine(b.spans);
+			if (b.t === "list") return b.items.map(flatLine).join("; ");
+			return b.lines.map(flatLine).join(" ");
 		})
 		.join(" ")
 		.replaceAll(/\s+/gu, " ")

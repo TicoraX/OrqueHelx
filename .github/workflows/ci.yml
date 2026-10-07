@@ -1,10 +1,10 @@
 name: CI
 
-# Suite del plugin contra Hermes real (sin mocks del core).
-# - version minima declarada en orquehelx/plugin.yaml: bloquea el merge.
-# - main de Hermes: aviso temprano de roturas upstream; bloquea solo en la corrida semanal.
-# Flujo: rama -> PR a develop -> PR de develop a master -> tag. master es la rama por defecto:
-# `hermes plugins install` clona esa, asi que solo recibe lo que ya paso por develop.
+# The plugin's suite against a real Hermes (no mocks of the core).
+# - minimum version declared in orquehelx/plugin.yaml: blocks the merge.
+# - Hermes main: early warning of upstream breakage; blocks only on the weekly run.
+# Flow: branch -> PR to develop -> PR from develop to master -> tag. master is the default branch:
+# `hermes plugins install` clones it, so it only gets what already went through develop.
 on:
   push:
     branches: [master, develop]
@@ -32,12 +32,12 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         hermes: [v2026.9.24, main]
         include:
-          # main declara sus dependencias solo para Python >= 3.14 (runtime gestionado por su bootstrap).
+          # main declares its dependencies only for Python >= 3.14 (runtime managed by its bootstrap).
           - hermes: v2026.9.24
             python: "3.11"
           - hermes: main
             python: "3.14"
-          # plugin.yaml declara macos: se prueba solo contra la version minima.
+          # plugin.yaml declares macos: it is tested only against the minimum version.
           - os: macos-latest
             hermes: v2026.9.24
             python: "3.11"
@@ -59,8 +59,8 @@ jobs:
           "$PY" -m pytest -q -p no:cacheprovider tests
 
   ui:
-    # La UI del dashboard: checks, tests y build. El dist va commiteado (quien instala no necesita Node),
-    # asi que el build de CI tiene que coincidir con el del repo.
+    # The dashboard UI: checks, tests and build. The dist is committed (whoever installs needs no Node),
+    # so the CI build has to match the repo's.
     name: ui
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -78,10 +78,10 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm run build
-      - name: El dist commiteado es el del build
-        # ls-files: el dist tiene que estar trackeado (un .gitignore lo escondio una vez y el chequeo paso igual).
-        # porcelain --ignored: ve archivos cambiados, nuevos e ignorados (un asset que el build agrego).
+      - name: The committed dist is the build's
+        # ls-files: the dist must be tracked (a .gitignore once hid it and the check passed anyway).
+        # porcelain --ignored: sees changed, new and ignored files (an asset the build added).
         run: |
           git ls-files --error-unmatch ../orquehelx/dashboard/dist/index.js ../orquehelx/dashboard/dist/style.css
-          cambios=$(git status --porcelain --ignored -- ../orquehelx/dashboard/dist)
-          if [ -n "$cambios" ]; then echo "$cambios"; echo "::error::dist desactualizado: corre npm run build en ui/ y commitea"; exit 1; fi
+          changes=$(git status --porcelain --ignored -- ../orquehelx/dashboard/dist)
+          if [ -n "$changes" ]; then echo "$changes"; echo "::error::stale dist: run npm run build in ui/ and commit"; exit 1; fi

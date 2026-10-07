@@ -1,5 +1,5 @@
-// Build del plugin de dashboard: un IIFE que usa el React de Hermes (window.__HERMES_PLUGIN_SDK__.React).
-// El resultado se commitea en orquehelx/dashboard/dist: quien instala el plugin no necesita Node.
+// Dashboard plugin build: an IIFE that uses Hermes' React (window.__HERMES_PLUGIN_SDK__.React).
+// The output is committed to orquehelx/dashboard/dist: whoever installs the plugin needs no Node.
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
