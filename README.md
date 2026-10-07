@@ -68,9 +68,8 @@ estimated) and the other available routes. What the parent does next is set by `
 - `parent_decides`: the parent may pick another route if its model fits the task, and tells you which one.
 - `wait`: the parent tells you and does nothing else until your next message.
 
-Quota counts as exhausted only when the error says so unambiguously (for example Antigravity's
-`RESOURCE_EXHAUSTED`) or when it is measured (a Claude or Codex window at 100 %). Any other failure is not
-reported as a quota problem.
+Quota counts as exhausted in two cases: the error names it (Antigravity's `RESOURCE_EXHAUSTED`, for example),
+or a measured window is at 100 % (Claude, Codex). Any other failure is reported as a failure, not as quota.
 
 ### When the main agent runs out
 
@@ -151,28 +150,32 @@ MIT. See [LICENSE](LICENSE).
 
 ## En español
 
-Plugin para Hermes Agent que permite que un modelo delegue trabajo a otro, y que cada uno corra con **tu propia
-suscripción**: Claude, Codex, Antigravity, OpenCode o cualquier CLI que hable ACP. El modelo elige la ruta en
-cada llamada y el subagente corre en ese proveedor y gasta su cuota. Si esa cuota se agota, el cambio a otro
-proveedor lo decides tú: OrqueHelx nunca lo hace automático.
+Plugin para Hermes Agent: un modelo le pasa trabajo a otro, y cada uno corre con tu propia suscripción
+(Claude, Codex, Antigravity, OpenCode o cualquier CLI que hable ACP). El modelo elige la ruta en cada llamada,
+y el subagente gasta la cuota de ese proveedor. Si se agota, tú decides a dónde va la tarea. OrqueHelx no
+cambia de proveedor por su cuenta.
 
-- **Instalación:** `hermes plugins install TicoraX/OrqueHelx#orquehelx --enable`.
-- **Rutas:** en `~/.hermes/config.yaml`, bajo `plugins.entries.orquehelx.settings.routes`, como en el ejemplo
-  de arriba. `provider` es un proveedor que Hermes ya conoce; `acp`, el comando de un CLI que hable ACP. Sin
-  rutas el plugin carga igual, y `delegate_to` y `/ohx` te dicen qué configurar. Una ruta mal escrita falla al
-  cargar, con el nombre de la ruta.
-- **Sin cuota:** `delegate_to` devuelve `status: out_of_quota` con la hora de reinicio (`reset_at`, o `null`,
-  nunca estimada) y las otras rutas. `policy` decide qué hace el padre: `ask` (por defecto), `parent_decides` o
-  `wait`. La cuota se da por agotada solo con un error inequívoco o una ventana medida al 100 %.
-- **Agente principal sin cuota:** en la pestaña OrqueHelx la conversación queda en pausa, con **Reanudar**,
-  **Reenviar** a otra ruta o **Cancelar**. La pausa se guarda en `~/.hermes/plugin-data/orquehelx/pauses.db`.
-- **Consumo:** `/ohx routes` y `/ohx quota`. Lo que un proveedor no informa se muestra como "sin dato".
-- **Idioma:** la pestaña sigue el selector de idioma del dashboard; `/ohx` y los errores de config siguen
-  `display.language` de Hermes. Lo que lee el modelo va siempre en inglés.
-- **Desde v0.1:** la herramienta ahora es `delegate_to` (antes `delegar`). Las claves `rutas`, `politica` y sus
-  valores en español siguen funcionando, y las pausas pendientes de `pausas.db` se copian solas.
-- **Interfaz:** `hermes dashboard`, pestaña **OrqueHelx** (`/orquehelx`): rutas con su cuota, conversación y
-  subagentes en vivo.
-- **Windows y Antigravity:** requiere hermes-antigravity-subscription 1.0.2 o posterior.
-- **Privacidad:** sin servidor propio, sin telemetría y sin credenciales guardadas. La cuota se mide con los
-  medidores de Hermes; lo único que escribe OrqueHelx es `pauses.db`.
+Se instala con `hermes plugins install TicoraX/OrqueHelx#orquehelx --enable`. Las rutas van en
+`~/.hermes/config.yaml`, bajo `plugins.entries.orquehelx.settings.routes`, como en el ejemplo de arriba:
+`provider` es un proveedor que Hermes ya conoce y `acp` es el comando de un CLI que hable ACP. Sin rutas, el
+plugin carga igual y `delegate_to` y `/ohx` te dicen qué falta. Una ruta mal escrita falla al cargar y el error
+la nombra.
+
+Cuando un subagente se queda sin cuota, `delegate_to` responde `status: out_of_quota` con la hora de reinicio
+(`reset_at`, o `null` si el proveedor no la informa; nunca se estima) y las otras rutas. Qué hace el padre lo
+fija `policy`: `ask` (por defecto), `parent_decides` o `wait`. Solo cuenta como falta de cuota un error que lo
+dice o una ventana medida al 100 %.
+
+Si se agota el agente principal, la conversación queda en pausa en la pestaña OrqueHelx, con tres botones:
+Reanudar, Reenviar a otra ruta o Cancelar. La pausa vive en `~/.hermes/plugin-data/orquehelx/pauses.db` y
+sobrevive a cerrar la pestaña.
+
+`/ohx routes` lista las rutas y `/ohx quota` mide el consumo; lo que un proveedor no informa sale como
+"sin dato". La pestaña (`hermes dashboard`, `/orquehelx`) sigue el idioma del selector del dashboard, y `/ohx`
+y los errores de config siguen `display.language` de Hermes. Lo que lee el modelo va siempre en inglés.
+
+Si vienes de la v0.1: la herramienta ahora se llama `delegate_to` (antes `delegar`). Tu config con `rutas`,
+`politica` y valores en español sigue funcionando, y las pausas de `pausas.db` se copian solas la primera vez.
+
+En Windows, la ruta de Antigravity necesita hermes-antigravity-subscription 1.0.2 o posterior. OrqueHelx no
+tiene servidor propio ni telemetría y no guarda credenciales; el único archivo que escribe es `pauses.db`.
