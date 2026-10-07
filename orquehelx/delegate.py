@@ -149,6 +149,8 @@ def register(ctx) -> None:
     # on its lock until the load timeout (10 s) and Hermes drops the plugin.
     # Freshly installed there are no routes: it loads anyway and each entry point says what to configure.
     # A config with badly written content still fails at load.
+    from hermes_constants import get_hermes_home
+    quota.HOME = quota.home_key(get_hermes_home())
     routes_config = setting(ctx.get_config, "routes", "rutas")
     routes = {} if routes_config is None or routes_config == {} else load(routes_config)
     policy = setting(ctx.get_config, "policy", "politica")
