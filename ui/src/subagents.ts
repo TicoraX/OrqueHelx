@@ -100,12 +100,22 @@ function delegationEnd(tree: Tree, p: Payload): Tree {
 	const pending = tree.pending.find((d) => d.toolId === p.tool_id);
 	if (!pending) return tree;
 	const rest = tree.pending.filter((d) => d !== pending);
-	if (pending.subagent !== null) return { ...tree, pending: rest };
 	// Hermes already parsed delegate_to's JSON; a result that is not an object carries no status or reason.
 	const r = (
 		p.result && typeof p.result === "object" ? p.result : {}
 	) as Payload;
 	const outOfQuota = r.status === "out_of_quota";
+	if (pending.subagent !== null) {
+		// The child ran and failed; delegate_to then found the quota ran out: that, not "failed", is the cause.
+		const ran = { ...tree, pending: rest };
+		return outOfQuota
+			? changeNode(ran, pending.subagent, (n) => ({
+					...n,
+					state: "out_of_quota",
+					resetAt: text(r.reset_at),
+				}))
+			: ran;
+	}
 	const node: Subagent = {
 		id: pending.toolId,
 		parent: null,
