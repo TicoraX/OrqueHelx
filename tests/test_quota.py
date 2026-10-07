@@ -186,3 +186,21 @@ def test_other_errors_are_not_cached(monkeypatch):
     quota.measure_safe(CLAUDE)
     quota.measure_safe(CLAUDE)
     assert len(calls) == 2
+
+
+def test_a_429_retry_after_can_be_an_http_date(monkeypatch):
+    from email.utils import format_datetime
+    from datetime import timedelta
+    when = format_datetime(datetime.now(timezone.utc) + timedelta(seconds=300), usegmt=True)
+    assert 290 <= quota._retry_after(_HTTP429(when)) <= 300
+    past = format_datetime(datetime.now(timezone.utc) - timedelta(seconds=300), usegmt=True)
+    assert quota._retry_after(_HTTP429(past)) == 0
+
+
+def test_an_empty_measurement_is_not_reused(monkeypatch):
+    # Hermes' public fetcher answers None (no windows) on any error, a 429 included: that is not a measurement.
+    calls = []
+    monkeypatch.setitem(quota.METERS, "claude-subscription", lambda: calls.append(1) or [])
+    quota.measure(CLAUDE)
+    quota.measure(CLAUDE)
+    assert len(calls) == 2

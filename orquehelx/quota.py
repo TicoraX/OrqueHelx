@@ -19,7 +19,8 @@ import os
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 log = logging.getLogger(__name__)
 
@@ -87,10 +88,18 @@ def _retry_after(exc: Exception) -> float | None:
     response = getattr(exc, "response", None)
     if getattr(response, "status_code", None) != 429:
         return None
+    value = (getattr(response, "headers", None) or {}).get("retry-after")
     try:
-        return max(float((getattr(response, "headers", None) or {}).get("retry-after")), 0)
+        return max(float(value), 0)
     except (TypeError, ValueError):
+        pass
+    try:  # Retry-After may also be an HTTP date
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError):
         return DEFAULT_BACKOFF
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max((when - datetime.now(timezone.utc)).total_seconds(), 0)
 
 
 def measure(provider: str, fresh: bool = False) -> list[Window] | None:
@@ -114,10 +123,12 @@ def measure(provider: str, fresh: bool = False) -> list[Window] | None:
         wait = _retry_after(exc)
         if wait is not None:
             with _lock:
-                _backoff[provider] = (now + wait, exc)
+                _backoff[provider] = (time.monotonic() + wait, exc)
         raise
-    with _lock:
-        _measured[provider] = (now, windows)
+    # An empty result is not reused: Hermes' public fetcher answers "no windows" on any error, a 429 included.
+    if windows:
+        with _lock:
+            _measured[provider] = (time.monotonic(), windows)
     return windows
 
 
