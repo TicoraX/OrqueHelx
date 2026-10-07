@@ -8,7 +8,7 @@
 
 import { plain } from "./markdown";
 import { clock, type Summary, type Tone, unbroken } from "./status";
-import { language, t } from "./texts";
+import { language, type TextId, t } from "./texts";
 
 /** Name of the plugin's tool (orquehelx/delegate.py). */
 export const TOOL = "delegate_to";
@@ -164,7 +164,7 @@ export function reduceTree(tree: Tree, event: string, payload: unknown): Tree {
 	}
 }
 
-const FIGURE: Record<SubagentState, [Tone, Parameters<typeof t>[0]]> = {
+const FIGURE: Record<SubagentState, [Tone, TextId]> = {
 	running: ["normal", "running"],
 	completed: ["normal", "completed"],
 	interrupted: ["no_data", "note_stopped"],

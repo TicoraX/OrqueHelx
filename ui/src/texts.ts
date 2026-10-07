@@ -176,7 +176,7 @@ const ES: Record<TextId, string> = {
 };
 
 export const TEXTS = { en: EN as Record<TextId, string>, es: ES };
-export type Language = keyof typeof TEXTS;
+type Language = keyof typeof TEXTS;
 
 let current: Language = "en";
 
