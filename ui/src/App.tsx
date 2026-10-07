@@ -1,34 +1,30 @@
-// Pantalla principal: rutas y cuotas | conversacion | subagentes (contrato de direccion, forma "tres columnas").
+// Main screen: routes and quotas | conversation | subagents (direction contract, "three columns" shape).
 import React, { useEffect, useRef, useState } from "react";
-import { aislar } from "./aislar";
-import type { Mensaje, Pausa } from "./chat";
+import type { Message, Pause } from "./chat";
 import {
-	type ChatVivo,
-	type EstadoCarga,
+	type LiveChat,
+	type StatusLoad,
 	useChat,
-	useConexion,
-	useEstado,
-} from "./datos";
+	useConnection,
+	useStatus,
+} from "./data";
+import type { ConnectionState } from "./gateway";
+import { isolate } from "./isolate";
+import { blocks, type Span } from "./markdown";
+import { useLocale } from "./sdk";
 import {
-	type EstadoRutas,
-	etiquetaPrincipal,
-	hora,
-	nombreModelo,
-	type Resumen,
-	type RutaEstado,
-	resumen,
-} from "./estado";
-import type { EstadoConexion } from "./gateway";
-import { bloques, type Tramo } from "./markdown";
-import { type Arbol, enOrden, ficha } from "./subagentes";
+	clock,
+	mainAgentLabel,
+	modelName,
+	type RouteStatus,
+	type RoutesStatus,
+	type Summary,
+	summary,
+} from "./status";
+import { card, inOrder, type Tree } from "./subagents";
+import { setLanguage, t } from "./texts";
 
-const TEXTO_CONEXION: Record<EstadoConexion, string> = {
-	conectando: "conectando",
-	conectado: "conectado",
-	sin_conexion: "sin conexión",
-};
-
-function IconoRefrescar() {
+function RefreshIcon() {
 	return (
 		<svg viewBox="0 0 24 24" aria-hidden="true">
 			<path d="M21 12a9 9 0 1 1-2.64-6.36" />
@@ -37,53 +33,53 @@ function IconoRefrescar() {
 	);
 }
 
-function Cabecera({
-	conexion,
-	reintentar,
+function Header({
+	connection,
+	retry,
 }: {
-	conexion: EstadoConexion;
-	reintentar: () => void;
+	connection: ConnectionState;
+	retry: () => void;
 }) {
 	return (
-		<header className="ohx-cabecera">
-			<h1 className="ohx-marca">OrqueHelx</h1>
-			<div className="ohx-conexion" data-estado={conexion} role="status">
+		<header className="ohx-header">
+			<h1 className="ohx-brand">OrqueHelx</h1>
+			<div className="ohx-connection" data-state={connection} role="status">
 				<span>
-					<span className="ohx-conexion-k">gateway </span>
-					<b>{TEXTO_CONEXION[conexion]}</b>
+					<span className="ohx-connection-k">{t("gateway")} </span>
+					<b>{t(connection)}</b>
 				</span>
-				{conexion === "sin_conexion" ? (
-					<button type="button" className="btn" onClick={reintentar}>
-						Reintentar
+				{connection === "offline" ? (
+					<button type="button" className="btn" onClick={retry}>
+						{t("retry")}
 					</button>
 				) : null}
 			</div>
 			<nav>
-				<a href="/">Volver a Hermes</a>
+				<a href="/">{t("back_to_hermes")}</a>
 			</nav>
 		</header>
 	);
 }
 
-/** Casilla de libro mayor de una ruta: rotulo, detalle, cifra y notas. */
-function Casilla({
-	clave,
-	detalle,
-	r,
+/** A route's ledger cell: label, detail, figure and notes. */
+function Cell({
+	label,
+	detail,
+	s,
 }: {
-	clave: string;
-	detalle: string;
-	r: Resumen;
+	label: string;
+	detail: string;
+	s: Summary;
 }) {
 	return (
-		<li className="casilla" data-tono={r.tono}>
-			<span className="casilla-k">{clave}</span>
-			<span className="casilla-m" title={detalle}>
-				{detalle}
+		<li className="cell" data-tone={s.tone}>
+			<span className="cell-k">{label}</span>
+			<span className="cell-m" title={detail}>
+				{detail}
 			</span>
-			<p className="casilla-v">{r.cifra}</p>
-			<ul className="casilla-n">
-				{r.lineas.map((l) => (
+			<p className="cell-v">{s.figure}</p>
+			<ul className="cell-n">
+				{s.lines.map((l) => (
 					<li key={l}>{l}</li>
 				))}
 			</ul>
@@ -91,88 +87,88 @@ function Casilla({
 	);
 }
 
-function Rutas({ estado }: { estado: EstadoCarga }) {
-	const { datos, cargando, error, refrescar } = estado;
-	let cuerpo: React.ReactNode;
+function Routes({ status }: { status: StatusLoad }) {
+	const { data, loading, error, refresh } = status;
+	let body: React.ReactNode;
 	if (error) {
-		cuerpo = (
-			<div className="aviso" data-tono="error" role="alert">
-				<p>No se pudo leer el estado de las rutas: {error}</p>
-				<button type="button" className="btn" onClick={refrescar}>
-					Reintentar
+		body = (
+			<div className="notice" data-tone="error" role="alert">
+				<p>{t("status_failed", { error })}</p>
+				<button type="button" className="btn" onClick={refresh}>
+					{t("retry")}
 				</button>
 			</div>
 		);
-	} else if (!datos) {
-		cuerpo = <p className="vacio">Midiendo cuotas…</p>;
-	} else if (datos.error) {
-		cuerpo = (
-			<div className="aviso" data-tono="error" role="alert">
-				<p>{datos.error}</p>
+	} else if (!data) {
+		body = <p className="empty">{t("measuring")}</p>;
+	} else if (data.error) {
+		body = (
+			<div className="notice" data-tone="error" role="alert">
+				<p>{data.error}</p>
 			</div>
 		);
-	} else if (datos.rutas.length === 0) {
-		cuerpo = (
-			<p className="vacio">
-				No hay rutas. Agrégalas en{" "}
-				<code>plugins.entries.orquehelx.settings.rutas</code> del config.yaml de
-				Hermes.
+	} else if (data.routes.length === 0) {
+		body = (
+			<p className="empty">
+				{t("no_routes_before")}{" "}
+				<code>plugins.entries.orquehelx.settings.routes</code>{" "}
+				{t("no_routes_after")}
 			</p>
 		);
 	} else {
-		cuerpo = (
-			<ul className="casillas" aria-busy={cargando}>
-				{datos.rutas.map((r) => (
-					<Casilla
-						key={r.nombre}
-						clave={r.nombre}
-						detalle={r.modelo ?? r.proveedor}
-						r={resumen(r)}
+		body = (
+			<ul className="cells" aria-busy={loading}>
+				{data.routes.map((r) => (
+					<Cell
+						key={r.name}
+						label={r.name}
+						detail={r.model ?? r.provider}
+						s={summary(r)}
 					/>
 				))}
 			</ul>
 		);
 	}
 	return (
-		<aside className="ohx-columna ohx-riel" aria-labelledby="ohx-rutas">
-			<div className="ohx-rotulo">
-				<h2 id="ohx-rutas">Rutas</h2>
+		<aside className="ohx-column ohx-rail" aria-labelledby="ohx-routes">
+			<div className="ohx-label">
+				<h2 id="ohx-routes">{t("routes")}</h2>
 				<button
 					type="button"
-					className="btn btn-icono"
-					onClick={refrescar}
-					disabled={cargando}
-					aria-busy={cargando}
-					title="Medir de nuevo"
+					className="btn btn-icon"
+					onClick={refresh}
+					disabled={loading}
+					aria-busy={loading}
+					title={t("measure_again")}
 				>
-					<IconoRefrescar />
-					<span className="sr">Medir de nuevo las cuotas</span>
+					<RefreshIcon />
+					<span className="sr">{t("measure_again_sr")}</span>
 				</button>
 			</div>
-			{cuerpo}
+			{body}
 		</aside>
 	);
 }
 
-const ROTULO: Record<Mensaje["rol"], string> = {
-	usuario: "tú",
-	agente: "agente",
-	nota: "nota",
-};
-const NOTA: Partial<Record<Mensaje["estado"], string>> = {
-	escribiendo: "escribiendo",
-	interrumpido: "detenido",
-	error: "sin respuesta",
-};
+const ROLE = {
+	user: "role_user",
+	agent: "role_agent",
+	note: "role_note",
+} as const;
+const NOTE = {
+	writing: "note_writing",
+	interrupted: "note_stopped",
+	error: "note_no_answer",
+} as const;
 
-function Linea({ tramos }: { tramos: Tramo[] }) {
+function Line({ spans }: { spans: Span[] }) {
 	return (
 		<>
-			{tramos.map((x, i) => {
-				if (x.t === "negrita") return <strong key={i}>{x.v}</strong>;
-				if (x.t === "cursiva") return <em key={i}>{x.v}</em>;
-				if (x.t === "codigo") return <code key={i}>{x.v}</code>;
-				if (x.t === "enlace")
+			{spans.map((x, i) => {
+				if (x.t === "bold") return <strong key={i}>{x.v}</strong>;
+				if (x.t === "italic") return <em key={i}>{x.v}</em>;
+				if (x.t === "code") return <code key={i}>{x.v}</code>;
+				if (x.t === "link")
 					return (
 						<a key={i} href={x.href} target="_blank" rel="noopener noreferrer">
 							{x.v}
@@ -184,42 +180,42 @@ function Linea({ tramos }: { tramos: Tramo[] }) {
 	);
 }
 
-function Markdown({ texto }: { texto: string }) {
+function Markdown({ text }: { text: string }) {
 	return (
-		<div className="ohx-mensaje-v ohx-md">
-			{bloques(texto).map((b, i) => {
-				if (b.t === "codigo")
+		<div className="ohx-message-v ohx-md">
+			{blocks(text).map((b, i) => {
+				if (b.t === "code")
 					return (
 						<pre key={i}>
 							<code>{b.v}</code>
 						</pre>
 					);
-				if (b.t === "titulo")
+				if (b.t === "heading")
 					return (
 						<p key={i}>
 							<strong>
-								<Linea tramos={b.tramos} />
+								<Line spans={b.spans} />
 							</strong>
 						</p>
 					);
-				if (b.t === "lista") {
-					const Lista = b.ordenada ? "ol" : "ul";
+				if (b.t === "list") {
+					const List = b.ordered ? "ol" : "ul";
 					return (
-						<Lista key={i} start={b.ordenada ? b.inicio : undefined}>
+						<List key={i} start={b.ordered ? b.start : undefined}>
 							{b.items.map((it, j) => (
 								<li key={j}>
-									<Linea tramos={it} />
+									<Line spans={it} />
 								</li>
 							))}
-						</Lista>
+						</List>
 					);
 				}
 				return (
 					<p key={i}>
-						{b.lineas.map((l, j) => (
+						{b.lines.map((l, j) => (
 							<React.Fragment key={j}>
 								{j > 0 && <br />}
-								<Linea tramos={l} />
+								<Line spans={l} />
 							</React.Fragment>
 						))}
 					</p>
@@ -229,102 +225,98 @@ function Markdown({ texto }: { texto: string }) {
 	);
 }
 
-function Entrada({ m }: { m: Mensaje }) {
-	if (m.rol === "nota") {
+function Entry({ m }: { m: Message }) {
+	if (m.role === "note") {
 		return (
-			<p className="ohx-asiento" role="note">
-				{m.texto}
+			<p className="ohx-note" role="note">
+				{m.text}
 			</p>
 		);
 	}
-	const nota =
-		m.rol === "usuario" && m.estado === "error" ? "no enviado" : NOTA[m.estado];
-	// El texto de un turno fallido es el error crudo de Hermes (en ingles): una linea propia y el original a pedido.
-	let cuerpo: React.ReactNode = null;
-	if (m.rol === "agente" && m.estado === "error" && m.texto) {
-		cuerpo = (
-			<details className="ohx-fallo">
-				<summary>
-					El proveedor no respondió este turno. Ver el detalle de Hermes
-				</summary>
-				<pre>{m.texto}</pre>
+	const noteId =
+		m.role === "user" && m.state === "error"
+			? "note_not_sent"
+			: NOTE[m.state as keyof typeof NOTE];
+	// A failed turn's text is Hermes' raw error: a line of its own, with the original on demand.
+	let body: React.ReactNode = null;
+	if (m.role === "agent" && m.state === "error" && m.text) {
+		body = (
+			<details className="ohx-failure">
+				<summary>{t("failure_summary")}</summary>
+				<pre>{m.text}</pre>
 			</details>
 		);
-	} else if (m.texto && m.rol === "agente") {
-		cuerpo = <Markdown texto={m.texto} />;
-	} else if (m.texto) {
-		// Lo que escribiste se muestra tal cual.
-		cuerpo = <p className="ohx-mensaje-v">{m.texto}</p>;
+	} else if (m.text && m.role === "agent") {
+		body = <Markdown text={m.text} />;
+	} else if (m.text) {
+		// What you wrote shows as is.
+		body = <p className="ohx-message-v">{m.text}</p>;
 	}
 	return (
-		<article className="ohx-mensaje" data-rol={m.rol} data-estado={m.estado}>
-			<header className="ohx-mensaje-k">
-				{ROTULO[m.rol]}
-				{m.modelo ? <span> · {nombreModelo(m.modelo)}</span> : null}
-				{nota ? <span> · {nota}</span> : null}
+		<article className="ohx-message" data-role={m.role} data-state={m.state}>
+			<header className="ohx-message-k">
+				{t(ROLE[m.role])}
+				{m.model ? <span> · {modelName(m.model)}</span> : null}
+				{noteId ? <span> · {t(noteId)}</span> : null}
 			</header>
-			{cuerpo}
+			{body}
 		</article>
 	);
 }
 
-function Redactor({ vivo, conectado }: { vivo: ChatVivo; conectado: boolean }) {
-	const [texto, setTexto] = useState("");
-	const pausado = vivo.chat.turno === "pausado";
-	const ocupado =
-		vivo.chat.turno === "esperando" || vivo.chat.turno === "respondiendo";
-	const quieto = pausado || !conectado;
-	let indicacion =
-		"Escribe al agente. Enter envía, Shift+Enter hace un salto de línea.";
-	if (pausado)
-		indicacion =
-			"En pausa por cuota: reanuda, reenvía o cancela arriba para seguir.";
-	if (!conectado) indicacion = "Sin conexión con Hermes.";
-	const enviar = () => {
-		if (!texto.trim() || ocupado || quieto) return;
-		vivo.enviar(texto);
-		setTexto("");
+function Composer({ live, connected }: { live: LiveChat; connected: boolean }) {
+	const [text, setText] = useState("");
+	const paused = live.chat.turn === "paused";
+	const busy = live.chat.turn === "waiting" || live.chat.turn === "responding";
+	const still = paused || !connected;
+	let hint = t("composer_hint");
+	if (paused) hint = t("composer_paused");
+	if (!connected) hint = t("composer_offline");
+	const send = () => {
+		if (!text.trim() || busy || still) return;
+		live.send(text);
+		setText("");
 	};
 	return (
 		<form
-			className="ohx-redactor"
+			className="ohx-composer"
 			onSubmit={(e) => {
 				e.preventDefault();
-				enviar();
+				send();
 			}}
 		>
-			<label className="sr" htmlFor="ohx-mensaje">
-				Mensaje para el agente
+			<label className="sr" htmlFor="ohx-message">
+				{t("composer_label")}
 			</label>
 			<textarea
-				id="ohx-mensaje"
+				id="ohx-message"
 				rows={3}
-				value={texto}
-				placeholder={indicacion}
-				disabled={quieto}
-				onChange={(e) => setTexto(e.target.value)}
+				value={text}
+				placeholder={hint}
+				disabled={still}
+				onChange={(e) => setText(e.target.value)}
 				onKeyDown={(e) => {
 					if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
 						e.preventDefault();
-						enviar();
+						send();
 					}
 				}}
 			/>
-			<div className="ohx-redactor-acciones">
-				<span className="ohx-actividad" role="status">
-					{vivo.chat.actividad ?? (ocupado ? "esperando respuesta" : "")}
+			<div className="ohx-composer-actions">
+				<span className="ohx-activity" role="status">
+					{live.chat.activity ?? (busy ? t("waiting_answer") : "")}
 				</span>
-				{ocupado ? (
-					<button type="button" className="btn" onClick={vivo.detener}>
-						Detener
+				{busy ? (
+					<button type="button" className="btn" onClick={live.stop}>
+						{t("stop")}
 					</button>
 				) : (
 					<button
 						type="submit"
-						className="btn btn-accion"
-						disabled={!texto.trim() || quieto}
+						className="btn btn-primary"
+						disabled={!text.trim() || still}
 					>
-						Enviar
+						{t("send")}
 					</button>
 				)}
 			</div>
@@ -332,72 +324,70 @@ function Redactor({ vivo, conectado }: { vivo: ChatVivo; conectado: boolean }) {
 	);
 }
 
-/** Rutas a las que el principal puede pasar: con modelo (config.set lo exige) y de otro proveedor. */
-const destinos = (rutas: RutaEstado[], pausa: Pausa) =>
-	rutas.filter((r) => r.modelo && r.proveedor !== pausa.proveedor);
+/** Routes the main agent can move to: with a model (config.set requires it) and on another provider. */
+const targets = (routes: RouteStatus[], pause: Pause) =>
+	routes.filter((r) => r.model && r.provider !== pause.provider);
 
-/** Lamina de pausa (estiri): que se agoto, cuando vuelve y las tres salidas. Nunca cambia sola de ruta. */
-function TarjetaPausa({
-	pausa,
-	rutas,
-	vivo,
-	conectado,
+/** Pause sheet (estiri): what ran out, when it comes back and the three exits. It never switches routes alone. */
+function PauseSheet({
+	pause,
+	routes,
+	live,
+	connected,
 }: {
-	pausa: Pausa;
-	rutas: RutaEstado[];
-	vivo: ChatVivo;
-	conectado: boolean;
+	pause: Pause;
+	routes: RouteStatus[];
+	live: LiveChat;
+	connected: boolean;
 }) {
-	const opciones = destinos(rutas, pausa);
-	const [destino, setDestino] = useState("");
-	const elegida = opciones.find((r) => r.nombre === destino) ?? opciones[0];
-	const vuelve = hora(pausa.reinicio);
+	const options = targets(routes, pause);
+	const [target, setTarget] = useState("");
+	const chosen = options.find((r) => r.name === target) ?? options[0];
+	const back = clock(pause.reset_at);
 	return (
-		<section className="lamina" aria-labelledby="ohx-pausa">
-			<h3 className="lamina-k" id="ohx-pausa">
-				En pausa · sin cuota
+		<section className="sheet" aria-labelledby="ohx-pause">
+			<h3 className="sheet-k" id="ohx-pause">
+				{t("paused_title")}
 			</h3>
-			<dl className="asientos">
+			<dl className="entries">
 				<div>
-					<dt>proveedor</dt>
-					<dd>{pausa.proveedor}</dd>
+					<dt>{t("provider")}</dt>
+					<dd>{pause.provider}</dd>
 				</div>
 				<div>
-					<dt>modelo</dt>
-					<dd>{pausa.modelo ?? "sin dato"}</dd>
+					<dt>{t("model")}</dt>
+					<dd>{pause.model ?? t("no_data")}</dd>
 				</div>
 				<div>
-					<dt>reinicia</dt>
-					<dd className="cifra">{vuelve}</dd>
+					<dt>{t("resets_label")}</dt>
+					<dd className="figure">{back}</dd>
 				</div>
 			</dl>
-			<p className="lamina-v">
-				{pausa.reinicio
-					? `El turno se reanuda solo a las ${vuelve}, con el mismo modelo.`
-					: "El proveedor no informa cuándo vuelve la cuota. Reanuda cuando quieras o pasa el turno a otra ruta."}
+			<p className="sheet-v">
+				{pause.reset_at ? t("resumes_at", { time: back }) : t("reset_unknown")}
 			</p>
-			<div className="lamina-acciones">
+			<div className="sheet-actions">
 				<button
 					type="button"
-					className="btn btn-accion"
-					onClick={vivo.reanudar}
-					disabled={!conectado}
+					className="btn btn-primary"
+					onClick={live.resume}
+					disabled={!connected}
 				>
-					Reanudar ahora
+					{t("resume_now")}
 				</button>
-				{elegida ? (
-					<div className="lamina-reenvio">
-						<label className="sr" htmlFor="ohx-destino">
-							Ruta para reenviar el turno
+				{chosen ? (
+					<div className="sheet-resend">
+						<label className="sr" htmlFor="ohx-target">
+							{t("resend_route_label")}
 						</label>
 						<select
-							id="ohx-destino"
-							value={elegida.nombre}
-							onChange={(e) => setDestino(e.target.value)}
+							id="ohx-target"
+							value={chosen.name}
+							onChange={(e) => setTarget(e.target.value)}
 						>
-							{opciones.map((r) => (
-								<option key={r.nombre} value={r.nombre}>
-									{r.nombre} · {r.modelo}
+							{options.map((r) => (
+								<option key={r.name} value={r.name}>
+									{r.name} · {r.model}
 								</option>
 							))}
 						</select>
@@ -405,151 +395,146 @@ function TarjetaPausa({
 							type="button"
 							className="btn"
 							onClick={() =>
-								vivo.reenviar(
-									elegida,
-									etiquetaPrincipal(
-										{ proveedor: pausa.proveedor, modelo: pausa.modelo },
-										rutas,
+								live.resend(
+									chosen,
+									mainAgentLabel(
+										{ provider: pause.provider, model: pause.model },
+										routes,
 									),
 								)
 							}
-							disabled={!conectado}
+							disabled={!connected}
 						>
-							Reenviar
+							{t("resend")}
 						</button>
 					</div>
 				) : null}
-				<button type="button" className="btn" onClick={vivo.cancelar}>
-					Cancelar
+				<button type="button" className="btn" onClick={live.cancel}>
+					{t("cancel")}
 				</button>
 			</div>
 		</section>
 	);
 }
 
-function Conversacion({
-	vivo,
-	rutas,
-	principalConfigurado,
-	conectado,
+function Conversation({
+	live,
+	routes,
+	configuredMain,
+	connected,
 }: {
-	vivo: ChatVivo;
-	rutas: RutaEstado[];
-	principalConfigurado: EstadoRutas["principal"];
-	conectado: boolean;
+	live: LiveChat;
+	routes: RouteStatus[];
+	configuredMain: RoutesStatus["main"];
+	connected: boolean;
 }) {
-	const { mensajes, error, pausa } = vivo.chat;
-	// Quien responde: el de la sesion viva (session.info manda) o, antes del primer turno, el de la config.
-	const quien = vivo.chat.principal ?? principalConfigurado;
-	const fin = useRef<HTMLDivElement>(null);
-	const ultimo = mensajes.at(-1);
-	// Sigue la respuesta mientras llega (el texto de la ultima cambia con cada delta) y la pausa al aparecer.
+	const { messages, error, pause } = live.chat;
+	// Who answers: the live session's (session.info wins) or, before the first turn, the config's.
+	const who = live.chat.main ?? configuredMain;
+	const end = useRef<HTMLDivElement>(null);
+	const last = messages.at(-1);
+	// Follow the answer while it arrives (the last text changes with each delta) and the pause when it shows.
 	useEffect(() => {
-		fin.current?.scrollIntoView({ block: "end" });
-	}, [mensajes.length, ultimo?.texto, pausa]);
+		end.current?.scrollIntoView({ block: "end" });
+	}, [messages.length, last?.text, pause]);
 	return (
-		<main className="ohx-columna ohx-chat">
-			<div className="ohx-rotulo">
-				<h2>Conversación</h2>
-				{quien ? (
-					<span className="ohx-principal" title={quien.proveedor ?? undefined}>
-						responde <b>{etiquetaPrincipal(quien, rutas)}</b>
+		<main className="ohx-column ohx-chat">
+			<div className="ohx-label">
+				<h2>{t("conversation")}</h2>
+				{who ? (
+					<span className="ohx-main-agent" title={who.provider ?? undefined}>
+						{t("answers")} <b>{mainAgentLabel(who, routes)}</b>
 					</span>
 				) : null}
-				{mensajes.length > 0 ? (
+				{messages.length > 0 ? (
 					<button
 						type="button"
 						className="btn"
-						onClick={vivo.nueva}
-						disabled={vivo.chat.turno !== "libre"}
+						onClick={live.reset}
+						disabled={live.chat.turn !== "idle"}
 					>
-						Nueva conversación
+						{t("new_conversation")}
 					</button>
 				) : null}
 			</div>
 			<div
-				className="ohx-hilo"
+				className="ohx-thread"
 				role="log"
 				aria-live="polite"
 				aria-relevant="additions text"
 			>
-				<div className="ohx-lectura">
-					{mensajes.length === 0 ? (
-						<p className="vacio">
-							Todavía no hay mensajes. Escribe abajo para empezar.
-						</p>
+				<div className="ohx-reading">
+					{messages.length === 0 ? (
+						<p className="empty">{t("no_messages")}</p>
 					) : (
-						mensajes.map((m) => <Entrada key={m.id} m={m} />)
+						messages.map((m) => <Entry key={m.id} m={m} />)
 					)}
-					{vivo.chat.pausa ? (
-						<TarjetaPausa
-							pausa={vivo.chat.pausa}
-							rutas={rutas}
-							vivo={vivo}
-							conectado={conectado}
+					{pause ? (
+						<PauseSheet
+							pause={pause}
+							routes={routes}
+							live={live}
+							connected={connected}
 						/>
 					) : null}
 					{error ? (
-						<div className="aviso" data-tono="error" role="alert">
+						<div className="notice" data-tone="error" role="alert">
 							<p>
-								{error.texto === null
-									? error.mensaje
-									: `No se pudo enviar: ${error.mensaje}`}
+								{error.text === null
+									? error.message
+									: t("send_failed", { error: error.message })}
 							</p>
-							{error.texto === null ? null : (
+							{error.text === null ? null : (
 								<button
 									type="button"
 									className="btn"
-									onClick={() => vivo.enviar(error.texto ?? "")}
-									disabled={!conectado}
+									onClick={() => live.send(error.text ?? "")}
+									disabled={!connected}
 								>
-									Reintentar
+									{t("retry")}
 								</button>
 							)}
 						</div>
 					) : null}
-					<div ref={fin} />
+					<div ref={end} />
 				</div>
 			</div>
-			<Redactor vivo={vivo} conectado={conectado} />
+			<Composer live={live} connected={connected} />
 		</main>
 	);
 }
 
-function Subagentes({ arbol }: { arbol: Arbol }) {
+function Subagents({ tree }: { tree: Tree }) {
 	return (
-		<aside className="ohx-columna ohx-arbol" aria-labelledby="ohx-subagentes">
-			<div className="ohx-rotulo">
-				<h2 id="ohx-subagentes">Subagentes</h2>
+		<aside className="ohx-column ohx-tree" aria-labelledby="ohx-subagents">
+			<div className="ohx-label">
+				<h2 id="ohx-subagents">{t("subagents")}</h2>
 			</div>
-			{arbol.nodos.length === 0 ? (
-				<p className="vacio">
-					Todavía no hay subagentes en esta conversación. Aparecen aquí cuando
-					el agente delega en una ruta.
-				</p>
+			{tree.nodes.length === 0 ? (
+				<p className="empty">{t("no_subagents")}</p>
 			) : (
-				// Asientos: una fila por subagente; el estado cambia en su fila sin mover las demas.
-				<dl className="asientos ohx-subagentes">
-					{enOrden(arbol.nodos).map(([n, nivel]) => {
-						const f = ficha(n);
+				// Entries: one row per subagent; the state changes in its row without moving the others.
+				<dl className="entries ohx-subagents">
+					{inOrder(tree.nodes).map(([n, level]) => {
+						const c = card(n);
 						return (
 							<div
 								key={n.id}
-								data-estado={n.estado}
+								data-state={n.state}
 								style={
-									nivel
-										? ({ "--nivel": nivel } as React.CSSProperties)
+									level
+										? ({ "--level": level } as React.CSSProperties)
 										: undefined
 								}
 							>
-								<dt>{n.ruta ?? "subagente"}</dt>
+								<dt>{n.route ?? t("subagent")}</dt>
 								<dd>
-									<span className="ohx-sub-estado">{f.cifra}</span>
-									<span className="ohx-sub-objetivo" title={n.objetivo}>
-										{n.objetivo}
+									<span className="ohx-sub-state">{c.figure}</span>
+									<span className="ohx-sub-goal" title={n.goal}>
+										{n.goal}
 									</span>
-									{f.lineas.map((l) => (
-										<span key={l} className="ohx-sub-nota">
+									{c.lines.map((l) => (
+										<span key={l} className="ohx-sub-note">
 											{l}
 										</span>
 									))}
@@ -564,33 +549,35 @@ function Subagentes({ arbol }: { arbol: Arbol }) {
 }
 
 export function App() {
-	const estado = useEstado();
-	const { estado: conexion, reintentar } = useConexion();
-	const vivo = useChat();
-	const raiz = useRef<HTMLDivElement>(null);
-	useEffect(() => (raiz.current ? aislar(raiz.current) : undefined), []);
-	// D21: el riel se mide de nuevo por evento, cuando una ruta queda sin cuota, para que diga lo mismo que la
-	// tarjeta de pausa y el arbol (sin polling).
-	const { refrescar } = estado;
-	const agotados = vivo.chat.subagentes.nodos.filter(
-		(n) => n.estado === "sin_cuota",
+	// Before anything renders: every t() below reads this language.
+	setLanguage(useLocale());
+	const status = useStatus();
+	const { state: connection, retry } = useConnection();
+	const live = useChat();
+	const root = useRef<HTMLDivElement>(null);
+	useEffect(() => (root.current ? isolate(root.current) : undefined), []);
+	// The rail is measured again on an event, when a route runs out of quota, so it says the same as the pause
+	// sheet and the tree (no polling).
+	const { refresh } = status;
+	const exhausted = live.chat.subagents.nodes.filter(
+		(n) => n.state === "out_of_quota",
 	).length;
-	const hayPausa = vivo.chat.pausa !== null;
+	const hasPause = live.chat.pause !== null;
 	useEffect(() => {
-		if (hayPausa || agotados > 0) refrescar();
-	}, [hayPausa, agotados, refrescar]);
+		if (hasPause || exhausted > 0) refresh();
+	}, [hasPause, exhausted, refresh]);
 	return (
-		<div className="ohx" ref={raiz}>
-			<Cabecera conexion={conexion} reintentar={reintentar} />
-			<div className="ohx-cuerpo">
-				<Rutas estado={estado} />
-				<Conversacion
-					vivo={vivo}
-					rutas={estado.datos?.rutas ?? []}
-					principalConfigurado={estado.datos?.principal ?? null}
-					conectado={conexion === "conectado"}
+		<div className="ohx" ref={root}>
+			<Header connection={connection} retry={retry} />
+			<div className="ohx-body">
+				<Routes status={status} />
+				<Conversation
+					live={live}
+					routes={status.data?.routes ?? []}
+					configuredMain={status.data?.main ?? null}
+					connected={connection === "connected"}
 				/>
-				<Subagentes arbol={vivo.chat.subagentes} />
+				<Subagents tree={live.chat.subagents} />
 			</div>
 		</div>
 	);

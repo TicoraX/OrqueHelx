@@ -1,4 +1,3 @@
-# Los scripts de shell van SIEMPRE con LF: con CRLF, Linux falla con
-# `bad interpreter: /bin/sh^M`. Es justo el archivo que existe para probar
-# que el repo corre en Linux.
+# Shell scripts ALWAYS use LF: with CRLF, Linux fails with
+# `bad interpreter: /bin/sh^M`.
 *.sh text eol=lf

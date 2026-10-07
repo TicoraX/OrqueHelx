@@ -1,23 +1,23 @@
-// Registra OrqueHelx en el dashboard de Hermes. La pestaña /orquehelx solo marca que esta abierta: la
-// pantalla se dibuja en el slot "overlay", en la raiz de la app, para cubrir toda la ventana (dentro del
-// <main> de Hermes, lo fijo queda por debajo de su barra lateral).
-import "./estilos.css";
+// Registers OrqueHelx in Hermes' dashboard. The /orquehelx tab only marks that it is open: the screen is
+// drawn in the "overlay" slot, at the app root, to cover the whole window (inside Hermes' <main>, anything
+// fixed stays under its sidebar).
+import "./styles.css";
 import React, { useEffect, useSyncExternalStore } from "react";
 import { App } from "./App";
-import { activa, marcar, suscribir } from "./pestana";
+import { active, mark, subscribe } from "./tab";
 
-function Pestana() {
+function Tab() {
 	useEffect(() => {
-		marcar(true);
-		return () => marcar(false);
+		mark(true);
+		return () => mark(false);
 	}, []);
 	return null;
 }
 
-function Capa() {
-	return useSyncExternalStore(suscribir, activa) ? <App /> : null;
+function Layer() {
+	return useSyncExternalStore(subscribe, active) ? <App /> : null;
 }
 
-window.__HERMES_PLUGINS__?.register("orquehelx", Pestana);
-// Orden real de Hermes: (plugin, slot, componente) (web/src/plugins/slots.ts); su sdk.d.ts lo declara al reves.
-window.__HERMES_PLUGINS__?.registerSlot("orquehelx", "overlay", Capa);
+window.__HERMES_PLUGINS__?.register("orquehelx", Tab);
+// Hermes' real order: (plugin, slot, component) (web/src/plugins/slots.ts); its sdk.d.ts declares it reversed.
+window.__HERMES_PLUGINS__?.registerSlot("orquehelx", "overlay", Layer);

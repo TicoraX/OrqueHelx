@@ -10,5 +10,5 @@ PRODUCT.md
 DESIGN.md
 .impeccable/
 design-system/
-# El build de la UI va commiteado: quien instala el plugin no necesita Node.
+# The UI build is committed: whoever installs the plugin needs no Node.
 !orquehelx/dashboard/dist/
