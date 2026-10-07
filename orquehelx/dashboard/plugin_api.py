@@ -7,6 +7,7 @@ and, if they are not loaded, loads them by path.
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 import time
 from pathlib import Path
@@ -20,12 +21,19 @@ router = APIRouter()
 
 
 _PACKAGE = "_orquehelx_dashboard"
+# Hermes loads the plugin once per home: hermes_plugins.orquehelx for the first, with __home_<digest> for others.
+_LOADED_QUOTA = re.compile(r"^(hermes_plugins\.orquehelx(?:__home_[0-9a-f]+)?)\.quota$")
 
 
 def _module(name: str):
-    loaded = sys.modules.get(f"hermes_plugins.orquehelx.{name}")
-    if loaded is not None:
-        return loaded
+    """The plugin's module for the home of this request: the copy the agent loaded for that home (same
+    exhaustion registry), or a copy of our own when the plugin is not loaded for it in this process."""
+    from hermes_constants import get_hermes_home
+    for key, module in list(sys.modules.items()):
+        match = _LOADED_QUOTA.match(key)
+        # getattr: a copy from before v0.2.0 (still loaded during an upgrade) has no HOME.
+        if match and getattr(module, "HOME", None) and module.HOME == module.home_key(get_hermes_home()):
+            return importlib.import_module(f"{match[1]}.{name}")
     if _PACKAGE not in sys.modules:
         # Load the plugin as a package (not file by file) so its relative imports resolve.
         spec = importlib.util.spec_from_file_location(_PACKAGE, _ROOT / "__init__.py",

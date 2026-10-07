@@ -15,10 +15,12 @@ can tell the parent what happened instead of a generic failure.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 log = logging.getLogger(__name__)
 
@@ -54,8 +56,25 @@ def _measure_codex() -> list[Window]:
 METERS = {"claude-subscription": _measure_claude, "openai-codex": _measure_codex}
 _FAMILIES = ("opus", "sonnet", "haiku")
 
+# A measurement is reused this long: the tab, /ohx and a pause each measure, and the usage endpoints
+# answer 429 when called in a burst.
+FRESH_SECONDS = 30
+# After a 429 without a usable Retry-After, wait this long before calling that endpoint again.
+DEFAULT_BACKOFF = 60
+
+# HERMES_HOME this copy of the plugin was loaded for. Hermes loads the plugin once per home in the same process
+# (dashboard profiles), and each copy keeps its own exhaustions: the dashboard picks the copy by this value.
+HOME: str | None = None
+
+
+def home_key(path) -> str:
+    """One spelling per home: Hermes may hand the same path with a different case on Windows."""
+    return os.path.normcase(os.path.abspath(str(path)))
+
 _lock = threading.Lock()
 _seen: dict[str, Exhaustion] = {}
+_measured: dict[str, tuple[float, list[Window]]] = {}  # provider -> (monotonic time, windows)
+_backoff: dict[str, tuple[float, Exception]] = {}  # provider -> (monotonic time it ends, the 429 error)
 
 
 def _applies(label: str, model: str) -> bool:
@@ -64,10 +83,53 @@ def _applies(label: str, model: str) -> bool:
     return not families or any(f in model.lower() for f in families)
 
 
-def measure(provider: str) -> list[Window] | None:
-    """Measured windows for the provider; None if there is no meter. Measurement errors propagate."""
+def _retry_after(exc: Exception) -> float | None:
+    """Seconds to hold off after a 429 (its Retry-After, else DEFAULT_BACKOFF); None for any other error."""
+    response = getattr(exc, "response", None)
+    if getattr(response, "status_code", None) != 429:
+        return None
+    value = (getattr(response, "headers", None) or {}).get("retry-after")
+    try:
+        return max(float(value), 0)
+    except (TypeError, ValueError):
+        pass
+    try:  # Retry-After may also be an HTTP date
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError):
+        return DEFAULT_BACKOFF
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max((when - datetime.now(timezone.utc)).total_seconds(), 0)
+
+
+def measure(provider: str, fresh: bool = False) -> list[Window] | None:
+    """Measured windows for the provider; None if there is no meter. Measurement errors propagate.
+
+    A measurement younger than FRESH_SECONDS is reused unless ``fresh``. After a 429 the same error is raised
+    again, without calling the endpoint, until its Retry-After passes: the caller still shows the real cause."""
     meter = next((m for prefix, m in METERS.items() if provider.startswith(prefix)), None)
-    return None if meter is None else meter()
+    if meter is None:
+        return None
+    now = time.monotonic()
+    with _lock:
+        held, cached = _backoff.get(provider), _measured.get(provider)
+    if held is not None and now < held[0]:
+        raise held[1]
+    if not fresh and cached is not None and now - cached[0] < FRESH_SECONDS:
+        return cached[1]
+    try:
+        windows = meter()
+    except Exception as exc:
+        wait = _retry_after(exc)
+        if wait is not None:
+            with _lock:
+                _backoff[provider] = (time.monotonic() + wait, exc)
+        raise
+    # An empty result is not reused: Hermes' public fetcher answers "no windows" on any error, a 429 included.
+    if windows:
+        with _lock:
+            _measured[provider] = (time.monotonic(), windows)
+    return windows
 
 
 def measure_safe(provider: str) -> tuple[list[Window] | None, Exception | None]:
@@ -81,7 +143,8 @@ def measure_safe(provider: str) -> tuple[list[Window] | None, Exception | None]:
 def _window_exhausted(provider: str, model: str) -> tuple[bool | None, datetime | None]:
     """(exhausted, reset) from the measurement; (None, None) without a meter or if measuring failed."""
     try:
-        windows = measure(provider)
+        # fresh: a cached figure from before the failure cannot confirm (or rule out) an exhaustion.
+        windows = measure(provider, fresh=True)
     except Exception as exc:  # network, expired token, changed API: without a measurement nothing is claimed
         log.warning("orquehelx: could not measure the quota of %s: %s", provider, exc)
         return None, None

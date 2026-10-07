@@ -150,6 +150,36 @@ describe("subagent tree", () => {
 		expect(tree.pending).toEqual([]);
 	});
 
+	it("a subagent that started and failed for quota ends as out_of_quota, not failed", () => {
+		// Seen live: the child starts, fails (subagent.complete failed), and delegate_to then answers out_of_quota.
+		const tree = steps(
+			delegate("t1", "agy"),
+			["subagent.start", start()],
+			[
+				"subagent.complete",
+				start({ status: "failed", summary: "Broken pipe" }),
+			],
+			[
+				"tool.complete",
+				{
+					tool_id: "t1",
+					name: "delegate_to",
+					result: {
+						status: "out_of_quota",
+						route: "agy",
+						reset_at: "2026-09-26T19:00:00+00:00",
+					},
+				},
+			],
+		);
+		expect(tree.nodes).toHaveLength(1);
+		expect(tree.nodes[0]).toMatchObject({
+			state: "out_of_quota",
+			resetAt: "2026-09-26T19:00:00+00:00",
+		});
+		expect(tree.pending).toEqual([]);
+	});
+
 	it("a rejected delegation shows the reason", () => {
 		const tree = steps(delegate("t1", "claude"), [
 			"tool.complete",

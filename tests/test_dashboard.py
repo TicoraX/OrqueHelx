@@ -164,3 +164,26 @@ def test_status_reports_the_configured_main_model(client, hermes_home):
 def test_status_without_a_configured_model_does_not_invent_one(client, hermes_home):
     _config(hermes_home, "        routes:\n          claude: {provider: claude-subscription-directsdk-experimental}\n")
     assert client.get(f"{API}/status").json()["main"] is None
+
+
+def test_each_profile_reads_the_quota_of_its_own_plugin_copy(tmp_path, monkeypatch):
+    # The dashboard serves several profiles in one process. Hermes loads the plugin once per home: the first as
+    # hermes_plugins.orquehelx, the others with a __home_<digest> suffix. Each home must see its own exhaustions.
+    import shutil
+    import sys
+
+    from hermes_cli.plugins import PluginManager
+
+    homes = [tmp_path / "home-a", tmp_path / "home-b"]
+    for home in homes:
+        _config(home, "        routes:\n          agy: {provider: antigravity-subscription-directsdk}\n")
+        shutil.copytree(ROOT, home / "plugins" / "orquehelx")
+        monkeypatch.setenv("HERMES_HOME", str(home))
+        PluginManager().discover_and_load()
+    copies = {getattr(m, "HOME", None): m for k, m in sys.modules.items()
+              if k.startswith("hermes_plugins.orquehelx") and k.endswith(".quota")}
+    assert set(copies) >= {quota.home_key(h) for h in homes}
+    api = _api_module()
+    for home in homes:
+        monkeypatch.setenv("HERMES_HOME", str(home))
+        assert api._module("quota") is copies[quota.home_key(home)]
