@@ -35,7 +35,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS one_pending_per_session ON pauses (session) WH
 
 # v0.1 kept the pauses in <HERMES_HOME>/orquehelx/pausas.db with Spanish names.
 _LEGACY_COPY = """
-INSERT INTO pauses (id, session, provider, model, reset_at, state, target, created, resolved)
+INSERT OR IGNORE INTO pauses (id, session, provider, model, reset_at, state, target, created, resolved)
 SELECT id, sesion, proveedor, modelo, reinicio,
        CASE estado WHEN 'pausado' THEN 'paused' WHEN 'reanudado' THEN 'resumed'
                    WHEN 'reenviado' THEN 'resent' WHEN 'cancelado' THEN 'cancelled' ELSE estado END,
@@ -45,19 +45,35 @@ FROM legacy.pausas
 
 
 def open_db(path: Path, legacy: Path | None = None) -> sqlite3.Connection:
-    """Open (and create) the database. On first creation, copy the v0.1 pauses from ``legacy`` if it exists;
-    the old file stays untouched."""
+    """Open (and create) the database. Until the v0.1 pauses from ``legacy`` are copied, every open tries again:
+    a failed copy raises and leaves nothing marked. The old file stays untouched."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    fresh = not path.exists()
     # timeout: a concurrent write waits its turn instead of failing with "database is locked".
     con = sqlite3.connect(path, timeout=5)
-    con.executescript(_SCHEMA)
-    if fresh and legacy is not None and legacy.exists():
-        con.execute("ATTACH DATABASE ? AS legacy", (str(legacy),))
+    try:
+        con.executescript(_SCHEMA)
+        if con.execute("PRAGMA user_version").fetchone()[0] == 0:
+            _carry_over(con, legacy)
+    except Exception:
+        con.close()
+        raise
+    return con
+
+
+def _carry_over(con: sqlite3.Connection, legacy: Path | None) -> None:
+    """Copy the v0.1 rows and mark the copy done (user_version 1) in the same transaction. OR IGNORE: two first
+    opens racing copy the same rows, and the second one keeps the first one's."""
+    if legacy is None or not legacy.exists():
+        with con:
+            con.execute("PRAGMA user_version = 1")
+        return
+    con.execute("ATTACH DATABASE ? AS legacy", (str(legacy),))
+    try:
         with con:
             con.execute(_LEGACY_COPY)
+            con.execute("PRAGMA user_version = 1")
+    finally:
         con.execute("DETACH DATABASE legacy")
-    return con
 
 
 def _dict(row) -> dict:

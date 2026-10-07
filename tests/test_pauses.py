@@ -79,6 +79,39 @@ def test_a_resolved_session_can_pause_again(con):
     assert q["id"] != p["id"] and q["state"] == "paused"
 
 
+def _v01_db(path):
+    import sqlite3
+    with sqlite3.connect(path) as c:
+        c.executescript(
+            "CREATE TABLE pausas (id INTEGER PRIMARY KEY, sesion TEXT NOT NULL, proveedor TEXT NOT NULL, modelo TEXT,"
+            " reinicio TEXT, estado TEXT NOT NULL DEFAULT 'pausado', destino TEXT, creado REAL NOT NULL, resuelto REAL);"
+            "INSERT INTO pausas (sesion, proveedor, creado) VALUES ('s1', 'claude', 1);")
+    c.close()
+
+
+def test_a_failed_v01_copy_is_retried_on_the_next_open(tmp_path):
+    legacy = tmp_path / "pausas.db"
+    legacy.write_bytes(b"not a database" * 100)
+    with pytest.raises(pauses.sqlite3.DatabaseError):
+        pauses.open_db(tmp_path / "pauses.db", legacy=legacy)
+    legacy.unlink()
+    _v01_db(legacy)
+    c = pauses.open_db(tmp_path / "pauses.db", legacy=legacy)
+    assert [p["session"] for p in pauses.pending(c)] == ["s1"]
+    c.close()
+
+
+def test_the_v01_copy_happens_once(tmp_path):
+    legacy = tmp_path / "pausas.db"
+    _v01_db(legacy)
+    for _ in range(2):  # a second open (or a concurrent first one) must not copy again
+        c = pauses.open_db(tmp_path / "pauses.db", legacy=legacy)
+        c.close()
+    c = pauses.open_db(tmp_path / "pauses.db", legacy=legacy)
+    assert len(pauses.pending(c)) == 1
+    c.close()
+
+
 def test_an_integrity_error_that_is_not_a_duplicate_is_not_swallowed(con):
     with pytest.raises(pauses.sqlite3.IntegrityError):
         pauses.create(con, "session-1", None, None, None)
