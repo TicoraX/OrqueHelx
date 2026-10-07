@@ -1,8 +1,8 @@
-"""Backend del dashboard de OrqueHelx, montado por Hermes en /api/plugins/orquehelx/.
+"""OrqueHelx dashboard backend, mounted by Hermes at /api/plugins/orquehelx/.
 
-Hermes importa este archivo por ruta y suelto, asi que no hay imports relativos: usa los modulos del
-plugin ya cargados en el proceso (el agente del dashboard corre aca, y asi el registro de agotamientos
-es el mismo) y, si no estan, los carga por ruta.
+Hermes imports this file by path and on its own, so there are no relative imports: it uses the plugin modules
+already loaded in the process (the dashboard's agent runs here, so the exhaustion registry is the same one)
+and, if they are not loaded, loads them by path.
 """
 from __future__ import annotations
 
@@ -15,21 +15,25 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-_RAIZ = Path(__file__).resolve().parents[1]
+_ROOT = Path(__file__).resolve().parents[1]
 router = APIRouter()
 
 
-def _modulo(nombre: str):
-    cargado = sys.modules.get(f"hermes_plugins.orquehelx.{nombre}")
-    if cargado is not None:
-        return cargado
-    clave = f"_orquehelx_dashboard_{nombre}"
-    if clave not in sys.modules:
-        spec = importlib.util.spec_from_file_location(clave, _RAIZ / f"{nombre}.py")
-        modulo = importlib.util.module_from_spec(spec)
-        sys.modules[clave] = modulo
-        spec.loader.exec_module(modulo)
-    return sys.modules[clave]
+_PACKAGE = "_orquehelx_dashboard"
+
+
+def _module(name: str):
+    loaded = sys.modules.get(f"hermes_plugins.orquehelx.{name}")
+    if loaded is not None:
+        return loaded
+    if _PACKAGE not in sys.modules:
+        # Load the plugin as a package (not file by file) so its relative imports resolve.
+        spec = importlib.util.spec_from_file_location(_PACKAGE, _ROOT / "__init__.py",
+                                                      submodule_search_locations=[str(_ROOT)])
+        package = importlib.util.module_from_spec(spec)
+        sys.modules[_PACKAGE] = package
+        spec.loader.exec_module(package)
+    return importlib.import_module(f"{_PACKAGE}.{name}")
 
 
 def _config():
@@ -37,110 +41,112 @@ def _config():
     return load_config_readonly() or {}
 
 
-def _config_rutas(config: dict):
-    entrada = (config.get("plugins") or {}).get("entries") or {}
-    return ((entrada.get("orquehelx") or {}).get("settings") or {}).get("rutas")
+def _settings(config: dict) -> dict:
+    entries = (config.get("plugins") or {}).get("entries") or {}
+    return (entries.get("orquehelx") or {}).get("settings") or {}
 
 
-def _principal(config: dict) -> dict | None:
-    """Modelo por defecto del agente principal segun la config de Hermes; None si no hay uno configurado.
-    La sesion viva puede cambiarlo (session.info manda): esto es solo lo que se muestra antes del primer turno."""
-    modelo = config.get("model")
-    if isinstance(modelo, str):
-        return {"proveedor": None, "modelo": modelo} if modelo else None
-    if not isinstance(modelo, dict):
+def _main(config: dict) -> dict | None:
+    """Default model of the main agent per Hermes' config; None if none is configured.
+    The live session can change it (session.info wins): this is only what shows before the first turn."""
+    model = config.get("model")
+    if isinstance(model, str):
+        return {"provider": None, "model": model} if model else None
+    if not isinstance(model, dict):
         return None
-    nombre = modelo.get("default") or modelo.get("model")
-    proveedor = modelo.get("provider")
-    if not nombre and not proveedor:
+    name = model.get("default") or model.get("model")
+    provider = model.get("provider")
+    if not name and not provider:
         return None
-    return {"proveedor": proveedor or None, "modelo": nombre or None}
+    return {"provider": provider or None, "model": name or None}
 
 
-def _medicion(ventanas, error) -> dict:
+def _measurement(windows, error) -> dict:
     if error is not None:
-        return {"estado": "error", "error": str(error), "ventanas": []}
-    if ventanas is None:
-        return {"estado": "sin_dato", "error": None, "ventanas": []}
-    return {"estado": "medida", "error": None, "ventanas": [
-        {"etiqueta": etiqueta, "usado": usado, "reinicio": reinicio.isoformat() if reinicio else None}
-        for etiqueta, usado, reinicio in ventanas]}
+        return {"state": "error", "error": str(error), "windows": []}
+    if windows is None:
+        return {"state": "no_data", "error": None, "windows": []}
+    return {"state": "measured", "error": None, "windows": [
+        {"label": label, "used": used, "reset_at": reset_at.isoformat() if reset_at else None}
+        for label, used, reset_at in windows]}
 
 
-def _vigente(cuota, proveedor: str):
-    """El agotamiento del proveedor si todavia no llego su reinicio (sin reinicio conocido, sigue vigente)."""
-    ag = cuota.consultar(proveedor, desde=time.time() - 24 * 3600)
-    return ag if ag is not None and (ag.reinicio is None or ag.reinicio.timestamp() > time.time()) else None
+def _current(quota, provider: str):
+    """The provider's exhaustion if its reset has not come yet (with no known reset, it is still current)."""
+    ex = quota.lookup(provider, since=time.time() - 24 * 3600)
+    return ex if ex is not None and (ex.reset_at is None or ex.reset_at.timestamp() > time.time()) else None
 
 
-@router.get("/estado")
-def estado() -> dict:
-    """Rutas configuradas, cuota medida de cada una (una medicion por proveedor) y agotamientos vigentes."""
-    rutas_mod, cuota = _modulo("rutas"), _modulo("cuota")
+@router.get("/status")
+def status() -> dict:
+    """Configured routes, measured quota of each one (one measurement per provider) and current exhaustions."""
+    routes_mod, quota = _module("routes"), _module("quota")
     config = _config()
-    principal = _principal(config)
+    main = _main(config)
     try:
-        rutas = rutas_mod.cargar(_config_rutas(config))
-    except rutas_mod.ErrorDeConfig as exc:
-        return {"rutas": [], "principal": principal, "error": str(exc)}
-    mediciones = {p: cuota.medir_seguro(p) for p in dict.fromkeys(r.proveedor for r in rutas.values())}
-    salida = []
-    for r in rutas.values():
-        ag = _vigente(cuota, r.proveedor)
-        salida.append({
-            "nombre": r.nombre, "proveedor": r.proveedor, "modelo": r.modelo, "acp": r.acp is not None,
-            "medicion": _medicion(*mediciones[r.proveedor]),
-            "agotada": {"desde": ag.visto, "reinicio": ag.reinicio.isoformat() if ag.reinicio else None}
-            if ag else None,
+        routes = routes_mod.load(routes_mod.setting(_settings(config).get, "routes", "rutas"))
+    except routes_mod.ConfigError as exc:
+        return {"routes": [], "main": main, "error": str(exc)}
+    measured = {p: quota.measure_safe(p) for p in dict.fromkeys(r.provider for r in routes.values())}
+    out = []
+    for r in routes.values():
+        ex = _current(quota, r.provider)
+        out.append({
+            "name": r.name, "provider": r.provider, "model": r.model, "acp": r.acp is not None,
+            "measurement": _measurement(*measured[r.provider]),
+            "exhausted": {"since": ex.seen, "reset_at": ex.reset_at.isoformat() if ex.reset_at else None}
+            if ex else None,
         })
-    return {"rutas": salida, "principal": principal, "error": None}
+    return {"routes": out, "main": main, "error": None}
 
 
-def _pausas():
+def _pauses():
     from hermes_constants import get_hermes_home
-    pausas = _modulo("pausas")
-    return pausas, pausas.abrir(get_hermes_home() / "orquehelx" / "pausas.db")
+    pauses = _module("pauses")
+    home = get_hermes_home()
+    return pauses, pauses.open_db(home / "plugin-data" / "orquehelx" / "pauses.db",
+                                  legacy=home / "orquehelx" / "pausas.db")
 
 
-class NuevaPausa(BaseModel):
-    sesion: str = Field(min_length=1, max_length=200)
-    proveedor: str = Field(min_length=1, max_length=200)
-    modelo: str | None = Field(default=None, max_length=200)
+class NewPause(BaseModel):
+    session: str = Field(min_length=1, max_length=200)
+    provider: str = Field(min_length=1, max_length=200)
+    model: str | None = Field(default=None, max_length=200)
 
 
-class Resolucion(BaseModel):
-    destino: str | None = Field(default=None, max_length=64)
+class Resolution(BaseModel):
+    target: str | None = Field(default=None, max_length=64)
 
 
-@router.post("/pausas")
-def pausar(cuerpo: NuevaPausa) -> dict:
-    """Pausa la sesion solo si el proveedor tiene un agotamiento registrado y vigente; si no, no es cuota."""
-    ag = _vigente(_modulo("cuota"), cuerpo.proveedor)
-    if ag is None:
-        return {"pausa": None}
-    pausas, con = _pausas()
+@router.post("/pauses")
+def pause(body: NewPause) -> dict:
+    """Pause the session only if the provider has a recorded, current exhaustion; otherwise it is not quota."""
+    ex = _current(_module("quota"), body.provider)
+    if ex is None:
+        return {"pause": None}
+    pauses, con = _pauses()
     try:
-        return {"pausa": pausas.crear(con, cuerpo.sesion, cuerpo.proveedor, cuerpo.modelo, ag.reinicio)}
+        return {"pause": pauses.create(con, body.session, body.provider, body.model, ex.reset_at)}
     finally:
         con.close()
 
 
-@router.get("/pausas")
-def pendientes() -> dict:
-    pausas, con = _pausas()
+@router.get("/pauses")
+def pending() -> dict:
+    pauses, con = _pauses()
     try:
-        return {"pausas": pausas.pendientes(con)}
+        return {"pauses": pauses.pending(con)}
     finally:
         con.close()
 
 
-@router.post("/pausas/{pausa}/{accion}")
-def resolver(pausa: int, accion: Literal["reanudar", "reenviar", "cancelar"], cuerpo: Resolucion) -> dict:
-    pausas, con = _pausas()
+@router.post("/pauses/{pause_id}/{action}")
+def resolve(pause_id: int, action: Literal["resume", "resend", "cancel"], body: Resolution) -> dict:
+    pauses, con = _pauses()
     try:
-        gano = pausas.resolver(con, pausa, accion, cuerpo.destino)
+        won = pauses.resolve(con, pause_id, action, body.target)
     finally:
         con.close()
-    if not gano:
-        raise HTTPException(status_code=409, detail="ya se resolvió")
+    if not won:
+        raise HTTPException(status_code=409, detail="already resolved")
     return {"ok": True}

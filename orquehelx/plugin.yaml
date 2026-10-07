@@ -1,6 +1,6 @@
 name: orquehelx
-version: 0.1.4
-description: "Subagentes entre suscripciones: el modelo delega por ruta (Claude, Codex, Antigravity, OpenCode o cualquier CLI ACP), cada uno con su propia cuota y sin cambio automatico de proveedor."
+version: 0.2.0
+description: "Subagents across subscriptions: the model delegates by route (Claude, Codex, OpenCode or any ACP CLI), each on its own quota, with no automatic provider switch."
 author: TicoraX
 license: MIT
 homepage: https://github.com/TicoraX/OrqueHelx
@@ -10,7 +10,7 @@ platforms:
   - macos
   - windows
 provides_tools:
-  - delegar
+  - delegate_to
 provides_hooks:
   - api_request_error
   - pre_tool_call

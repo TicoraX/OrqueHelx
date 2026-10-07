@@ -1,4 +1,4 @@
-"""Los tests importan el plugin desde la raiz del repo y aislan HERMES_HOME por test."""
+"""Tests import the plugin from the repo root and isolate HERMES_HOME per test."""
 import sys
 from pathlib import Path
 

@@ -1,10 +1,10 @@
-"""Texts the user reads (config errors, ``/ohx``), in English by default and Spanish when Hermes runs in
-Spanish (``display.language`` or ``HERMES_LANGUAGE``). What the model reads is always English and lives
-next to its code (D24): it is not translated.
+"""Text the user reads (config errors, ``/ohx``): English by default, Spanish when Hermes runs in Spanish
+(``display.language`` or ``HERMES_LANGUAGE``). Text the model reads is always English and lives next to its
+code: it is not translated.
 """
 from __future__ import annotations
 
-TEXTOS: dict[str, dict[str, str]] = {
+TEXTS: dict[str, dict[str, str]] = {
     "en": {
         "no_routes": "no routes configured: define {key} in config.yaml",
         "both_keys": "set {new} or {old} in plugins.entries.orquehelx.settings, not both",
@@ -50,10 +50,10 @@ TEXTOS: dict[str, dict[str, str]] = {
 }
 
 
-def idioma() -> str:
+def language() -> str:
     from agent.i18n import get_language
     return "es" if str(get_language() or "").lower().startswith("es") else "en"
 
 
-def t(clave: str, lang: str | None = None, **valores) -> str:
-    return TEXTOS[lang or idioma()][clave].format(**valores)
+def t(text_id: str, /, lang: str | None = None, **values) -> str:
+    return TEXTS[lang or language()][text_id].format(**values)

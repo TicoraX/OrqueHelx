@@ -1,6 +1,6 @@
-"""OrqueHelx: subagentes entre suscripciones sobre Hermes."""
+"""OrqueHelx: subagents across subscriptions on Hermes."""
 
 
 def register(ctx):
-    from .delegar import registrar
-    registrar(ctx)
+    from .delegate import register as register_plugin
+    register_plugin(ctx)

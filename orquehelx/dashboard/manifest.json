@@ -1,9 +1,9 @@
 {
   "name": "orquehelx",
   "label": "OrqueHelx",
-  "description": "Subagentes entre suscripciones: rutas, cuota medida de cada una y el trabajo de cada subagente.",
+  "description": "Subagents across subscriptions: routes, the measured quota of each one and the work of each subagent.",
   "icon": "Workflow",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "tab": {
     "path": "/orquehelx",
     "position": "end"
