@@ -32,15 +32,9 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         hermes: [v0.22.0, main]
         include:
-          # main declares its dependencies only for Python >= 3.14 (runtime managed by its bootstrap).
-          - hermes: v0.22.0
-            python: "3.11"
-          - hermes: main
-            python: "3.14"
           # plugin.yaml declares macos: it is tested only against the minimum version.
           - os: macos-latest
             hermes: v0.22.0
-            python: "3.11"
     defaults:
       run:
         shell: bash
@@ -51,7 +45,8 @@ jobs:
         run: |
           git config --global core.longpaths true
           git clone --quiet --depth 1 --branch "${{ matrix.hermes }}" https://github.com/NousResearch/hermes-agent "$RUNNER_TEMP/hermes"
-          uv venv --python "${{ matrix.python }}" .venv
+          # Since v0.22.0 Hermes declares its dependencies only for Python >= 3.14.
+          uv venv --python 3.14 .venv
           uv pip install --python .venv -e "$RUNNER_TEMP/hermes" pytest
       - name: Tests
         run: |
