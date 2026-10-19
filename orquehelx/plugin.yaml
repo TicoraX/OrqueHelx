@@ -1,10 +1,10 @@
 name: orquehelx
-version: 0.2.0
-description: "Subagents across subscriptions: the model delegates by route (Claude, Codex, Antigravity, OpenCode or any ACP CLI), each on its own quota, with no automatic provider switch."
+version: 0.3.0
+description: "Subagents across subscriptions: the model delegates each subagent by route to the provider you choose (Claude, Codex, Antigravity or any provider Hermes knows), each on its own quota, with no automatic provider switch."
 author: TicoraX
 license: MIT
 homepage: https://github.com/TicoraX/OrqueHelx
-requires_hermes: ">=0.21.5"
+requires_hermes: ">=0.22.0"
 platforms:
   - linux
   - macos

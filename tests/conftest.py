@@ -10,14 +10,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 @pytest.fixture(autouse=True)
 def hermes_home(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
-    # User-facing text follows Hermes' language; tests expect English unless they set another one.
-    monkeypatch.setenv("HERMES_LANGUAGE", "en")
     return tmp_path / "hermes"
 
 
 @pytest.fixture(autouse=True)
 def fresh_measurements(monkeypatch):
-    # Measurements are cached for a few seconds and a 429 holds the next call: no test sees another's.
+    # Measurements are cached for a few seconds: no test sees another one's.
     from orquehelx import quota
     monkeypatch.setattr(quota, "_measured", {})
-    monkeypatch.setattr(quota, "_backoff", {})

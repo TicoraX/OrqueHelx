@@ -1,28 +1,23 @@
 # OrqueHelx
 
-[Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin that lets one model delegate work to
-another, each running on your own subscription: Claude, Codex, Antigravity, OpenCode or any CLI that speaks ACP.
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin that lets the model send each subagent to
+the subscription you choose: Claude, Codex, Antigravity or any provider Hermes knows, each on its own quota.
 
 Hermes' `delegate_task` sends every child to the one target set in `config.yaml`. With OrqueHelx the model picks
-a route on each call, and the subagent runs on that provider and spends that quota. If a subscription runs out,
-you decide where the task goes next; the plugin doesn't switch providers for you.
+a route on each call, and the child runs on that provider. When a subscription runs out of quota, the parent is
+told so plainly and you decide what happens next: OrqueHelx never switches providers on its own.
 
-**Status:** v0.2.0 (not released yet; the latest release is v0.1.4). `delegate_to`, `/ohx routes|quota` and the
-OrqueHelx dashboard tab work: routes with their measured quota, a chat with the main agent, a live subagent tree,
-and a quota pause until the reset. Two cases
-have not been tested against a real subscription yet: a subagent that runs out of quota, and nested subagents.
-Tests cover them with errors captured from real providers and hand-built ones.
-
-Español: [más abajo](#en-español).
+**Status:** v0.3.0, small on purpose and in maintenance mode (see [Scope](#scope)). Español: [más abajo](#en-español).
 
 ## Requirements
 
-- Hermes Agent 0.21.5 or later.
-- The CLIs you want to use, installed and signed in (`claude`, `agy`, `opencode`, ...). OrqueHelx stores no
-  credentials: each CLI uses its own.
-- On Windows, the Antigravity route needs hermes-antigravity-subscription 1.0.2 or later. Older versions miss
-  the session `agy` keeps in the Windows Credential Manager. To update:
-  `hermes plugins update antigravity-subscription-directsdk`.
+- Hermes Agent 0.22.0 or later.
+- The subscriptions you want to use, set up as Hermes providers and signed in (for example the
+  `claude-subscription-directsdk` and `antigravity-subscription-directsdk` plugins from the catalog). OrqueHelx
+  stores no credentials.
+
+Using a consumer subscription from another tool may be against that provider's terms (Google, for one, forbids
+it for Antigravity). Check them before you add a route.
 
 ## Install
 
@@ -40,23 +35,23 @@ plugins:
     orquehelx:
       settings:
         routes:
-          claude:   {provider: claude-subscription-directsdk-experimental, model: claude-haiku-4-5}
-          agy:      {provider: antigravity-subscription-directsdk, model: flash}
-          opencode: {acp: [opencode, acp]}
+          claude: {provider: claude-subscription-directsdk-experimental, model: claude-haiku-4-5}
+          codex:  {provider: openai-codex, model: gpt-5.5}
+          agy:    {provider: antigravity-subscription-directsdk, model: flash}
 ```
 
-- `provider`: any provider Hermes already knows, including the subscription plugins in the catalog
-  (`hermes plugins install claude-subscription-directsdk`).
-- `acp`: the command of any CLI that speaks ACP. OrqueHelx registers it as a provider, no extra plugin needed.
+`provider` is any provider Hermes knows. `model` is required: without it Hermes would run the subagent with
+the parent's model on the route's provider. For a CLI that speaks ACP (OpenCode, Kiro, Junie),
+install its provider plugin from the catalog and use that provider's name.
 
-With no routes configured, the plugin still loads: `delegate_to` and `/ohx` tell you what to set, and the native
+With no routes configured the plugin still loads, `delegate_to` and `/ohx` tell you what to set, and the native
 `delegate_task` keeps working. A malformed route fails at load time, and Hermes shows the error naming the route.
 
 ## When a subscription runs out of quota
 
 If a subagent fails because its provider ran out of quota, `delegate_to` returns `status: out_of_quota` to the
-parent model, with the reset time (`reset_at`, or `null` when the provider does not report it: it is never
-estimated) and the other available routes. What the parent does next is set by `policy`:
+parent, with the reset time (`reset_at`, or `null` when the provider does not report it: it is never estimated)
+and the other routes. What the parent does next is set by `policy`:
 
 ```yaml
     orquehelx:
@@ -65,76 +60,47 @@ estimated) and the other available routes. What the parent does next is set by `
 ```
 
 - `ask`: the parent tells you and asks whether to send the task to another route, naming each route's model.
+  It cannot delegate again in that turn until you answer. Subagents already launched in parallel in the same
+  turn still finish.
 - `parent_decides`: the parent may pick another route if its model fits the task, and tells you which one.
 - `wait`: the parent tells you and does nothing else until your next message.
 
-Quota counts as exhausted in two cases: the error names it (Antigravity's `RESOURCE_EXHAUSTED`, for example),
-or a measured window is at 100 % (Claude, Codex). Any other failure is reported as a failure, not as quota.
-
-### When the main agent runs out
-
-In the OrqueHelx tab the conversation pauses: the turn is kept and the model is not switched for you. The pause
-card shows the provider, the model and the reset time, with three ways out:
-
-- **Resume**: the same turn again on the same model. If the provider reports a reset time, it resumes on its
-  own at that time while the tab is open.
-- **Resend**: the same turn on another route you pick (routes with `model`, on another provider). The
-  conversation continues on that model.
-- **Cancel**: leaves the turn unanswered and frees the chat.
-
-Pauses are stored in `~/.hermes/plugin-data/orquehelx/pauses.db`: if you close the tab or shut down, the pause comes back
-with its conversation when you reopen OrqueHelx. Each pause is resolved once, even with two tabs open.
-
-## Dashboard tab
-
-```bash
-hermes dashboard
-```
-
-Open the **OrqueHelx** tab (`/orquehelx`). It fills the window: each route with its measured quota on the left,
-the conversation in the middle, subagents on the right. The tab follows the dashboard's language picker:
-English, or Spanish when the dashboard is in Spanish.
+Quota counts as exhausted in two cases: the error names it (Antigravity's `RESOURCE_EXHAUSTED`, for example), or
+a measured window is at 100 % (Claude, Codex). Any other failure is reported as a failure, not as quota.
 
 ## Checking usage
-
-In a Hermes session:
 
 ```text
 /ohx routes    configured routes, with provider and model
 /ohx quota     measured usage per route: windows, percentage and reset time
 ```
 
-`/ohx quota` measures when you ask; a measurement less than 30 seconds old is reused, and after a 429 from
-the usage endpoint OrqueHelx waits for its `Retry-After` before asking again. If a provider does not report usage (Antigravity and OpenCode today), it
-shows "no data" instead of an estimate. Its output, and config errors, follow Hermes' `display.language`
-(English, or Spanish).
+Usage comes from Hermes' own `fetch_account_usage` (Claude and Codex today); a reading less than 30 seconds old
+is reused. A provider that does not report usage shows "no data", never an estimate.
 
-## Usage
+## Scope
 
-```bash
-hermes chat -t orquehelx -q "Ask agy to review this diff and opencode to write the tests"
-```
+v0.3.0 keeps only what Hermes does not already do: choosing the provider per call and the honest out-of-quota
+policy. Earlier versions also had a dashboard tab (chat, subagent tree, quota cells and a quota pause) and
+generic ACP routes. Hermes and its catalog now cover most of that: Desktop and the TUI show the subagent tree
+and usage per provider, `/usage` measures quota, and ACP CLIs have their own provider plugins. Keeping a second
+copy cost a rewrite on every Hermes release, so it went. The plugin now uses only public Hermes surfaces
+(`ctx.subagent_lifecycle`, hooks, commands and `agent.account_usage`).
+
+## Upgrading from v0.2
+
+- Hermes 0.22.0 or later is required.
+- The dashboard tab and its quota pauses are gone. You can delete `~/.hermes/plugin-data/orquehelx/`.
+- `acp` routes are gone: install the CLI's provider plugin and use `provider:` instead.
+- Every route needs a `model`. A route without one fails at load time, naming the route.
+- Messages are English only. `routes`, `policy` and the v0.1 names (`rutas`, `politica`, `preguntar`,
+  `padre_decide`, `esperar`) still load.
 
 ## Privacy
 
-OrqueHelx has no server of its own, no telemetry, and stores no credentials. Everything runs on your machine
-inside Hermes:
-- Models are called by Hermes with each subscription's own session.
-- To measure quota, OrqueHelx calls Hermes' account-usage fetchers (Anthropic and OpenAI Codex, each with its
-  own credential): on `/ohx quota`, when the dashboard tab loads, and after a generic Claude-subscription error.
-- The UI only talks to the local dashboard.
-- The only file OrqueHelx writes is `~/.hermes/plugin-data/orquehelx/pauses.db` (quota pauses).
-
-## Upgrading from v0.1
-
-- The tool is now `delegate_to(route, goal, context)` (it was `delegar(ruta, objetivo, contexto)`). Prompts or
-  skills that name `delegar` need the new name. In a session saved with v0.1, the model may still try
-  `delegar` from its history: Hermes answers that the tool does not exist, and `delegate_to` is in its tool list.
-- Config keys are `routes` and `policy: ask | parent_decides | wait`. The v0.1 names (`rutas`, `politica`,
-  `preguntar | padre_decide | esperar`) still load; setting both the old and the new key is an error.
-- `/ohx routes|quota` (the v0.1 `rutas|cuota` still work).
-- Pending pauses in `~/.hermes/orquehelx/pausas.db` are copied to the new location the first time the tab opens;
-  the old file is left untouched.
+OrqueHelx has no server of its own, no telemetry, and stores no credentials or files. Subagents run inside
+Hermes with each provider's own session, and usage is read through Hermes' fetchers, each with its own
+credential.
 
 ## Tests
 
@@ -152,32 +118,16 @@ MIT. See [LICENSE](LICENSE).
 
 ## En español
 
-Plugin para Hermes Agent: un modelo le pasa trabajo a otro, y cada uno corre con tu propia suscripción
-(Claude, Codex, Antigravity, OpenCode o cualquier CLI que hable ACP). El modelo elige la ruta en cada llamada,
-y el subagente gasta la cuota de ese proveedor. Si se agota, tú decides a dónde va la tarea. OrqueHelx no
-cambia de proveedor por su cuenta.
+Plugin para Hermes Agent: el modelo manda cada subagente a la suscripción que elijas (Claude, Codex, Antigravity
+o cualquier proveedor que Hermes conozca), cada uno con su cuota. Si una se agota, el padre se entera sin
+rodeos y tú decides qué sigue; OrqueHelx no cambia de proveedor por su cuenta.
 
-Se instala con `hermes plugins install TicoraX/OrqueHelx#orquehelx --enable`. Las rutas van en
-`~/.hermes/config.yaml`, bajo `plugins.entries.orquehelx.settings.routes`, como en el ejemplo de arriba:
-`provider` es un proveedor que Hermes ya conoce y `acp` es el comando de un CLI que hable ACP. Sin rutas, el
-plugin carga igual y `delegate_to` y `/ohx` te dicen qué falta. Una ruta mal escrita falla al cargar y el error
-la nombra.
+Requiere Hermes 0.22.0 o posterior y se instala con
+`hermes plugins install TicoraX/OrqueHelx#orquehelx --enable`. Las rutas van en `~/.hermes/config.yaml`, bajo
+`plugins.entries.orquehelx.settings.routes`, como en el ejemplo de arriba; cada ruta lleva `provider` y `model`.
+`policy` decide qué hace el padre ante una cuota agotada: `ask` (por defecto), `parent_decides` o `wait`.
+`/ohx routes` y `/ohx quota` muestran las rutas y el consumo medido.
 
-Cuando un subagente se queda sin cuota, `delegate_to` responde `status: out_of_quota` con la hora de reinicio
-(`reset_at`, o `null` si el proveedor no la informa; nunca se estima) y las otras rutas. Qué hace el padre lo
-fija `policy`: `ask` (por defecto), `parent_decides` o `wait`. Solo cuenta como falta de cuota un error que lo
-dice o una ventana medida al 100 %.
-
-Si se agota el agente principal, la conversación queda en pausa en la pestaña OrqueHelx, con tres botones:
-Reanudar, Reenviar a otra ruta o Cancelar. La pausa vive en `~/.hermes/plugin-data/orquehelx/pauses.db` y
-sobrevive a cerrar la pestaña.
-
-`/ohx routes` lista las rutas y `/ohx quota` mide el consumo; lo que un proveedor no informa sale como
-"sin dato". La pestaña (`hermes dashboard`, `/orquehelx`) sigue el idioma del selector del dashboard, y `/ohx`
-y los errores de config siguen `display.language` de Hermes. Lo que lee el modelo va siempre en inglés.
-
-Si vienes de la v0.1: la herramienta ahora se llama `delegate_to` (antes `delegar`). Tu config con `rutas`,
-`politica` y valores en español sigue funcionando, y las pausas de `pausas.db` se copian solas la primera vez.
-
-En Windows, la ruta de Antigravity necesita hermes-antigravity-subscription 1.0.2 o posterior. OrqueHelx no
-tiene servidor propio ni telemetría y no guarda credenciales; el único archivo que escribe es `pauses.db`.
+La v0.3.0 se recortó a propósito: la pestaña del dashboard y las rutas ACP salieron porque Hermes y su catálogo
+ya cubren eso. Los mensajes del plugin están solo en inglés. Usar una suscripción de consumo desde otra
+herramienta puede ir contra los términos del proveedor; revísalos antes de agregar una ruta.

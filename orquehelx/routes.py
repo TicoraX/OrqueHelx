@@ -3,22 +3,19 @@
 Read from ``plugins.entries.orquehelx.settings.routes`` in Hermes' config.yaml (``rutas`` in v0.1)::
 
     routes:
-      claude:   {provider: claude-subscription-directsdk-experimental, model: claude-haiku-4-5}
-      opencode: {acp: [opencode, acp]}        # any CLI that speaks ACP
+      claude: {provider: claude-subscription-directsdk-experimental, model: claude-haiku-4-5}
+      codex:  {provider: openai-codex, model: gpt-5.5}
 
-An ``acp`` route needs no plugin of its own: OrqueHelx registers an ``ohx-<route>`` provider that launches
-that command (see ``acp.py``).
+``provider`` is any provider Hermes knows, including the ones subscription and ACP plugins register.
 """
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 
-from .texts import t
-
 CONFIG_KEY = "plugins.entries.orquehelx.settings.routes"
 _NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
-_FIELDS = {"provider", "model", "acp"}
+_FIELDS = {"provider", "model"}
 
 
 class ConfigError(ValueError):
@@ -33,52 +30,40 @@ class RouteError(ConfigError):
 class Route:
     name: str
     provider: str
-    model: str | None = None
-    acp: tuple[str, ...] | None = None
+    model: str
 
 
 def _route(name: str, value: object) -> Route:
     if not _NAME.match(name):
-        raise RouteError(t("route_name", route=name))
+        raise RouteError(f"route {name!r}: the name must be lowercase letters, digits or '-' (max. 32)")
     if not isinstance(value, dict):
-        raise RouteError(t("route_map", route=name))
+        raise RouteError(f"route {name!r}: expected a map with 'provider' and 'model'")
+    if "acp" in value:
+        raise RouteError(f"route {name!r}: 'acp' routes were removed in v0.3.0; install an ACP provider plugin "
+                         "and use its provider name")
     extra = set(value) - _FIELDS
     if extra:
-        raise RouteError(t("route_fields", route=name, fields=sorted(extra)))
-    model = value.get("model")
-    if model is not None and (not isinstance(model, str) or not model.strip()):
-        raise RouteError(t("route_model", route=name))
-    provider, acp = value.get("provider"), value.get("acp")
-    if (provider is None) == (acp is None):
-        raise RouteError(t("route_one_of", route=name))
-    if acp is not None:
-        if not isinstance(acp, list) or not acp or not all(isinstance(p, str) and p.strip() for p in acp):
-            raise RouteError(t("route_acp", route=name))
-        return Route(name, f"ohx-{name}", model, tuple(acp))
+        raise RouteError(f"route {name!r}: unknown fields {sorted(extra)}")
+    provider, model = value.get("provider"), value.get("model")
     if not isinstance(provider, str) or not provider.strip():
-        raise RouteError(t("route_provider", route=name))
-    return Route(name, provider.strip(), model)
+        raise RouteError(f"route {name!r}: 'provider' must be non-empty text")
+    # Required: without it Hermes runs the child with the parent's model on the route's provider.
+    if not isinstance(model, str) or not model.strip():
+        raise RouteError(f"route {name!r}: 'model' must be non-empty text")
+    return Route(name, provider.strip(), model.strip())
 
 
 def load(config: object) -> dict[str, Route]:
     """Validate the whole config; fail loudly on the first unusable route."""
     if not isinstance(config, dict) or not config:
-        raise RouteError(t("no_routes", key=CONFIG_KEY))
+        raise RouteError(f"no routes configured: define {CONFIG_KEY} in config.yaml")
     return {str(name): _route(str(name), value) for name, value in config.items()}
 
 
 def setting(get, key: str, legacy: str):
-    """Value of ``key`` (English, v0.2) or of its Spanish ``legacy`` name (v0.1). Both at once is an error:
-    there is no way to tell which one the user meant."""
+    """Value of ``key`` or of its v0.1 Spanish name ``legacy``. Both at once is an error: there is no way to
+    tell which one the user meant."""
     new, old = get(key), get(legacy)
     if new is not None and old is not None:
-        raise ConfigError(t("both_keys", new=key, old=legacy))
+        raise ConfigError(f"set {key} or {legacy} in plugins.entries.orquehelx.settings, not both")
     return old if new is None else new
-
-
-def credentials(route: Route) -> dict:
-    """``credentials_cfg`` for ``delegate_task``: the route pins the provider and there is no fallback."""
-    cfg = {"provider": route.provider, "fallback_providers": []}
-    if route.model:
-        cfg["model"] = route.model
-    return cfg

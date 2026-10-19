@@ -112,10 +112,11 @@ def test_hermes_calls_the_hook_with_its_real_payload(hermes_home, monkeypatch):
     from agent.api_request_hooks import ApiRequestHooksMixin
     from hermes_cli.plugins import PluginManager
 
-    shutil.copytree(Path(__file__).resolve().parents[1] / "orquehelx", hermes_home / "plugins" / "orquehelx")
+    shutil.copytree(Path(__file__).resolve().parents[1] / "orquehelx", hermes_home / "plugins" / "orquehelx",
+                    ignore=shutil.ignore_patterns("__pycache__"))
     (hermes_home / "config.yaml").write_text(
         "plugins:\n  enabled: [orquehelx]\n  entries:\n    orquehelx:\n      settings:\n"
-        "        routes:\n          agy: {provider: antigravity-subscription-directsdk}\n", encoding="utf-8")
+        "        routes:\n          agy: {provider: antigravity-subscription-directsdk, model: flash}\n", encoding="utf-8")
     manager = PluginManager()
     manager.discover_and_load()
     monkeypatch.setattr(hp, "_plugin_manager", manager, raising=False)
@@ -131,13 +132,20 @@ def test_hermes_calls_the_hook_with_its_real_payload(hermes_home, monkeypatch):
     assert any(m.lookup(AGY, since=0) is not None for m in loaded)
 
 
-class _HTTP429(Exception):
-    """Same shape as httpx.HTTPStatusError: the response carries the status and the headers."""
+def test_claude_and_codex_are_measured_with_hermes_public_fetcher(monkeypatch):
+    seen = []
+    snap = SimpleNamespace(windows=[SimpleNamespace(label="Current session", used_percent=40.0, reset_at=RESET_5H)])
+    monkeypatch.setattr("agent.account_usage.fetch_account_usage", lambda slug: seen.append(slug) or snap)
+    assert quota.measure(CLAUDE) == [("Current session", 40.0, RESET_5H)]
+    assert quota.measure("openai-codex") == [("Current session", 40.0, RESET_5H)]
+    assert seen == ["anthropic", "openai-codex"]
+    assert quota.measure(AGY) is None  # no meter: "no data", never an estimate
 
-    def __init__(self, retry_after=None):
-        super().__init__("429 Too Many Requests")
-        headers = {"retry-after": retry_after} if retry_after is not None else {}
-        self.response = SimpleNamespace(status_code=429, headers=headers)
+
+def test_a_failed_public_fetch_shows_as_no_windows(monkeypatch):
+    # Hermes' public fetcher answers None on any error, a 429 included.
+    monkeypatch.setattr("agent.account_usage.fetch_account_usage", lambda slug: None)
+    assert quota.measure(CLAUDE) == []
 
 
 def test_a_measurement_is_reused_for_a_short_while(monkeypatch):
@@ -159,46 +167,7 @@ def test_confirming_an_exhaustion_always_measures_again(monkeypatch):
     assert quota.lookup(CLAUDE, since=0).reset_at == RESET_5H
 
 
-@pytest.mark.parametrize("retry_after, wait", [("120", 120), (None, quota.DEFAULT_BACKOFF), ("not-a-number", quota.DEFAULT_BACKOFF)])
-def test_a_429_is_not_retried_until_its_retry_after(monkeypatch, retry_after, wait):
-    calls = []
-
-    def meter():
-        calls.append(1)
-        raise _HTTP429(retry_after)
-    monkeypatch.setitem(quota.METERS, "claude-subscription", meter)
-    first = quota.measure_safe(CLAUDE)
-    second = quota.measure_safe(CLAUDE)
-    assert first[0] is None and isinstance(first[1], _HTTP429)
-    assert second[1] is first[1] and len(calls) == 1  # the same error, honest, without calling again
-    monkeypatch.setattr(quota.time, "monotonic", lambda real=quota.time.monotonic: real() + wait + 1)
-    quota.measure_safe(CLAUDE)
-    assert len(calls) == 2
-
-
-def test_other_errors_are_not_cached(monkeypatch):
-    calls = []
-
-    def meter():
-        calls.append(1)
-        raise ConnectionError("no network")
-    monkeypatch.setitem(quota.METERS, "claude-subscription", meter)
-    quota.measure_safe(CLAUDE)
-    quota.measure_safe(CLAUDE)
-    assert len(calls) == 2
-
-
-def test_a_429_retry_after_can_be_an_http_date(monkeypatch):
-    from email.utils import format_datetime
-    from datetime import timedelta
-    when = format_datetime(datetime.now(timezone.utc) + timedelta(seconds=300), usegmt=True)
-    assert 290 <= quota._retry_after(_HTTP429(when)) <= 300
-    past = format_datetime(datetime.now(timezone.utc) - timedelta(seconds=300), usegmt=True)
-    assert quota._retry_after(_HTTP429(past)) == 0
-
-
 def test_an_empty_measurement_is_not_reused(monkeypatch):
-    # Hermes' public fetcher answers None (no windows) on any error, a 429 included: that is not a measurement.
     calls = []
     monkeypatch.setitem(quota.METERS, "claude-subscription", lambda: calls.append(1) or [])
     quota.measure(CLAUDE)
