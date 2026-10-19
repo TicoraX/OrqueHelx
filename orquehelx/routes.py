@@ -30,14 +30,14 @@ class RouteError(ConfigError):
 class Route:
     name: str
     provider: str
-    model: str | None = None
+    model: str
 
 
 def _route(name: str, value: object) -> Route:
     if not _NAME.match(name):
         raise RouteError(f"route {name!r}: the name must be lowercase letters, digits or '-' (max. 32)")
     if not isinstance(value, dict):
-        raise RouteError(f"route {name!r}: expected a map with 'provider'")
+        raise RouteError(f"route {name!r}: expected a map with 'provider' and 'model'")
     if "acp" in value:
         raise RouteError(f"route {name!r}: 'acp' routes were removed in v0.3.0; install an ACP provider plugin "
                          "and use its provider name")
@@ -47,9 +47,10 @@ def _route(name: str, value: object) -> Route:
     provider, model = value.get("provider"), value.get("model")
     if not isinstance(provider, str) or not provider.strip():
         raise RouteError(f"route {name!r}: 'provider' must be non-empty text")
-    if model is not None and (not isinstance(model, str) or not model.strip()):
+    # Required: without it Hermes runs the child with the parent's model on the route's provider.
+    if not isinstance(model, str) or not model.strip():
         raise RouteError(f"route {name!r}: 'model' must be non-empty text")
-    return Route(name, provider.strip(), model)
+    return Route(name, provider.strip(), model.strip())
 
 
 def load(config: object) -> dict[str, Route]:

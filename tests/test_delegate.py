@@ -14,7 +14,7 @@ from orquehelx.routes import ConfigError, RouteError, load
 ROOT = Path(__file__).resolve().parents[1] / "orquehelx"
 ROUTES = load({
     "claude": {"provider": "claude-subscription-directsdk-experimental", "model": "claude-haiku-4-5"},
-    "agy": {"provider": "antigravity-subscription-directsdk"},
+    "agy": {"provider": "antigravity-subscription-directsdk", "model": "flash"},
 })
 
 
@@ -87,10 +87,10 @@ def test_the_child_runs_on_the_route_provider_and_model(parent):
     assert (req.provider, req.model) == ("claude-subscription-directsdk-experimental", "claude-haiku-4-5")
 
 
-def test_a_route_without_model_lets_hermes_pick_the_provider_default(parent):
+def test_the_child_gets_the_route_model_never_the_parent_one(parent):
     life = FakeLifecycle()
     delegate.handle(life, ROUTES, {"route": "agy", "goal": "x"})
-    assert life.requests[0].provider == "antigravity-subscription-directsdk" and life.requests[0].model is None
+    assert life.requests[0].provider == "antigravity-subscription-directsdk" and life.requests[0].model == "flash"
 
 
 @pytest.mark.parametrize("args, piece", [
@@ -172,7 +172,7 @@ def test_parent_decides_may_switch_routes_in_the_same_turn(parent):
 
 def test_register_wires_the_tool_to_the_plugin_lifecycle(parent):
     life = FakeLifecycle(summary="from the child")
-    ctx = _fake_ctx({"claude": {"provider": "p"}}, life)
+    ctx = _fake_ctx({"claude": {"provider": "p", "model": "m"}}, life)
     delegate.register(ctx)
     out = json.loads(ctx.tools["delegate_to"]["handler"]({"route": "claude", "goal": "x"}, task_id="t"))
     assert out["summary"] == "from the child" and life.requests[0].provider == "p"
@@ -201,16 +201,16 @@ def test_routes_of_an_invalid_type_fail_at_load(config):
 @pytest.mark.parametrize("policy", ["auto", ["ask"], {"a": 1}, 3])
 def test_an_invalid_policy_fails_at_load_naming_the_key(policy):
     with pytest.raises(ConfigError, match=r"settings\.policy"):
-        delegate.register(_fake_ctx({"claude": {"provider": "p"}}, policy=policy))
+        delegate.register(_fake_ctx({"claude": {"provider": "p", "model": "m"}}, policy=policy))
 
 
 def test_an_invalid_v01_policy_names_the_key_the_user_wrote():
     with pytest.raises(ConfigError, match=r"settings\.politica"):
-        delegate.register(_fake_ctx({"claude": {"provider": "p"}}, politica="auto"))
+        delegate.register(_fake_ctx({"claude": {"provider": "p", "model": "m"}}, politica="auto"))
 
 
 def test_the_v01_config_still_loads():
-    ctx = _fake_ctx(None, rutas={"claude": {"provider": "p"}}, politica="padre_decide")
+    ctx = _fake_ctx(None, rutas={"claude": {"provider": "p", "model": "m"}}, politica="padre_decide")
     delegate.register(ctx)
     assert ctx.tools["delegate_to"]["schema"]["parameters"]["properties"]["route"]["enum"] == ["claude"]
 
@@ -224,7 +224,7 @@ def _install(hermes_home, routes_yaml):
 
 
 def test_the_plugin_loads_in_the_real_plugin_manager(hermes_home):
-    _install(hermes_home, "        routes:\n          claude: {provider: claude-subscription-directsdk-experimental}\n")
+    _install(hermes_home, "        routes:\n          claude: {provider: claude-subscription-directsdk-experimental, model: claude-haiku-4-5}\n")
     from hermes_cli.plugins import PluginManager
     from tools.registry import registry
 

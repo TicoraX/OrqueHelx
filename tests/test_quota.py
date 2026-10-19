@@ -116,7 +116,7 @@ def test_hermes_calls_the_hook_with_its_real_payload(hermes_home, monkeypatch):
                     ignore=shutil.ignore_patterns("__pycache__"))
     (hermes_home / "config.yaml").write_text(
         "plugins:\n  enabled: [orquehelx]\n  entries:\n    orquehelx:\n      settings:\n"
-        "        routes:\n          agy: {provider: antigravity-subscription-directsdk}\n", encoding="utf-8")
+        "        routes:\n          agy: {provider: antigravity-subscription-directsdk, model: flash}\n", encoding="utf-8")
     manager = PluginManager()
     manager.discover_and_load()
     monkeypatch.setattr(hp, "_plugin_manager", manager, raising=False)

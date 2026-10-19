@@ -110,7 +110,7 @@ _CONTROL = {"list", "steer", "stop"}
 
 
 def _options(routes: dict[str, Route]) -> str:
-    return ", ".join(f"{r.name} ({r.model or r.provider})" for r in routes.values())
+    return ", ".join(f"{r.name} ({r.model})" for r in routes.values())
 
 
 def redirect(routes: dict[str, Route], tool_name: str = "", args: dict | None = None, **_) -> dict | None:
@@ -118,7 +118,7 @@ def redirect(routes: dict[str, Route], tool_name: str = "", args: dict | None = 
     and no quota policy. Launching subagents goes through ``delegate_to``; control actions pass."""
     if tool_name != "delegate_task" or not routes:  # no routes, nowhere to redirect: native goes on
         return None
-    action = str((args or {}).get("action") or "spawn").strip().lower()
+    action = str((args if isinstance(args, dict) else {}).get("action") or "spawn").strip().lower()
     if action in _CONTROL:
         return None
     return {"action": "block", "message": (
