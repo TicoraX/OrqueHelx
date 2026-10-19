@@ -1,44 +1,34 @@
 import pytest
 
-from orquehelx.routes import ConfigError, RouteError, credentials, load, setting
+from orquehelx.routes import ConfigError, RouteError, load, setting
 
 
 def test_provider_route_with_model():
     routes = load({"claude": {"provider": "claude-subscription-directsdk-experimental", "model": "claude-haiku-4-5"}})
     assert routes["claude"].provider == "claude-subscription-directsdk-experimental"
     assert routes["claude"].model == "claude-haiku-4-5"
-    assert routes["claude"].acp is None
 
 
-def test_an_acp_route_gets_its_own_provider():
-    routes = load({"opencode": {"acp": ["opencode", "acp"]}})
-    assert routes["opencode"].acp == ("opencode", "acp")
-    assert routes["opencode"].provider == "ohx-opencode"
-
-
-def test_credentials_turn_fallback_off():
-    # Never an automatic provider switch; [] turns off Hermes' native chain (#65038).
-    route = load({"agy": {"provider": "antigravity-subscription-directsdk", "model": "flash"}})["agy"]
-    assert credentials(route) == {
-        "provider": "antigravity-subscription-directsdk", "model": "flash", "fallback_providers": [],
-    }
-    no_model = load({"opencode": {"acp": ["opencode", "acp"]}})["opencode"]
-    assert credentials(no_model) == {"provider": "ohx-opencode", "fallback_providers": []}
+def test_model_is_optional():
+    assert load({"agy": {"provider": "antigravity-subscription-directsdk"}})["agy"].model is None
 
 
 @pytest.mark.parametrize("config, piece", [
     ({"x": {}}, "'x'"),
-    ({"x": {"provider": "a", "acp": ["b"]}}, "'x'"),
-    ({"x": {"acp": []}}, "'x'"),
-    ({"x": {"acp": ["opencode", 3]}}, "'x'"),
     ({"x": {"provider": ""}}, "'x'"),
     ({"x": {"provider": "a", "extra": 1}}, "extra"),
+    ({"x": {"provider": "a", "model": ""}}, "model"),
     ({"Bad Name": {"provider": "a"}}, "Bad Name"),
     ({"x": "claude"}, "'x'"),
 ])
 def test_invalid_config_fails_naming_the_route(config, piece):
     with pytest.raises(RouteError, match=piece):
         load(config)
+
+
+def test_an_acp_route_says_it_was_removed_and_what_to_use():
+    with pytest.raises(RouteError, match="removed in v0.3.0.*provider plugin"):
+        load({"opencode": {"acp": ["opencode", "acp"]}})
 
 
 def test_no_routes_is_an_explicit_error():

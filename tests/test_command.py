@@ -91,8 +91,3 @@ def test_percentage_never_rounds_up_to_exhausted(monkeypatch, used, text):
     monkeypatch.setitem(quota.METERS, "claude-subscription", lambda: [("Current session", used, None)])
     assert f"Current session: {text}" in command.run(ROUTES, "quota")
 
-
-def test_in_spanish_and_with_the_v01_subcommands(monkeypatch):
-    monkeypatch.setattr("agent.i18n.get_language", lambda: "es-419")
-    assert "agy: sin dato" in command.run(ROUTES, "cuota")
-    assert "uso: /ohx" in command.run(ROUTES, "other")

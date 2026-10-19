@@ -1,15 +1,13 @@
-"""``delegate_to`` tool (``delegar`` up to v0.1): the model picks, by route name, which subscription the
-subagent runs on.
+"""``delegate_to`` tool: the model picks, by route name, which subscription the subagent runs on.
 
-Hermes' native ``delegate_task`` does not let the model choose the child's provider: it uses a single one from
-config. Here the model names a route and the child runs on that provider, with no fallback.
+Hermes' native ``delegate_task`` does not let the model choose the child's provider: it uses the one in
+config. Here the model names a route and the child runs on that provider, through Hermes' public subagent
+lifecycle. A child with its provider pinned never borrows the parent's fallback chain, so it never switches
+providers on its own.
 
-    model --delegate_to(route, goal)--> handle --> delegate_task(credentials_cfg=route)
-                                                       '--> child on the route's provider
+    model --delegate_to(route, goal)--> handle --> ctx.subagent_lifecycle.launch(provider, model)
     child fails and quota.lookup(provider) confirms it --> {"status": "out_of_quota", ...}
                                                             + instruction from the policy
-
-Everything the model reads is English and is not translated; what the user reads comes from ``texts``.
 """
 from __future__ import annotations
 
@@ -17,9 +15,7 @@ import json
 import time
 
 from . import command, quota
-from .acp import register_acp
-from .routes import CONFIG_KEY, ConfigError, Route, credentials, load, setting
-from .texts import t
+from .routes import CONFIG_KEY, ConfigError, Route, load, setting
 
 # What the parent does when a child runs out of quota. There is never an automatic switch without consent.
 POLICIES = {
@@ -58,64 +54,58 @@ def schema(routes: dict[str, Route]) -> dict:
     }
 
 
-def _error(message: str) -> str:
-    return json.dumps({"error": message}, ensure_ascii=False)
+def _json(**fields) -> str:
+    return json.dumps(fields, ensure_ascii=False)
 
 
 def _out_of_quota(routes: dict[str, Route], route: Route, ex: quota.Exhaustion, policy: str) -> str:
     reset_at = ex.reset_at.isoformat() if ex.reset_at else None
     when = f"resets at {reset_at}" if reset_at else "reset time unknown: the provider does not report it"
-    return json.dumps({
-        "status": "out_of_quota",
-        "route": route.name,
-        "provider": route.provider,
-        "reset_at": reset_at,
-        "other_routes": [n for n in routes if n != route.name],
-        "instruction": f"Route {route.name} is out of quota ({when}). {POLICIES[policy]}",
-    }, ensure_ascii=False)
+    return _json(status="out_of_quota", route=route.name, provider=route.provider, reset_at=reset_at,
+                 other_routes=[n for n in routes if n != route.name],
+                 instruction=f"Route {route.name} is out of quota ({when}). {POLICIES[policy]}")
 
 
-def _failed(output: str) -> bool:
-    try:
-        results = json.loads(output).get("results") or []
-    except (ValueError, AttributeError):
-        return False
-    return any(r.get("status") != "completed" for r in results if isinstance(r, dict))
-
-
-def handle(routes: dict[str, Route], args: dict, parent_agent, policy: str = "ask") -> str:
+def handle(lifecycle, routes: dict[str, Route], args: dict, policy: str = "ask") -> str:
     # Arguments come from the model: any type is possible and nothing may break the handler.
     if not routes:
-        return _error(t("no_routes", lang="en", key=CONFIG_KEY))
+        return _json(error=f"no routes configured: define {CONFIG_KEY} in config.yaml")
     name, goal = args.get("route"), args.get("goal")
     route = routes.get(name) if isinstance(name, str) else None
     if route is None:
-        return _error(f"unknown route {name!r}; valid routes: {', '.join(routes)}")
+        return _json(error=f"unknown route {name!r}; valid routes: {', '.join(routes)}")
     goal = goal.strip() if isinstance(goal, str) else ""
     if not goal:
-        return _error("missing 'goal': describe the complete task for the subagent")
-    if parent_agent is None:
-        return _error(f"{TOOL} needs the parent agent and Hermes did not pass it; update Hermes or report it")
-    turn = getattr(parent_agent, "_current_turn_id", None)
-    if policy != "parent_decides" and turn is not None and getattr(parent_agent, _BLOCKED, None) == turn:
+        return _json(error="missing 'goal': describe the complete task for the subagent")
+    from agent.subagent_lifecycle import SubagentLaunchRequest, SubagentLifecycleError, SubagentState, get_active_subagent_parent
+    parent = get_active_subagent_parent()
+    turn = getattr(parent, "_current_turn_id", None)
+    if policy != "parent_decides" and turn is not None and getattr(parent, _BLOCKED, None) == turn:
         # After out_of_quota, switching routes needs the user's approval; their answer opens a new turn.
-        return _error("a route ran out of quota in this turn and the policy requires the user to approve the "
-                      "next step: ask them and wait for their answer before delegating again")
+        return _json(error="a route ran out of quota in this turn and the policy requires the user to approve "
+                           "the next step: ask them and wait for their answer before delegating again")
     context = args.get("context")
     context = context.strip() or None if isinstance(context, str) else None
-    from tools.delegate_tool import delegate_task
     start = time.time()
-    output = delegate_task(goal=goal, context=context, parent_agent=parent_agent,
-                           credentials_cfg=credentials(route))
-    ex = quota.lookup(route.provider, since=start) if _failed(output) else None
+    try:
+        child = lifecycle.launch(SubagentLaunchRequest(goal=goal, context=context, provider=route.provider,
+                                                       model=route.model))
+    except SubagentLifecycleError as exc:
+        return _json(error=f"{TOOL} could not launch the subagent on route {route.name}: {exc}")
+    lifecycle.wait(child)
+    result = lifecycle.result(child)
+    if result.terminal_state == SubagentState.SUCCEEDED:
+        return _json(status="completed", route=route.name, summary=result.summary)
+    ex = quota.lookup(route.provider, since=start)
     if ex is None:
-        return output
+        return _json(status=str(result.terminal_state.value).lower(), route=route.name,
+                     error=result.error_message, summary=result.summary)
     if policy != "parent_decides" and turn is not None:
-        setattr(parent_agent, _BLOCKED, turn)
+        setattr(parent, _BLOCKED, turn)
     return _out_of_quota(routes, route, ex, policy)
 
 
-# delegate_task control actions: they act on subagents already launched (including those from delegate_to).
+# delegate_task control actions: they act on subagents already launched.
 _CONTROL = {"list", "steer", "stop"}
 
 
@@ -145,12 +135,8 @@ def prompt_section(routes: dict[str, Route]) -> str:
 
 
 def register(ctx) -> None:
-    # Do not import model_tools here: importing it discovers plugins and, inside the plugin loader, it blocks
-    # on its lock until the load timeout (10 s) and Hermes drops the plugin.
     # Freshly installed there are no routes: it loads anyway and each entry point says what to configure.
     # A config with badly written content still fails at load.
-    from hermes_constants import get_hermes_home
-    quota.HOME = quota.home_key(get_hermes_home())
     routes_config = setting(ctx.get_config, "routes", "rutas")
     routes = {} if routes_config is None or routes_config == {} else load(routes_config)
     policy = setting(ctx.get_config, "policy", "politica")
@@ -160,13 +146,11 @@ def register(ctx) -> None:
         policy = _LEGACY_POLICIES.get(policy, policy)
     if not isinstance(policy, str) or policy not in POLICIES:
         key = "politica" if ctx.get_config("policy") is None else "policy"
-        raise ConfigError(t("bad_policy", value=policy, key=key, options=", ".join(POLICIES)))
-    for route in routes.values():
-        if route.acp:
-            register_acp(route)
+        raise ConfigError(f"invalid policy {policy!r} in plugins.entries.orquehelx.settings.{key}; "
+                          f"use one of: {', '.join(POLICIES)}")
 
-    def handler(args, parent_agent=None, **_):
-        return handle(routes, args, parent_agent, policy)
+    def handler(args, **_):
+        return handle(ctx.subagent_lifecycle, routes, args, policy)
 
     definition = schema(routes)
     ctx.register_tool(TOOL, "orquehelx", definition, handler, description=definition["description"])
@@ -175,9 +159,5 @@ def register(ctx) -> None:
     if routes:
         ctx.register_system_prompt_section("orquehelx.routes", prompt_section(routes))
     ctx.register_command("ohx", lambda arguments: command.run(routes, arguments),
-                         description=t("ohx_description"), args_hint="routes|quota")
-    # ponytail: the inline table hands the agent over on any Hermes version and the executor checks it before
-    # the registry. The registry handler stays for whoever dispatches without the inline table (and gets
-    # parent_agent from Hermes once PR #122961 lands). Remove this when the minimum version ships it.
-    from agent.inline_tool_executors import INLINE_TOOL_EXECUTORS
-    INLINE_TOOL_EXECUTORS[TOOL] = lambda agent, args, _ctx: handle(routes, args, agent, policy)
+                         description="OrqueHelx routes and the measured usage of each subscription",
+                         args_hint="routes|quota")

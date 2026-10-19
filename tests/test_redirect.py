@@ -9,7 +9,7 @@ from orquehelx.routes import load
 
 ROUTES = load({
     "claude": {"provider": "claude-subscription-directsdk-experimental", "model": "claude-haiku-4-5"},
-    "opencode": {"acp": ["opencode", "acp"]},
+    "agy": {"provider": "antigravity-subscription-directsdk"},
 })
 
 
@@ -18,7 +18,7 @@ def test_native_delegate_task_is_redirected_to_delegate_to(args):
     verdict = delegate.redirect(ROUTES, tool_name="delegate_task", args=args)
     assert verdict["action"] == "block"
     assert "delegate_to" in verdict["message"]
-    assert "claude" in verdict["message"] and "opencode" in verdict["message"]
+    assert "claude" in verdict["message"] and "agy" in verdict["message"]
 
 
 @pytest.mark.parametrize("tool_name, args", [
@@ -35,7 +35,7 @@ def test_control_actions_and_other_tools_pass(tool_name, args):
 def test_the_prompt_section_explains_the_routes():
     text = delegate.prompt_section(ROUTES)
     assert "delegate_to" in text
-    assert "claude (claude-haiku-4-5)" in text and "opencode (ohx-opencode)" in text
+    assert "claude (claude-haiku-4-5)" in text and "agy (antigravity-subscription-directsdk)" in text
     assert "delegate_task" in text
 
 
