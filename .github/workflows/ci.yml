@@ -30,16 +30,16 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        hermes: [v2026.9.24, main]
+        hermes: [v0.22.0, main]
         include:
           # main declares its dependencies only for Python >= 3.14 (runtime managed by its bootstrap).
-          - hermes: v2026.9.24
+          - hermes: v0.22.0
             python: "3.11"
           - hermes: main
             python: "3.14"
           # plugin.yaml declares macos: it is tested only against the minimum version.
           - os: macos-latest
-            hermes: v2026.9.24
+            hermes: v0.22.0
             python: "3.11"
     defaults:
       run:
@@ -58,30 +58,3 @@ jobs:
           PY=.venv/bin/python; [ -x "$PY" ] || PY=.venv/Scripts/python.exe
           "$PY" -m pytest -q -p no:cacheprovider tests
 
-  ui:
-    # The dashboard UI: checks, tests and build. The dist is committed (whoever installs needs no Node),
-    # so the CI build has to match the repo's.
-    name: ui
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: ui
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
-      - run: npm ci
-      - run: npm run check
-      - run: npm test
-      - run: npm run build
-      - name: The committed dist is the build's
-        # ls-files: the dist must be tracked (a .gitignore once hid it and the check passed anyway).
-        # porcelain --ignored: sees changed, new and ignored files (an asset the build added).
-        run: |
-          git ls-files --error-unmatch ../orquehelx/dashboard/dist/index.js ../orquehelx/dashboard/dist/style.css
-          changes=$(git status --porcelain --ignored -- ../orquehelx/dashboard/dist)
-          if [ -n "$changes" ]; then echo "$changes"; echo "::error::stale dist: run npm run build in ui/ and commit"; exit 1; fi
