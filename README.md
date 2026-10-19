@@ -37,10 +37,11 @@ plugins:
         routes:
           claude: {provider: claude-subscription-directsdk-experimental, model: claude-haiku-4-5}
           codex:  {provider: openai-codex, model: gpt-5.5}
-          agy:    {provider: antigravity-subscription-directsdk}
+          agy:    {provider: antigravity-subscription-directsdk, model: flash}
 ```
 
-`provider` is any provider Hermes knows; `model` is optional. For a CLI that speaks ACP (OpenCode, Kiro, Junie),
+`provider` is any provider Hermes knows. `model` is required: without it Hermes would run the subagent with
+the parent's model on the route's provider. For a CLI that speaks ACP (OpenCode, Kiro, Junie),
 install its provider plugin from the catalog and use that provider's name.
 
 With no routes configured the plugin still loads, `delegate_to` and `/ohx` tell you what to set, and the native
@@ -59,7 +60,8 @@ and the other routes. What the parent does next is set by `policy`:
 ```
 
 - `ask`: the parent tells you and asks whether to send the task to another route, naming each route's model.
-  It cannot delegate again in that turn until you answer.
+  It cannot delegate again in that turn until you answer. Subagents already launched in parallel in the same
+  turn still finish.
 - `parent_decides`: the parent may pick another route if its model fits the task, and tells you which one.
 - `wait`: the parent tells you and does nothing else until your next message.
 
@@ -90,6 +92,7 @@ copy cost a rewrite on every Hermes release, so it went. The plugin now uses onl
 - Hermes 0.22.0 or later is required.
 - The dashboard tab and its quota pauses are gone. You can delete `~/.hermes/plugin-data/orquehelx/`.
 - `acp` routes are gone: install the CLI's provider plugin and use `provider:` instead.
+- Every route needs a `model`. A route without one fails at load time, naming the route.
 - Messages are English only. `routes`, `policy` and the v0.1 names (`rutas`, `politica`, `preguntar`,
   `padre_decide`, `esperar`) still load.
 
@@ -121,9 +124,9 @@ rodeos y tú decides qué sigue; OrqueHelx no cambia de proveedor por su cuenta.
 
 Requiere Hermes 0.22.0 o posterior y se instala con
 `hermes plugins install TicoraX/OrqueHelx#orquehelx --enable`. Las rutas van en `~/.hermes/config.yaml`, bajo
-`plugins.entries.orquehelx.settings.routes`, como en el ejemplo de arriba. `policy` decide qué hace el padre
-ante una cuota agotada: `ask` (por defecto), `parent_decides` o `wait`. `/ohx routes` y `/ohx quota` muestran
-las rutas y el consumo medido.
+`plugins.entries.orquehelx.settings.routes`, como en el ejemplo de arriba; cada ruta lleva `provider` y `model`.
+`policy` decide qué hace el padre ante una cuota agotada: `ask` (por defecto), `parent_decides` o `wait`.
+`/ohx routes` y `/ohx quota` muestran las rutas y el consumo medido.
 
 La v0.3.0 se recortó a propósito: la pestaña del dashboard y las rutas ACP salieron porque Hermes y su catálogo
 ya cubren eso. Los mensajes del plugin están solo en inglés. Usar una suscripción de consumo desde otra

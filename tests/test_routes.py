@@ -9,16 +9,18 @@ def test_provider_route_with_model():
     assert routes["claude"].model == "claude-haiku-4-5"
 
 
-def test_model_is_optional():
-    assert load({"agy": {"provider": "antigravity-subscription-directsdk"}})["agy"].model is None
+def test_a_route_without_model_fails_instead_of_borrowing_the_parent_model():
+    # Without a model Hermes gives the child the parent's model, on the route's provider.
+    with pytest.raises(RouteError, match="'agy'.*'model'"):
+        load({"agy": {"provider": "antigravity-subscription-directsdk"}})
 
 
 @pytest.mark.parametrize("config, piece", [
     ({"x": {}}, "'x'"),
-    ({"x": {"provider": ""}}, "'x'"),
-    ({"x": {"provider": "a", "extra": 1}}, "extra"),
+    ({"x": {"provider": "", "model": "m"}}, "'x'"),
+    ({"x": {"provider": "a", "model": "m", "extra": 1}}, "extra"),
     ({"x": {"provider": "a", "model": ""}}, "model"),
-    ({"Bad Name": {"provider": "a"}}, "Bad Name"),
+    ({"Bad Name": {"provider": "a", "model": "m"}}, "Bad Name"),
     ({"x": "claude"}, "'x'"),
 ])
 def test_invalid_config_fails_naming_the_route(config, piece):

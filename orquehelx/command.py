@@ -20,7 +20,7 @@ def _time(when) -> str:
 
 
 def _routes(routes: dict[str, Route]) -> str:
-    return "\n".join(f"{r.name}: {r.provider}" + (f" ({r.model})" if r.model else "") for r in routes.values())
+    return "\n".join(f"{r.name}: {r.provider} ({r.model})" for r in routes.values())
 
 
 def _quota_of(route: Route, windows: list | None, error: Exception | None) -> list[str]:

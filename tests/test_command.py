@@ -57,13 +57,13 @@ def test_register_adds_the_ohx_command():
     from orquehelx import delegate
     commands = {}
     ctx = SimpleNamespace(
-        get_config=lambda key, default=None: {"routes": {"claude": {"provider": "p"}}}.get(key, default),
+        get_config=lambda key, default=None: {"routes": {"claude": {"provider": "p", "model": "m"}}}.get(key, default),
         register_tool=lambda *_, **__: None, register_hook=lambda *_, **__: None,
         register_system_prompt_section=lambda *_, **__: None,
         register_command=lambda name, fn, **_: commands.update({name: fn}),
     )
     delegate.register(ctx)
-    assert commands["ohx"]("routes") == "claude: p"
+    assert commands["ohx"]("routes") == "claude: p (m)"
 
 
 def test_quota_measures_once_per_provider(monkeypatch):
