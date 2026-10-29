@@ -47,7 +47,9 @@ jobs:
           git clone --quiet --depth 1 --branch "${{ matrix.hermes }}" https://github.com/NousResearch/hermes-agent "$RUNNER_TEMP/hermes"
           # Since v0.22.0 Hermes declares its dependencies only for Python >= 3.14.
           uv venv --python 3.14 .venv
-          uv pip install --python .venv -e "$RUNNER_TEMP/hermes" pytest
+          # From Hermes' own directory, so uv applies its [tool.uv] override-dependencies
+          # (e.g. Pillow 13 over browser-harness' pin); from outside, main is unresolvable.
+          (cd "$RUNNER_TEMP/hermes" && uv pip install --python "$GITHUB_WORKSPACE/.venv" -e . pytest)
       - name: Tests
         run: |
           PY=.venv/bin/python; [ -x "$PY" ] || PY=.venv/Scripts/python.exe
